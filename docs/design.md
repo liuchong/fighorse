@@ -1,0 +1,209 @@
+# fighorse Design
+
+`fighorse` is a Bun-first ClojureScript CLI and MCP server for turning Figma REST API data into implementation-grade context for humans and AI agents. It focuses on context quality, safety, debuggability, and visual feedback loops rather than direct code generation.
+
+## Product Goals
+
+The project exists because the common Figma-to-AI paths each miss something important:
+
+- Official Figma MCP is powerful, but black-box behavior makes debugging hard and future pricing or plan boundaries can affect availability.
+- Screenshot-only prompting loses exact layout, color, typography, constraints, and component metadata.
+- Raw Figma JSON is too large and noisy for LLM context windows.
+- MCP-only community tools are useful inside an IDE but weak for scripts, CI, reproducible debugging, and non-MCP agents.
+
+fighorse's goal is to provide a white-box data pipeline:
+
+- Accurate Figma facts: node structure, dimensions, styles, layout, images, tokens, metadata.
+- AI-ready context: compact, budget-aware, and explicit about assumptions.
+- Visual references: screenshot/render URLs and local exported assets with manifests.
+- Tool-neutral access: CLI first, MCP as an adapter, installable skills/rules for AI clients.
+- Feedback memory: local experience storage so visual debugging lessons are reused.
+
+## Core Principle: CLI Kernel, MCP Shell
+
+The CLI is the primary product boundary. MCP exposes the same capabilities to AI tools but should stay thin.
+
+```text
+Figma REST API
+  -> API modules
+  -> compact/filter/tokens/assets/design-package
+  -> CLI output, files, manifests
+  -> MCP tools, AI clients, scripts, CI
+```
+
+This keeps the system:
+
+- Inspectable: developers can run the same command an AI tool calls.
+- Scriptable: shell, CI, and custom agents can use the binary directly.
+- Transport-neutral: stdio MCP, SSE MCP, and CLI all share behavior.
+- Easier to test: pure transformations and API wrappers remain separable from client configuration.
+
+## Layered Architecture
+
+```text
+L4 Adapters
+  mcp serve, install client, install service, generated skills/rules
+
+L3 Generated Context
+  design package, markdown, tokens, tree, schema, manifests
+
+L2 Transformations
+  compact, filter, diff, diagnostics, experience matching
+
+L1 Figma API and Assets
+  files, nodes, images, comments, components, styles, variables, webhooks, downloads
+```
+
+L2 and L3 are the main differentiators. fighorse does not merely wrap REST endpoints; it reshapes Figma data into the form an AI agent can use without drowning in noise.
+
+## Design Package
+
+`fighorse design package` and MCP `get_design_package` are the preferred high-level interface for design implementation. The package combines:
+
+- Parsed Figma URL and selected target node.
+- Compact structural context.
+- Tokens and implementation hints.
+- Figma render references and optional asset URLs.
+- Platform and asset-format assumptions.
+- Export plan with CLI examples and MCP calls.
+- Local learned experiences.
+- Diagnostics and next-step warnings.
+
+The package is designed to be both machine-readable and easy to inspect. It should tell an AI not only what to implement, but also what is missing before implementation is safe.
+
+Important diagnostics include:
+
+- Missing `platform`.
+- Missing `asset_format`.
+- Unsupported render format for Figma node rendering.
+- Target node is a broad `CANVAS` or user-flow page.
+- Context truncation due to token budget.
+- Missing screenshots, tokens, or image fills.
+
+## Self-Discovery Contract
+
+AI clients should not rely on stale prompt text. They should call:
+
+- CLI: `fighorse discover --format json`
+- MCP: `discover_fighorse`
+
+The discovery manifest describes:
+
+- Available CLI and MCP capabilities.
+- Recommended design replication workflow.
+- Safety defaults.
+- Local write requirements.
+- Experience-store behavior.
+- Current AI contract.
+- Installation and client configuration hints.
+
+`doctor` complements discovery with runtime state: Bun/runtime information, auth status, home directory, MCP mode, local-write mode, and experience-store readiness.
+
+## Self-Learning Model
+
+fighorse keeps reusable lessons in append-only JSONL stores:
+
+- Global: `~/.fighorse/experience/global.jsonl`.
+- Project: `./.fighorse/experience.jsonl` after `fighorse install project`.
+- Exact override: `FIGHORSE_EXPERIENCE_PATH`.
+- Scope override: `FIGHORSE_EXPERIENCE_SCOPE=global|project|merged`.
+
+This is intentionally local and transparent. The goal is not autonomous hidden memory; it is a project/user-owned log of practical design replication lessons.
+
+Good records describe reusable patterns:
+
+- Layout overlap caused by mapping repeated siblings into a stacking container.
+- Compact component typography requiring direct inspection rather than global scaling.
+- Device status bar or safe-area mismatch.
+- Asset format or font availability constraints.
+
+Records should not contain secrets, private absolute paths, or one-off project details.
+
+## Safety Boundaries
+
+fighorse separates three safety domains:
+
+- Figma read access: requires a token and is the normal operating mode.
+- Figma write access: disabled unless `FIGHORSE_MCP_MODE=write`.
+- Local filesystem writes: disabled in MCP unless `FIGHORSE_MCP_LOCAL_WRITE=allow`.
+
+Local file exports are still restricted to approved roots:
+
+- `./.fighorse/exports`
+- `./assets/fighorse`
+- `~/.fighorse/exports`
+
+This separation matters because downloading local screenshots or image fills is much less sensitive than mutating Figma, but still needs path validation. The user explicitly controls both domains.
+
+SSE MCP defaults to localhost (`127.0.0.1`) and supports controlled CORS. Stdio parsing enforces message-size limits to avoid local denial-of-service behavior.
+
+## Installation Design
+
+`fighorse install` generates reviewable artifacts by default and mutates user-level config only with `--apply`. The installer targets:
+
+- Home/config setup under `~/.fighorse`.
+- Binary install under `~/.fighorse/bin/fighorse`.
+- Auth storage in `~/.fighorse/config.json`.
+- MCP client snippets for Cursor, Codex, Kimi, Claude, opencode, and generic agents.
+- User-level skills/rules for AI clients.
+- macOS launchd and Linux systemd user services for SSE MCP.
+
+When native client commands are available, installer code prefers them. Otherwise it writes standard user configuration files with backups.
+
+## Ecosystem Position
+
+fighorse borrows lessons from existing tools while choosing a different boundary.
+
+Official Figma MCP is prescriptive and deeply integrated. It can expose Code Connect, Code to Canvas, and design-system search, but its behavior is opaque and tied to Figma's product surface.
+
+Framelink-style MCP is descriptive and lightweight. It gives AI layout and style facts instead of generated code structure. This avoids "poisoning" context with a framework decision the current codebase may not want.
+
+fighorse defaults to the descriptive path: facts over generated code. It can still expose richer Figma metadata and write-capable endpoints when explicitly enabled, but the main workflow is "precise context in, project-native implementation out."
+
+## Data Fidelity
+
+Figma REST API data is generally specification-faithful for implementation facts:
+
+- Geometry, dimensions, bounds, and coordinates.
+- Colors, effects, strokes, fills, corner radii.
+- Text characters and style metadata.
+- Auto Layout properties.
+- Component and instance relationships.
+- Render URLs and image fills.
+
+Pixel-perfect browser or mobile rendering still requires a feedback loop because rendering engines, font availability, antialiasing, blend modes, and system UI differ from Figma. fighorse therefore combines structured JSON with screenshots and insists on visual verification rather than claiming first-pass perfection.
+
+## Lessons From Field Use
+
+A real Android Compose prototype exposed several practical requirements:
+
+- `design package` should normalize Figma URLs and node ids.
+- `smoke` and `diagnostics.status=ready` are useful readiness signals.
+- Export manifests are more reliable than terminal logs for downstream scripts.
+- Safe filenames such as `376_12995.png` work better across app build systems.
+- Broad flow nodes should be narrowed to concrete frames before implementation.
+- Repeated rows need list/linear containers; generic stack containers cause overlap.
+- Compact message cards and full chat cards can require different typography.
+- Mobile screens need scroll-safe layouts.
+- Font availability and status-bar/safe-area behavior must be handled explicitly.
+- AI tools need platform and asset-format choices before implementation.
+
+These lessons directly shaped the design package, export manifest, local-write, and experience-store contracts.
+
+## Non-Goals
+
+fighorse does not aim to be a general code generator. Code should be produced by the AI agent using the target repository's existing patterns.
+
+It also does not aim to replace Figma's own product integrations. Official MCP remains appropriate for Code Connect, Code to Canvas, FigJam generation, or native Figma mutation workflows.
+
+The durable product boundary is the context and asset pipeline: fetch, compact, explain, export, verify, and learn.
+
+## Verification Strategy
+
+The project should remain verifiable without a real Figma token:
+
+- Unit tests cover argument parsing, compacting, URL parsing, path validation, MCP tool routing, discovery manifest, install output, design-package diagnostics, and stdio framing limits.
+- Integration tests that touch the real Figma API are opt-in.
+- Docs and generated install artifacts must reflect current CLI behavior.
+
+The guiding maintenance rule is consistency across CLI, MCP schemas, installer output, discovery manifest, skills/rules, and formal docs.

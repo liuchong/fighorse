@@ -1,0 +1,233 @@
+# fighorse User Guide
+
+`fighorse` turns Figma REST API data into AI-friendly context and developer-friendly CLI output. It is useful when you want to inspect a design, export assets, prepare implementation context for an AI coding tool, or run a local MCP server.
+
+## Install From Source
+
+```bash
+bun install
+bun run build
+bun run compile
+./dist/fighorse --help
+```
+
+Install the compiled binary and optional AI client integrations:
+
+```bash
+./dist/fighorse install status
+./dist/fighorse install auth --apply
+./dist/fighorse install binary --source ./dist/fighorse --apply
+./dist/fighorse install client --client cursor --apply
+./dist/fighorse install client --client codex --apply
+./dist/fighorse install client --client kimi --apply
+./dist/fighorse install service --service launchd --apply
+./dist/fighorse install all --clients cursor,codex,kimi --source ./dist/fighorse --apply
+```
+
+Install commands generate reviewable files by default. Add `--apply` only when you want fighorse to mutate user-level client config, skill/rule locations, binary links, or service managers.
+
+## Authentication
+
+Create a Figma personal access token from the Figma developer settings, then store it locally:
+
+```bash
+fighorse auth login --token <FIGMA_TOKEN>
+```
+
+You can also use environment variables for one-off commands:
+
+```bash
+FIGMA_TOKEN=<FIGMA_TOKEN> fighorse file tree <file_key>
+```
+
+`install auth --apply` reads `--token`, stdin, `FIGMA_TOKEN`, or `FIGMA_API_KEY` and stores the token in `~/.fighorse/config.json`. Command output masks the token.
+
+## Verify Readiness
+
+```bash
+fighorse doctor --format json
+fighorse discover --format json
+fighorse smoke "https://www.figma.com/design/<fileKey>/<name>?node-id=<node-id>"
+```
+
+`smoke` uses real Figma access and returns `fighorse.smoke.v1`. `ok: true` means the normal design package path is ready. `ok: false` with `diagnostics.status: partial` can still mean access worked; follow the warnings, usually by specifying a platform, asset format, or exact frame node.
+
+## Inspect Designs
+
+Parse a pasted Figma URL:
+
+```bash
+fighorse url parse "https://www.figma.com/design/<fileKey>/<name>?node-id=1-2"
+```
+
+View structure:
+
+```bash
+fighorse file tree <file_key> --depth 2
+fighorse node get <file_key> <node_id> --depth 3
+```
+
+Fetch compact AI context:
+
+```bash
+fighorse file compact <file_key> --depth 2 --max-tokens 8000
+fighorse file get <file_key> --depth 2 | fighorse compact --max-tokens 8000
+```
+
+Extract design tokens:
+
+```bash
+fighorse file tokens <file_key> --format json
+fighorse tokens extract <file_key> --format css --output ./tokens.css
+```
+
+## Build A Design Package
+
+For AI implementation work, prefer `design package` over low-level calls:
+
+```bash
+fighorse design package "https://www.figma.com/design/<fileKey>/<name>?node-id=<node-id>" \
+  --platform android-compose \
+  --asset-format png \
+  --max-tokens 8000 \
+  --output ./.fighorse/exports/package.json
+```
+
+The package includes:
+
+- `source`: parsed file key and node id.
+- `file` and `target`: metadata and selected node summary.
+- `implementation_target`: platform and asset-format assumptions.
+- `fidelity_workflow`: visual verification steps.
+- `asset_export_plan`: suggested CLI and MCP asset export calls.
+- `learned_experience`: local lessons from previous runs.
+- `context`, `tokens`, `screenshots`, and optional `assets`.
+- `diagnostics`: warnings for missing platform, missing asset format, CANVAS targets, truncation, missing screenshots, or missing tokens.
+
+If platform or asset format is unknown, ask the developer before implementation. PNG is a render fallback, not an automatic product decision.
+
+## Export Assets
+
+Use local exports when implementation needs real image files instead of temporary render URLs:
+
+```bash
+fighorse image export <file_key> --ids <node_ids> --format png --dir ./.fighorse/exports --manifest
+fighorse component export <file_key> --ids <component_node_ids> --format svg --dir ./assets/fighorse --manifest
+fighorse asset download <file_key> --dir ./assets/fighorse --manifest
+```
+
+Recommended output locations:
+
+- `./.fighorse/exports`: temporary slices, screenshots, manifests, and debug assets.
+- `./assets/fighorse`: assets intended to be referenced by app code or packaged.
+- `~/.fighorse/exports`: cross-project scratch exports.
+
+Export commands write safe filenames and can create `manifest.json`. Use the manifest instead of parsing terminal output.
+
+## MCP Server
+
+For subprocess clients, prefer stdio:
+
+```json
+{
+  "mcpServers": {
+    "fighorse": {
+      "command": "fighorse",
+      "args": ["mcp", "serve", "--transport", "stdio"],
+      "env": {
+        "FIGHORSE_MCP_MODE": "readonly",
+        "FIGHORSE_MCP_LOCAL_WRITE": "allow"
+      }
+    }
+  }
+}
+```
+
+For an HTTP service:
+
+```bash
+fighorse mcp serve --transport sse --host 127.0.0.1 --port 9449
+```
+
+SSE endpoints:
+
+```text
+http://127.0.0.1:9449/sse
+http://127.0.0.1:9449/manifest
+http://127.0.0.1:9449/health
+```
+
+SSE binds to `127.0.0.1` by default. Use `--host` explicitly only when you intend to expose the service beyond localhost.
+
+## Safety Modes
+
+Figma write tools are hidden unless enabled:
+
+```bash
+FIGHORSE_MCP_MODE=write fighorse mcp serve --transport stdio
+```
+
+Local file export is controlled separately:
+
+```bash
+FIGHORSE_MCP_LOCAL_WRITE=allow fighorse mcp serve --transport stdio
+```
+
+Even with local write enabled, export paths are validated and must stay under `./.fighorse/exports`, `./assets/fighorse`, or `~/.fighorse/exports`.
+
+## Experience Store
+
+fighorse stores reusable lessons as append-only JSONL. This lets future AI runs learn from previous visual debugging without changing the fighorse binary.
+
+Default paths:
+
+- Home: `~/.fighorse`.
+- Global experience: `~/.fighorse/experience/global.jsonl`.
+- Project experience: `./.fighorse/experience.jsonl` after `fighorse install project`.
+- Exact override: `FIGHORSE_EXPERIENCE_PATH`.
+- Scope override: `FIGHORSE_EXPERIENCE_SCOPE=global|project|merged`.
+
+Commands:
+
+```bash
+fighorse install project
+fighorse experience schema
+fighorse experience summary --platform android-compose --asset-format png --format md
+fighorse experience add \
+  --summary "Repeated list items overlapped" \
+  --lesson "Use a list or linear container for repeated siblings; use stacking containers only for intentional overlays." \
+  --category layout \
+  --platform android-compose \
+  --asset-format png
+```
+
+## Common Workflows
+
+Use fighorse before implementing a Figma screen:
+
+```bash
+fighorse discover --format json
+fighorse experience summary --platform web-react --asset-format svg
+fighorse design package "<figma-url>" --platform web-react --asset-format svg --output ./.fighorse/exports/package.json
+```
+
+Sync tokens:
+
+```bash
+fighorse file tokens <design_system_key> --format css --output src/styles/tokens.css
+```
+
+Batch export frames:
+
+```bash
+IDS=$(fighorse file get <file_key> --depth 2 | jq -r '.. | objects | select(.type == "FRAME") | .id' | paste -sd, -)
+fighorse image export <file_key> --ids "$IDS" --dir ./.fighorse/exports --manifest
+```
+
+## Troubleshooting
+
+- `doctor.auth.has_token` is false: run `fighorse auth login --token <FIGMA_TOKEN>` or `fighorse install auth --apply`.
+- `smoke.ok` is false but file metadata exists: follow `diagnostics.warnings`; often the selected target is too broad or platform/asset format is missing.
+- MCP export tool reports local-write disabled: set `FIGHORSE_MCP_LOCAL_WRITE=allow` in the MCP server environment.
+- Export path is rejected: use `./.fighorse/exports`, `./assets/fighorse`, or `~/.fighorse/exports`.
+- AI implements an entire user flow page: narrow the Figma URL to a concrete Frame/Screen node before implementation.

@@ -1,0 +1,26 @@
+{
+  "name": "fighorse",
+  "version": "0.1.0",
+  "description": "Figma data Swiss Army knife, shaped for AI consumption",
+  "packageManager": "bun@1.2.8",
+  "engines": {
+    "bun": ">=1.2.0"
+  },
+  "bin": {
+    "fighorse": "dist/fighorse"
+  },
+  "scripts": {
+    "dev": "bun run --watch dist/fighorse.js",
+    "build": "shadow-cljs release app",
+    "compile": "bun build --compile dist/fighorse.js --outfile dist/fighorse",
+    "test": "shadow-cljs compile test && bun target/test.js",
+    "test:integration": "shadow-cljs compile test && FIGMA_INTEGRATION_TESTS=true bun target/test.js",
+    "check": "bun run test && bun run build && bun run compile"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.0"
+  },
+  "devDependencies": {
+    "shadow-cljs": "^2.28.23"
+  }
+}

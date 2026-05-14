@@ -1,0 +1,39 @@
+# Build and generated output
+/tmp
+/target
+/dist
+/exports
+/coverage
+
+# Bun dependency/runtime artifacts
+/node_modules
+/.bun
+bun-error.log
+*.bun-debug.log
+
+# ClojureScript compiler cache
+/.shadow-cljs
+
+# Editor backups
+*~
+
+# OS files
+.DS_Store
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Local Figma export scratch space
+/fighorse-exports
+/fighorse-assets
+/.fighorse
+/experience.jsonl
+/fighorse-experience.jsonl
+
+# Android / Gradle demo artifacts
+voice-clone-mvp-demo/.gradle/
+voice-clone-mvp-demo/**/build/
+voice-clone-mvp-demo/local.properties
+voice-clone-mvp-demo/*.apk
