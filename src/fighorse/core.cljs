@@ -11,6 +11,8 @@
             [fighorse.figma :as figma]
             [fighorse.install :as install]
             [fighorse.schema :as schema]
+            [fighorse.api.coverage :as api-coverage]
+            [fighorse.api.operations :as api-operations]
             [fighorse.api.files :as files-api]
             [fighorse.api.projects :as projects-api]
             [fighorse.api.users :as users-api]
@@ -24,7 +26,9 @@
             [fighorse.export.images :as img-export]
             [fighorse.tokens :as tokens]
             [fighorse.utils.url :as figma-url]
-            [fighorse.mcp.server :as mcp]))
+            [fighorse.mcp.server :as mcp]
+            [fighorse.product.playbook :as playbook]
+            [fighorse.product.visual-audit :as visual-audit]))
 
 (def ^:private fs (js/require "fs"))
 (def ^:private path (js/require "path"))
@@ -347,6 +351,58 @@
                                       :transport (or (:transport flags) "stdio")
                                       :port port
                                       :command (or (:command flags) "fighorse"))
+                :output (:output flags))))
+
+(defn cmd-figma-api-coverage [args]
+  (let [[flags _] (parse-flags args ["--format" "--output"])
+        report (api-coverage/coverage-report)
+        format (or (:format flags) "json")]
+    (if (= "md" format)
+      (write-output! (api-coverage/coverage-report->markdown report) (:output flags))
+      (print-data report :output (:output flags)))))
+
+(defn- json-file! [file label]
+  (parse-json-map! (.readFileSync fs file "utf8") label))
+
+(defn cmd-figma-api-call [args]
+  (let [token (require-token!)
+        [flags clean-args] (parse-flags args ["--params" "--body" "--body-file" "--output"])
+        operation-id (require-arg clean-args 0 "operation-id")
+        params (or (parse-json-map! (:params flags) "--params") {})
+        body (or (parse-json-map! (:body flags) "--body")
+                 (when (:body_file flags)
+                   (json-file! (:body_file flags) "--body-file"))
+                 {})
+        explain? (flag-present? args "--explain-for-ai")]
+    (when (and (api-operations/write-operation? operation-id)
+               (not (flag-present? args "--yes")))
+      (eprintln "Error: write operation requires --yes. Figma write APIs can mutate comments, variables, webhooks, or dev resources.")
+      (js/process.exit 1))
+    (-> (api-operations/call-operation token operation-id params body)
+        (.then (fn [data]
+                 (print-data (if explain?
+                               (api-operations/result-envelope operation-id data)
+                               data)
+                             :output (:output flags))))
+        (.catch (fn [err]
+                  (eprintln "Error:" (or (.-message err) (str err)))
+                  (js/process.exit 1))))))
+
+(defn cmd-visual-audit [args]
+  (let [[flags clean-args] (parse-flags args ["--screenshot" "--platform" "--asset-format" "--notes" "--output"])
+        figma-url (require-arg clean-args 0 "figma-url")]
+    (print-data (visual-audit/audit :figma-url figma-url
+                                    :screenshot-path (:screenshot flags)
+                                    :platform (:platform flags)
+                                    :asset-format (:asset_format flags)
+                                    :notes (:notes flags))
+                :output (:output flags))))
+
+(defn cmd-project-playbook [args]
+  (let [[flags _] (parse-flags args ["--platform" "--asset-format" "--project-dir" "--output"])]
+    (print-data (playbook/build :platform (:platform flags)
+                                :asset-format (:asset_format flags)
+                                :project-dir (:project_dir flags))
                 :output (:output flags))))
 
 (defn cmd-design-package [args]
@@ -869,6 +925,10 @@
   (println "  url parse <figma-url>                        Parse file_key and node_id")
   (println "  design package <figma-url> [--platform P] [--asset-format F]  Build AI replication package")
   (println "  mcp config [--client C] [--transport T]      Emit MCP client config")
+  (println "  figma-api coverage [--format json|md]        Report official Figma REST OpenAPI coverage")
+  (println "  figma api <operationId> --params JSON [--body JSON|--body-file P] [--yes]  Call any covered REST operation")
+  (println "  visual audit <figma-url> [--screenshot P]    Produce AI-ready visual fidelity audit guidance")
+  (println "  project playbook [--platform P]              Produce project-level fighorse AI playbook")
   (println "")
   (println "Experience / Self Learning:")
   (println "  experience schema                            Show versioned JSONL record schema")
@@ -1000,6 +1060,10 @@
       (= [cmd1 cmd2] ["url" "parse"])      (cmd-url-parse rest-args)
       (= [cmd1 cmd2] ["design" "package"]) (cmd-design-package rest-args)
       (= [cmd1 cmd2] ["mcp" "config"])     (cmd-mcp-config rest-args)
+      (= [cmd1 cmd2] ["figma-api" "coverage"]) (cmd-figma-api-coverage rest-args)
+      (= [cmd1 cmd2] ["figma" "api"])      (cmd-figma-api-call rest-args)
+      (= [cmd1 cmd2] ["visual" "audit"])   (cmd-visual-audit rest-args)
+      (= [cmd1 cmd2] ["project" "playbook"]) (cmd-project-playbook rest-args)
       (= [cmd1 cmd2] ["experience" "schema"]) (cmd-experience-schema rest-args)
       (= [cmd1 cmd2] ["experience" "summary"]) (cmd-experience-summary rest-args)
       (= [cmd1 cmd2] ["experience" "list"]) (cmd-experience-list rest-args)

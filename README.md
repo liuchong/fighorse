@@ -2,7 +2,7 @@
 
 Figma 数据的瑞士军刀，专门打磨成 AI 最容易消化的形状。
 
-`fighorse` 是一个 Bun-first 的 ClojureScript CLI 和 MCP Server。它不生成代码，而是把 Figma REST API 数据整理成 AI 编程工具和开发者都能稳定消费的上下文：结构树、精简 JSON、截图 URL、设计 token、图片/控件导出、manifest、自发现信息和本地经验。
+`fighorse` 是一个 Bun-first 的 ClojureScript CLI 和 MCP Server。它不生成代码，而是把 Figma REST API 数据整理成 AI 编程工具和开发者都能稳定消费的上下文：完整公开 REST API、结构树、精简 JSON、截图 URL、设计 token、图片/控件导出、manifest、自发现信息和本地经验。
 
 核心理念是 **CLI 为核，MCP 为壳**。CLI 保持白盒、可脚本化、可调试；MCP 让 Cursor、Codex、Kimi、Claude、opencode 等 AI 工具直接调用同一套能力。
 
@@ -20,6 +20,7 @@ fighorse auth login --token <FIGMA_TOKEN>
 fighorse discover --format json
 fighorse doctor --format json
 fighorse smoke "https://www.figma.com/design/<fileKey>/<name>?node-id=<node-id>"
+fighorse figma-api coverage --format json
 ```
 
 生成复刻设计所需的上下文包：
@@ -49,7 +50,8 @@ fighorse asset download <file_key> --dir ./assets/fighorse --manifest
 | Area | Commands |
 |------|----------|
 | Discovery | `discover`, `doctor`, `smoke`, `url parse`, `mcp config` |
-| Design Package | `design package`, `experience summary`, `experience add` |
+| Official REST | `figma-api coverage`, `figma api <operationId>` |
+| Design Package | `design package`, `visual audit`, `project playbook`, `experience summary`, `experience add` |
 | Figma Data | `file get`, `file nodes`, `node get`, `file tree`, `file compact` |
 | Assets | `image export`, `component export`, `asset download`, `images render`, `images fills` |
 | Design System | `components`, `component-sets`, `styles`, `variables`, `tokens extract` |

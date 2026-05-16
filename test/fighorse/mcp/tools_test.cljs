@@ -47,6 +47,8 @@
       (is (contains? names "export_images"))
       (is (contains? names "export_component"))
       (is (contains? names "download_image_fills"))
+      (is (contains? names "visual_audit"))
+      (is (contains? names "get_project_playbook"))
       (is (contains? names "get_experience_schema"))
       (is (contains? names "list_experiences"))
       (is (contains? names "record_experience"))))
@@ -56,7 +58,10 @@
       (is (contains? names "get_oembed"))
       (is (contains? names "get_payments"))
       (is (contains? names "get_activity_logs"))
-      (is (contains? names "get_library_analytics_component_usages"))))
+      (is (contains? names "get_library_analytics_component_usages"))
+      (is (contains? names "figma_get_file"))
+      (is (contains? names "figma_get_developer_logs"))
+      (is (not (contains? names "figma_post_variables")))))
   (testing "write tools are hidden by default"
     (let [result (js->clj (tools/list-tools) :keywordize-keys true)
           names (set (map :name (:tools result)))]
@@ -159,6 +164,19 @@
       (let [request #js {:params #js {:name "post_comment"
                                       :arguments #js {:file_key "abc"
                                                       :message "hello"}}}]
+        (-> (tools/call-tool request)
+            (.then (fn [result]
+                     (is (= true (.-isError ^js result)))
+                     (is (str/includes? (-> result .-content first .-text)
+                                        "readonly mode"))))
+            (.finally done))))))
+
+(deftest generated-official-write-tools-are-hidden-and-gated
+  (testing "generated official REST write tools follow readonly policy"
+    (async done
+      (let [request #js {:params #js {:name "figma_post_variables"
+                                      :arguments #js {:params #js {:file_key "abc"}
+                                                      :body #js {}}}}]
         (-> (tools/call-tool request)
             (.then (fn [result]
                      (is (= true (.-isError ^js result)))

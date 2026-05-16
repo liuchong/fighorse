@@ -48,9 +48,24 @@ FIGMA_TOKEN=<FIGMA_TOKEN> fighorse file tree <file_key>
 fighorse doctor --format json
 fighorse discover --format json
 fighorse smoke "https://www.figma.com/design/<fileKey>/<name>?node-id=<node-id>"
+fighorse figma-api coverage --format json
 ```
 
 `smoke` uses real Figma access and returns `fighorse.smoke.v1`. `ok: true` means the normal design package path is ready. `ok: false` with `diagnostics.status: partial` can still mean access worked; follow the warnings, usually by specifying a platform, asset format, or exact frame node.
+
+`figma-api coverage` reports parity against the vendored Figma REST OpenAPI snapshot. The current registry tracks 48 public operations and exposes each through the API layer, generic CLI operation dispatch, and generated official MCP tools where safe.
+
+## Official REST API Coverage
+
+Use the product commands for normal design work, and use the generic REST dispatch when you need exact low-level API parity:
+
+```bash
+fighorse figma-api coverage --format md
+fighorse figma api getFile --params '{"file_key":"<file_key>","depth":1}'
+fighorse figma api putWebhook --params '{"webhook_id":"<id>"}' --body '{"status":"PAUSED"}' --yes
+```
+
+`figma api` accepts official `operationId` names from the OpenAPI registry. Read operations run normally. Write operations require `--yes` because they can mutate comments, variables, webhooks, or dev resources.
 
 ## Inspect Designs
 
@@ -98,9 +113,11 @@ The package includes:
 - `source`: parsed file key and node id.
 - `file` and `target`: metadata and selected node summary.
 - `implementation_target`: platform and asset-format assumptions.
+- `screen_candidates` and `component_candidates`: likely frames/components to inspect or export next.
 - `fidelity_workflow`: visual verification steps.
 - `asset_export_plan`: suggested CLI and MCP asset export calls.
 - `learned_experience`: local lessons from previous runs.
+- `token_confidence`, `missing_font_diagnostics`, and `implementation_risk_checklist`: AI-ready checks before coding.
 - `context`, `tokens`, `screenshots`, and optional `assets`.
 - `diagnostics`: warnings for missing platform, missing asset format, CANVAS targets, truncation, missing screenshots, or missing tokens.
 
@@ -209,6 +226,8 @@ Use fighorse before implementing a Figma screen:
 fighorse discover --format json
 fighorse experience summary --platform web-react --asset-format svg
 fighorse design package "<figma-url>" --platform web-react --asset-format svg --output ./.fighorse/exports/package.json
+fighorse visual audit "<figma-url>" --screenshot ./.fighorse/exports/app-screen.png --platform web-react --asset-format svg
+fighorse project playbook --platform web-react --asset-format svg
 ```
 
 Sync tokens:

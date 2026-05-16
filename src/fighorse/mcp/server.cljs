@@ -3,6 +3,7 @@
    Supports SSE and stdio transports for integration with MCP clients."
   (:require [clojure.string :as str]
             [fighorse.discovery :as discovery]
+            [fighorse.mcp.resources :as resources]
             [fighorse.mcp.tools :as tools]))
 
 (def ^:private Buffer (.-Buffer js/globalThis))
@@ -277,15 +278,40 @@
         Server (.-Server sdk)
         ListToolsRequestSchema (.-ListToolsRequestSchema types)
         CallToolRequestSchema (.-CallToolRequestSchema types)
+        ListResourcesRequestSchema (.-ListResourcesRequestSchema types)
+        ReadResourceRequestSchema (.-ReadResourceRequestSchema types)
+        ListPromptsRequestSchema (.-ListPromptsRequestSchema types)
+        GetPromptRequestSchema (.-GetPromptRequestSchema types)
         server (new Server #js {:name "fighorse"
                                 :version "0.1.0"}
-                       #js {:capabilities #js {:tools #js {}}})]
+                       #js {:capabilities #js {:tools #js {}
+                                               :resources #js {}
+                                               :prompts #js {}}})]
     ;; Register tool list handler
     (.setRequestHandler server ListToolsRequestSchema
                         (fn [_request] (tools/list-tools)))
     ;; Register tool call handler
     (.setRequestHandler server CallToolRequestSchema
                         (fn [request] (tools/call-tool request)))
+    (when ListResourcesRequestSchema
+      (.setRequestHandler server ListResourcesRequestSchema
+                          (fn [_request] (clj->js (resources/list-resources)))))
+    (when ReadResourceRequestSchema
+      (.setRequestHandler server ReadResourceRequestSchema
+                          (fn [^js request]
+                            (let [^js params (.-params request)
+                                  uri (.-uri params)]
+                              (clj->js (resources/read-resource uri))))))
+    (when ListPromptsRequestSchema
+      (.setRequestHandler server ListPromptsRequestSchema
+                          (fn [_request] (clj->js (resources/list-prompts)))))
+    (when GetPromptRequestSchema
+      (.setRequestHandler server GetPromptRequestSchema
+                          (fn [^js request]
+                            (let [^js params (.-params request)
+                                  name (.-name params)
+                                  arguments (js->clj (.-arguments params) :keywordize-keys true)]
+                              (clj->js (resources/get-prompt name arguments))))))
     server))
 
 (defn- jsonrpc-result [id result]

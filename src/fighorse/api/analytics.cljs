@@ -33,6 +33,16 @@
                      :end_date end-date
                      :order_direction order-direction}))
 
+(defn get-library-analytics-style-actions
+  "GET /v1/analytics/libraries/{file_key}/style/actions
+   Get style action analytics for a library."
+  [token file-key & {:keys [cursor group-by start-date end-date]}]
+  (http/get (str "/v1/analytics/libraries/" (http/path-segment file-key) "/style/actions") token
+            :params {:cursor cursor
+                     :group_by group-by
+                     :start_date start-date
+                     :end_date end-date}))
+
 (defn get-library-analytics-variable-usages
   "GET /v1/analytics/libraries/{file_key}/variable/usages
    Get variable usage analytics for a library."

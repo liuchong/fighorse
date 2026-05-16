@@ -4,14 +4,17 @@
   (:require [fighorse.utils.http :as http]))
 
 (defn get-developer-logs
-  "GET /v1/developer_logs
+  "POST /v1/developer_logs
    Get developer logs for REST API and MCP server requests in an organization.
    Requires org admin scope."
-  [token & {:keys [after before start-time end-time limit cursor]}]
-  (http/get "/v1/developer_logs" token
-            :params {:after after
-                     :before before
-                     :start_time start-time
-                     :end_time end-time
-                     :limit limit
-                     :cursor cursor}))
+  [token & {:keys [token-type token-value token-name user-email ip-address event-source date-range limit cursor]}]
+  (http/post "/v1/developer_logs" token
+             :body {:token_type token-type
+                    :token token-value
+                    :token_name token-name
+                    :user_email user-email
+                    :ip_address ip-address
+                    :event_source event-source
+                    :date_range date-range
+                    :limit limit
+                    :cursor cursor}))

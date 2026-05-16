@@ -1,7 +1,7 @@
 (ns fighorse.utils.http
   "Unified HTTP client for Figma REST API.
    All requests return Promise<clj-map>.
-   Supports GET, POST, DELETE with automatic JSON handling."
+   Supports common REST verbs with automatic JSON handling."
   (:refer-clojure :exclude [get])
   (:require [clojure.string :as str]
             [fighorse.utils.url :as url]))
@@ -37,7 +37,7 @@
 
 (defn request
   "Make an HTTP request to the Figma API.
-   - method: :get, :post, :delete
+   - method: :get, :post, :put, :patch, :delete
    - path: API path (e.g. '/v1/files/abc')
    - token: Figma Personal Access Token
    - opts: optional map with :params (query params) and :body (request body)"
@@ -45,6 +45,8 @@
   (let [url (url/build-url (str base-url path) params)
         opts (cond-> {:headers (auth-headers token)}
                (= method :post) (assoc :method "POST")
+               (= method :put) (assoc :method "PUT")
+               (= method :patch) (assoc :method "PATCH")
                (= method :delete) (assoc :method "DELETE")
                body (assoc :body (js/JSON.stringify (clj->js body))))]
     (-> (js/fetch url (clj->js opts))
@@ -59,6 +61,12 @@
 
 (defn post [path token & {:keys [params body]}]
   (request :post path token :params params :body body))
+
+(defn put [path token & {:keys [params body]}]
+  (request :put path token :params params :body body))
+
+(defn patch [path token & {:keys [params body]}]
+  (request :patch path token :params params :body body))
 
 (defn delete [path token & {:keys [params]}]
   (request :delete path token :params params))

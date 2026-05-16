@@ -25,10 +25,10 @@ The CLI is the primary product boundary. MCP exposes the same capabilities to AI
 
 ```text
 Figma REST API
-  -> API modules
-  -> compact/filter/tokens/assets/design-package
+  -> API modules + OpenAPI operation registry
+  -> product layer: compact/filter/tokens/assets/design-package/visual-audit/playbook
   -> CLI output, files, manifests
-  -> MCP tools, AI clients, scripts, CI
+  -> MCP tools/resources/prompts, AI clients, scripts, CI
 ```
 
 This keeps the system:
@@ -42,19 +42,31 @@ This keeps the system:
 
 ```text
 L4 Adapters
-  mcp serve, install client, install service, generated skills/rules
+  mcp serve, resources/prompts, install client, install service, generated skills/rules
 
 L3 Generated Context
-  design package, markdown, tokens, tree, schema, manifests
+  design package, visual audit, project playbook, markdown, tokens, tree, schema, manifests
 
 L2 Transformations
-  compact, filter, diff, diagnostics, experience matching
+  compact, filter, diff, diagnostics, experience matching, API coverage reports
 
 L1 Figma API and Assets
-  files, nodes, images, comments, components, styles, variables, webhooks, downloads
+  OpenAPI registry, operation dispatcher, files, nodes, images, comments, components, styles, variables, webhooks, downloads
 ```
 
 L2 and L3 are the main differentiators. fighorse does not merely wrap REST endpoints; it reshapes Figma data into the form an AI agent can use without drowning in noise.
+
+## Full REST Coverage
+
+fighorse maintains an explicit OpenAPI operation registry for the public Figma REST snapshot. The registry currently tracks 48 operations and is used by:
+
+- API wrappers in `src/fighorse/api`.
+- Generic CLI dispatch: `fighorse figma api <operationId> --params '{...}'`.
+- Generated official MCP tools: `figma_<operation_id_in_snake_case>`.
+- Discovery and coverage reports: `fighorse figma-api coverage`.
+- Contract tests that prevent missing or drifted endpoints.
+
+The generic official layer is separate from product tools. Low-level REST tools preserve Figma semantics; product tools such as `get_design_package`, `visual_audit`, and `get_project_playbook` add AI workflow guidance on top.
 
 ## Design Package
 
@@ -65,8 +77,10 @@ L2 and L3 are the main differentiators. fighorse does not merely wrap REST endpo
 - Tokens and implementation hints.
 - Figma render references and optional asset URLs.
 - Platform and asset-format assumptions.
+- Screen and component candidates.
 - Export plan with CLI examples and MCP calls.
 - Local learned experiences.
+- Token confidence, missing-font diagnostics, and implementation risk checklist.
 - Diagnostics and next-step warnings.
 
 The package is designed to be both machine-readable and easy to inspect. It should tell an AI not only what to implement, but also what is missing before implementation is safe.
@@ -80,6 +94,8 @@ Important diagnostics include:
 - Context truncation due to token budget.
 - Missing screenshots, tokens, or image fills.
 
+`visual_audit` and `project playbook` extend the package into a full feedback loop. `visual_audit` turns a Figma URL plus optional app screenshot into a structured comparison checklist and experience suggestions. `project playbook` combines the AI contract, output policy, API coverage, and local lessons into reusable project instructions.
+
 ## Self-Discovery Contract
 
 AI clients should not rely on stale prompt text. They should call:
@@ -90,12 +106,14 @@ AI clients should not rely on stale prompt text. They should call:
 The discovery manifest describes:
 
 - Available CLI and MCP capabilities.
+- REST coverage and official MCP comparison.
 - Recommended design replication workflow.
 - Safety defaults.
 - Local write requirements.
 - Experience-store behavior.
 - Current AI contract.
 - Installation and client configuration hints.
+- MCP resources and prompts for clients that support them.
 
 `doctor` complements discovery with runtime state: Bun/runtime information, auth status, home directory, MCP mode, local-write mode, and experience-store readiness.
 
@@ -160,6 +178,8 @@ Framelink-style MCP is descriptive and lightweight. It gives AI layout and style
 
 fighorse defaults to the descriptive path: facts over generated code. It can still expose richer Figma metadata and write-capable endpoints when explicitly enabled, but the main workflow is "precise context in, project-native implementation out."
 
+Official-only product surfaces that are not in the public REST OpenAPI are marked as unsupported by public REST rather than silently approximated. Examples include native canvas mutation, Code to Canvas, automatic Code Connect mapping discovery, Make resources, and FigJam generation. fighorse may offer open alternatives such as user-maintained component maps or generic resource ingestion, but it should not pretend to implement private Figma product APIs.
+
 ## Data Fidelity
 
 Figma REST API data is generally specification-faithful for implementation facts:
@@ -202,7 +222,7 @@ The durable product boundary is the context and asset pipeline: fetch, compact, 
 
 The project should remain verifiable without a real Figma token:
 
-- Unit tests cover argument parsing, compacting, URL parsing, path validation, MCP tool routing, discovery manifest, install output, design-package diagnostics, and stdio framing limits.
+- Unit tests cover argument parsing, compacting, URL parsing, path validation, OpenAPI coverage, operation dispatch, MCP tool/resource routing, discovery manifest, install output, design-package diagnostics, and stdio framing limits.
 - Integration tests that touch the real Figma API are opt-in.
 - Docs and generated install artifacts must reflect current CLI behavior.
 

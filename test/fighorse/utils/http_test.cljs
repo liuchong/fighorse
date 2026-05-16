@@ -45,6 +45,25 @@
                         (set! js/fetch original-fetch)
                         (done))))))))
 
+(deftest put-json-options-test
+  (testing "PUT requests are supported for current Figma REST operations"
+    (async done
+      (let [original-fetch js/fetch
+            captured (atom nil)]
+        (set! js/fetch (fn [url opts]
+                         (reset! captured {:url url :opts opts})
+                         (js/Promise.resolve (response true 200 "{\"ok\":true}"))))
+        (-> (http/put "/v1/test" "token" :body {:a 1})
+            (.then (fn [body]
+                     (is (= {:ok true} body))
+                     (is (= "PUT" (.-method (:opts @captured))))
+                     (is (= "{\"a\":1}" (.-body (:opts @captured))))))
+            (.catch (fn [err]
+                      (is false (str err))))
+            (.finally (fn []
+                        (set! js/fetch original-fetch)
+                        (done))))))))
+
 (deftest error-response-test
   (testing "non-2xx responses reject with status and parsed body"
     (async done

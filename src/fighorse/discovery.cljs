@@ -1,6 +1,7 @@
 (ns fighorse.discovery
   "Self-description payloads for AI tools and MCP clients."
   (:require [clojure.string :as str]
+            [fighorse.api.coverage :as api-coverage]
             [fighorse.config :as config]
             [fighorse.experience :as experience]
             [fighorse.guidance :as guidance]))
@@ -36,12 +37,22 @@
    :output_contracts
    {:design_package
     {:kind "fighorse.design-package.v1"
-     :contains ["source" "file" "target" "implementation_target" "fidelity_workflow" "asset_export_plan" "learned_experience" "context" "tokens" "screenshots" "assets" "implementation_hints"]
+     :contains ["source" "file" "target" "implementation_target" "screen_candidates" "component_candidates" "fidelity_workflow" "asset_export_plan" "learned_experience" "context" "tokens" "token_confidence" "missing_font_diagnostics" "screenshots" "assets" "implementation_risk_checklist" "implementation_hints"]
      :best_for "AI design replication and implementation planning"}
     :experience_record
     {:kind experience/record-kind
      :schema_version experience/schema-version
      :best_for "Persisting reusable lessons from real Figma replication, screenshot comparison, asset export, and platform debugging."}}
+   :api_coverage (api-coverage/coverage-report)
+   :official_mcp_comparison
+   {:official_strengths ["Native Figma canvas writes through official MCP product APIs."
+                         "Code Connect-aware context and code generation inside Figma's product surface."
+                         "Make resources, FigJam generation, and hosted Remote MCP ergonomics."]
+    :fighorse_strengths ["MIT self-hosted CLI-first pipeline."
+                         "Full public REST coverage with transparent operation registry."
+                         "AI self-discovery, local experience learning, asset manifests, and reproducible visual feedback loops."
+                         "Separate Figma write and local filesystem write safety controls."]
+    :unsupported_by_public_rest api-coverage/official-mcp-only-capabilities}
    :experience_loop
    {:store_path (experience/experience-path)
     :store (experience/store-info)
@@ -81,6 +92,9 @@
      :action "Run the implementation, capture screenshots, compare, and fix overlap/clipping/typography before finalizing."
      :reason "Real app screenshots catch container stacking, system chrome, compact typography, and localization issues."}
     {:step 10
+     :tool "visual_audit"
+     :reason "After implementation screenshots exist, structure fidelity checks and reusable experience suggestions."}
+    {:step 11
      :tool "record_experience"
      :reason "Persist reusable lessons so the next AI client can self-learn from this run without a long prompt."}]
    :mcp
@@ -101,7 +115,9 @@
     :write_mode "Set FIGHORSE_MCP_MODE=write only when the AI client is allowed to mutate Figma resources."
     :self_discovery_tools ["discover_fighorse" "check_fighorse_ready" "parse_figma_url" "get_replicate_workflow" "get_experience_schema" "list_experiences"]
     :learning_tools ["get_experience_schema" "list_experiences" "record_experience"]
-    :replication_tools ["get_design_package" "get_design_context" "get_screenshot" "export_images" "export_component" "download_image_fills" "get_tokens"]}
+    :replication_tools ["get_design_package" "get_design_context" "get_screenshot" "export_images" "export_component" "download_image_fills" "get_tokens" "visual_audit" "get_project_playbook"]
+    :resources ["fighorse://capabilities" "fighorse://coverage" "fighorse://workflow/design-replication" "fighorse://experience/summary"]
+    :prompts ["fighorse_design_replication" "fighorse_api_coverage"]}
    :cli
    {:self_discovery_commands
     ["fighorse discover --format json"

@@ -121,6 +121,83 @@
       {:tool "download_image_fills"
        :when "Need original raster image fills from the Figma file."}]}))
 
+(defn- node-bounds [node]
+  (or (:absoluteBoundingBox node)
+      (:absoluteRenderBounds node)
+      (:size node)))
+
+(defn- all-nodes [node]
+  (tree-seq #(seq (:children %)) :children node))
+
+(defn- screen-candidates [target]
+  (->> (all-nodes target)
+       (filter #(contains? #{"FRAME" "COMPONENT" "INSTANCE" "SECTION"} (:type %)))
+       (map (fn [node]
+              (let [bounds (node-bounds node)]
+                {:id (:id node)
+                 :name (:name node)
+                 :type (:type node)
+                 :width (:width bounds)
+                 :height (:height bounds)
+                 :renderable (boolean (:id node))
+                 :reason (if (and (:width bounds) (:height bounds)
+                                  (> (:width bounds) 200)
+                                  (> (:height bounds) 200))
+                           "large candidate frame/component"
+                           "structural candidate")})))
+       (remove #(str/blank? (:id %)))
+       (take 20)
+       vec))
+
+(defn- component-candidates [target]
+  (->> (all-nodes target)
+       (filter #(contains? #{"COMPONENT" "COMPONENT_SET" "INSTANCE"} (:type %)))
+       (map (fn [node]
+              {:id (:id node)
+               :name (:name node)
+               :type (:type node)
+               :component_id (:componentId node)
+               :component_set_id (:componentSetId node)
+               :bounds (node-bounds node)}))
+       (take 30)
+       vec))
+
+(defn- missing-font-diagnostics [target]
+  (let [text-nodes (filter #(= "TEXT" (:type %)) (all-nodes target))
+        missing (->> text-nodes
+                     (filter #(str/blank? (get-in % [:style :fontFamily])))
+                     (map #(select-keys % [:id :name :type]))
+                     (take 20)
+                     vec)]
+    {:checked_text_nodes (count text-nodes)
+     :missing_font_family_count (count missing)
+     :examples missing
+     :ai_guidance (if (seq missing)
+                    "Some text nodes do not expose fontFamily in the compact package. Inspect raw node details or ask the developer about font availability before approximating typography."
+                    "Font family metadata is present for inspected text nodes.")}))
+
+(defn- token-confidence [grouped-tokens]
+  (let [counts (token-counts grouped-tokens)
+        total (reduce + 0 (vals counts))]
+    {:status (cond
+               (zero? total) "missing"
+               (< total 4) "low"
+               :else "usable")
+     :counts counts
+     :ai_guidance "Use token values when present, but verify typography and raster assets against screenshots."}))
+
+(defn- implementation-risk-checklist [target platform asset-format]
+  (cond-> ["Check selected target scope before coding; CANVAS or flow nodes should be narrowed to frames."
+           "Check screenshot fidelity after implementation, not only structured JSON."
+           "Check repeated siblings, compact cards, and list rows for overlap or wrong layout primitives."
+           "Check asset export manifest before referencing local files."]
+    (str/blank? (some-> platform str str/trim))
+    (conj "Target platform is unspecified; ask before choosing framework, density, or native controls.")
+    (str/blank? (some-> asset-format str str/trim))
+    (conj "Asset format is unspecified; ask before exporting final slices.")
+    (= "CANVAS" (:type target))
+    (conj "Current target is a CANVAS/page; use screen_candidates to pick exact frames.")))
+
 (defn- implementation-hints [platform asset-format]
   {:intent "Use this package to recreate the selected Figma design in code."
    :priority_order ["screenshots" "learned_experience" "tokens" "context" "assets" "file metadata"]
@@ -194,12 +271,17 @@
      :file (file-summary data)
      :target (figma/node-summary target)
      :implementation_target (implementation-target platform asset-format)
+     :screen_candidates (screen-candidates target)
+     :component_candidates (component-candidates target)
      :ai_contract (guidance/ai-contract)
      :fidelity_workflow (fidelity-workflow platform asset-format)
      :asset_export_plan (asset-export-plan (:file_key source) (:node_id source) platform asset-format)
      :learned_experience learned
      :context compacted
      :tokens grouped-tokens
+     :token_confidence (token-confidence grouped-tokens)
+     :missing_font_diagnostics (missing-font-diagnostics target)
+     :implementation_risk_checklist (implementation-risk-checklist target platform asset-format)
      :diagnostics (assoc (diagnostics target compacted grouped-tokens screenshots assets platform asset-format)
                          :experience {:store_path (get-in learned [:summary :store_path])
                                       :schema_version experience/schema-version

@@ -3,6 +3,7 @@
    Maps all Figma API endpoints + AI enhancements to MCP tools."
   (:require [clojure.string :as str]
             [fighorse.config :as config]
+            [fighorse.api.operations :as operations]
             [fighorse.api.files :as files-api]
             [fighorse.api.projects :as projects-api]
             [fighorse.api.users :as users-api]
@@ -23,6 +24,10 @@
             [fighorse.experience :as experience]
             [fighorse.export.images :as img-export]
             [fighorse.figma :as figma]
+            [fighorse.mcp.policy :as policy]
+            [fighorse.mcp.registry :as registry]
+            [fighorse.product.playbook :as playbook]
+            [fighorse.product.visual-audit :as visual-audit]
             [fighorse.tokens :as tokens]
             [fighorse.utils.url :as figma-url]))
 
@@ -254,6 +259,22 @@
                                :platform {:type "string" :description "Target platform/framework, e.g. android-compose, ios-swiftui, web-react, flutter. Ask the developer if unknown."}
                                :asset_format {:type "string" :description "Preferred export format for local slices/assets, e.g. png, svg, jpg, pdf, webp."}}
                   :required []}}
+   {:name "visual_audit"
+    :description "Build a structured visual audit checklist for a Figma URL and optional implementation screenshot."
+    :inputSchema {:type "object"
+                  :properties {:figma_url {:type "string"}
+                               :screenshot_path {:type "string"}
+                               :platform {:type "string"}
+                               :asset_format {:type "string"}
+                               :notes {:type "string"}}
+                  :required []}}
+   {:name "get_project_playbook"
+    :description "Return a project-level fighorse implementation playbook assembled from guidance, API coverage, and local experience."
+    :inputSchema {:type "object"
+                  :properties {:platform {:type "string"}
+                               :asset_format {:type "string"}
+                               :project_dir {:type "string"}}
+                  :required []}}
    {:name "get_design_context"
     :description "Get compact AI-oriented design context for a Figma file."
     :inputSchema {:type "object"
@@ -316,13 +337,15 @@
    {:name "get_team_component_sets" :description "Get published component sets in a team." :inputSchema {:type "object" :properties {:team_id {:type "string"} :page_size {:type "number"}} :required ["team_id"]}}
    {:name "get_component_set" :description "Get a component set by key." :inputSchema {:type "object" :properties {:component_set_key {:type "string"}} :required ["component_set_key"]}}
    {:name "get_webhook" :description "Get a webhook by ID." :inputSchema {:type "object" :properties {:webhook_id {:type "string"}} :required ["webhook_id"]}}
+   {:name "get_team_webhooks" :description "Get webhooks for a team. Deprecated by Figma but kept for REST parity." :inputSchema {:type "object" :properties {:team_id {:type "string"}} :required ["team_id"]}}
+   {:name "get_webhook_requests" :description "Get recent requests for a webhook." :inputSchema {:type "object" :properties {:webhook_id {:type "string"} :cursor {:type "string"}} :required ["webhook_id"]}}
    {:name "get_activity_logs" :description "Get organization activity logs." :inputSchema {:type "object" :properties {:limit {:type "number"} :cursor {:type "string"}} :required []}}
    {:name "get_developer_logs" :description "Get organization developer logs." :inputSchema {:type "object" :properties {:limit {:type "number"} :cursor {:type "string"}} :required []}}
-   {:name "get_payments" :description "Get payments." :inputSchema {:type "object" :properties {:resource_type {:type "string"} :resource_id {:type "string"} :plugin_id {:type "string"}} :required []}}
-   {:name "get_payment" :description "Get payment by resource." :inputSchema {:type "object" :properties {:resource_type {:type "string"} :resource_id {:type "string"}} :required ["resource_type" "resource_id"]}}
+   {:name "get_payments" :description "Get payments." :inputSchema {:type "object" :properties {:plugin_payment_token {:type "string"} :user_id {:type "string"} :community_file_id {:type "string"} :plugin_id {:type "string"} :widget_id {:type "string"}} :required []}}
    {:name "get_oembed" :description "Get Figma oEmbed data." :inputSchema {:type "object" :properties {:url {:type "string"} :max_width {:type "number"} :max_height {:type "number"}} :required ["url"]}}
    {:name "get_library_analytics_component_usages" :description "Get component usage analytics." :inputSchema {:type "object" :properties {:file_key {:type "string"}} :required ["file_key"]}}
    {:name "get_library_analytics_component_actions" :description "Get component action analytics." :inputSchema {:type "object" :properties {:file_key {:type "string"}} :required ["file_key"]}}
+   {:name "get_library_analytics_style_actions" :description "Get style action analytics." :inputSchema {:type "object" :properties {:file_key {:type "string"} :group_by {:type "string"}} :required ["file_key"]}}
    {:name "get_library_analytics_style_usages" :description "Get style usage analytics." :inputSchema {:type "object" :properties {:file_key {:type "string"}} :required ["file_key"]}}
    {:name "get_library_analytics_variable_usages" :description "Get variable usage analytics." :inputSchema {:type "object" :properties {:file_key {:type "string"}} :required ["file_key"]}}
    {:name "get_library_analytics_variable_actions" :description "Get variable action analytics." :inputSchema {:type "object" :properties {:file_key {:type "string"}} :required ["file_key"]}}])
@@ -338,11 +361,13 @@
    {:name "delete_comment" :description "WRITE MODE ONLY. Delete a Figma comment." :inputSchema {:type "object" :properties {:file_key {:type "string"} :comment_id {:type "string"}} :required ["file_key" "comment_id"]}}
    {:name "post_comment_reaction" :description "WRITE MODE ONLY. Add a reaction to a comment." :inputSchema {:type "object" :properties {:file_key {:type "string"} :comment_id {:type "string"} :emoji {:type "string"}} :required ["file_key" "comment_id" "emoji"]}}
    {:name "delete_comment_reaction" :description "WRITE MODE ONLY. Delete a reaction from a comment." :inputSchema {:type "object" :properties {:file_key {:type "string"} :comment_id {:type "string"} :emoji {:type "string"}} :required ["file_key" "comment_id" "emoji"]}}
-   {:name "create_dev_resource" :description "WRITE MODE ONLY. Create a dev resource link." :inputSchema {:type "object" :properties {:file_key {:type "string"} :name {:type "string"} :url {:type "string"} :node_id {:type "string"}} :required ["file_key" "name" "url" "node_id"]}}
+   {:name "post_variables" :description "WRITE MODE ONLY. Bulk create, update, and delete variables." :inputSchema {:type "object" :properties {:file_key {:type "string"} :changes {:type "object"}} :required ["file_key" "changes"]}}
+   {:name "post_dev_resources" :description "WRITE MODE ONLY. Bulk create dev resources." :inputSchema {:type "object" :properties {:dev_resources {:type "array" :items {:type "object"}}} :required ["dev_resources"]}}
+   {:name "put_dev_resources" :description "WRITE MODE ONLY. Bulk update dev resources." :inputSchema {:type "object" :properties {:dev_resources {:type "array" :items {:type "object"}}} :required ["dev_resources"]}}
+   {:name "create_dev_resource" :description "WRITE MODE ONLY. Create a single dev resource link through the official bulk API." :inputSchema {:type "object" :properties {:file_key {:type "string"} :name {:type "string"} :url {:type "string"} :node_id {:type "string"}} :required ["file_key" "name" "url" "node_id"]}}
    {:name "delete_dev_resource" :description "WRITE MODE ONLY. Delete a dev resource link." :inputSchema {:type "object" :properties {:file_key {:type "string"} :dev_resource_id {:type "string"}} :required ["file_key" "dev_resource_id"]}}
-   {:name "post_local_variables" :description "WRITE MODE ONLY. Create or update local variables." :inputSchema {:type "object" :properties {:file_key {:type "string"} :variable_collection_changes {:type "object"}} :required ["file_key" "variable_collection_changes"]}}
-   {:name "post_published_variables" :description "WRITE MODE ONLY. Publish variables from a file." :inputSchema {:type "object" :properties {:file_key {:type "string"} :variable_collection_changes {:type "object"}} :required ["file_key" "variable_collection_changes"]}}
    {:name "create_webhook" :description "WRITE MODE ONLY. Create a webhook." :inputSchema {:type "object" :properties {:event_type {:type "string"} :team_id {:type "string"} :endpoint {:type "string"} :passcode {:type "string"} :description {:type "string"} :status {:type "string"}} :required ["event_type" "team_id" "endpoint"]}}
+   {:name "update_webhook" :description "WRITE MODE ONLY. Update a webhook." :inputSchema {:type "object" :properties {:webhook_id {:type "string"} :webhook {:type "object"}} :required ["webhook_id" "webhook"]}}
    {:name "delete_webhook" :description "WRITE MODE ONLY. Delete a webhook." :inputSchema {:type "object" :properties {:webhook_id {:type "string"}} :required ["webhook_id"]}}])
 
 ;; --- Tool handlers ---
@@ -359,9 +384,6 @@
 
 (def ^:private write-tool-names
   (delay (set (map :name write-tools))))
-
-(def ^:private local-write-tool-names
-  (delay #{"export_images" "export_component" "download_image_fills"}))
 
 (defn- get-token []
   (:token (config/load-config)))
@@ -423,6 +445,20 @@
                                       :scale (:scale args)
                                       :platform (:platform args)
                                       :asset-format (:asset_format args))))
+
+(defmethod handle-tool "visual_audit" [_ args]
+  (js/Promise.resolve
+   (success (->json (visual-audit/audit :figma-url (:figma_url args)
+                                        :screenshot-path (:screenshot_path args)
+                                        :platform (:platform args)
+                                        :asset-format (:asset_format args)
+                                        :notes (:notes args))))))
+
+(defmethod handle-tool "get_project_playbook" [_ args]
+  (js/Promise.resolve
+   (success (->json (playbook/build :platform (:platform args)
+                                    :asset-format (:asset_format args)
+                                    :project-dir (:project_dir args))))))
 
 ;; --- Files ---
 (defmethod handle-tool "get_file" [_ args]
@@ -608,17 +644,22 @@
 (defmethod handle-tool "get_published_variables" [_ args]
   (handle-promise (variables-api/get-published-variables (get-token) (:file_key args))))
 
-(defmethod handle-tool "post_local_variables" [_ args]
+(defmethod handle-tool "post_variables" [_ args]
   (handle-promise
-   (variables-api/post-local-variables (get-token) (:file_key args) (:variable_collection_changes args))))
-
-(defmethod handle-tool "post_published_variables" [_ args]
-  (handle-promise
-   (variables-api/post-published-variables (get-token) (:file_key args) (:variable_collection_changes args))))
+   (variables-api/post-variables (get-token) (:file_key args) (:changes args))))
 
 ;; --- Dev Resources ---
 (defmethod handle-tool "get_dev_resources" [_ args]
-  (handle-promise (dev-resources-api/get-dev-resources (get-token) (:file_key args))))
+  (handle-promise (dev-resources-api/get-dev-resources (get-token) (:file_key args)
+                                                       :node-ids (:node_ids args))))
+
+(defmethod handle-tool "post_dev_resources" [_ args]
+  (handle-promise
+   (dev-resources-api/post-dev-resources (get-token) (:dev_resources args))))
+
+(defmethod handle-tool "put_dev_resources" [_ args]
+  (handle-promise
+   (dev-resources-api/put-dev-resources (get-token) (:dev_resources args))))
 
 (defmethod handle-tool "create_dev_resource" [_ args]
   (handle-promise
@@ -635,6 +676,13 @@
 (defmethod handle-tool "get_webhook" [_ args]
   (handle-promise (webhooks-api/get-webhook (get-token) (:webhook_id args))))
 
+(defmethod handle-tool "get_team_webhooks" [_ args]
+  (handle-promise (webhooks-api/get-team-webhooks (get-token) (:team_id args))))
+
+(defmethod handle-tool "get_webhook_requests" [_ args]
+  (handle-promise (webhooks-api/get-webhook-requests (get-token) (:webhook_id args)
+                                                     :cursor (:cursor args))))
+
 (defmethod handle-tool "create_webhook" [_ args]
   (handle-promise
    (webhooks-api/create-webhook (get-token) (:event_type args) (:team_id args) (:endpoint args)
@@ -642,28 +690,43 @@
                                 :description (:description args)
                                 :status (:status args))))
 
+(defmethod handle-tool "update_webhook" [_ args]
+  (handle-promise (webhooks-api/update-webhook (get-token) (:webhook_id args) (:webhook args))))
+
 (defmethod handle-tool "delete_webhook" [_ args]
   (handle-promise (webhooks-api/delete-webhook (get-token) (:webhook_id args))))
 
 ;; --- Admin / Analytics / Payments / oEmbed ---
 (defmethod handle-tool "get_activity_logs" [_ args]
   (handle-promise
-   (activity-logs-api/get-activity-logs (get-token) :limit (:limit args) :cursor (:cursor args))))
+   (activity-logs-api/get-activity-logs (get-token)
+                                        :start-time (:start_time args)
+                                        :end-time (:end_time args)
+                                        :events (:events args)
+                                        :limit (:limit args)
+                                        :order (:order args))))
 
 (defmethod handle-tool "get_developer_logs" [_ args]
   (handle-promise
-   (developer-logs-api/get-developer-logs (get-token) :limit (:limit args) :cursor (:cursor args))))
+   (developer-logs-api/get-developer-logs (get-token)
+                                          :token-type (:token_type args)
+                                          :token-value (:token args)
+                                          :token-name (:token_name args)
+                                          :user-email (:user_email args)
+                                          :ip-address (:ip_address args)
+                                          :event-source (:event_source args)
+                                          :date-range (:date_range args)
+                                          :limit (:limit args)
+                                          :cursor (:cursor args))))
 
 (defmethod handle-tool "get_payments" [_ args]
   (handle-promise
    (payments-api/get-payments (get-token)
-                              :resource-type (:resource_type args)
-                              :resource-id (:resource_id args)
-                              :plugin-id (:plugin_id args))))
-
-(defmethod handle-tool "get_payment" [_ args]
-  (handle-promise
-   (payments-api/get-payment (get-token) (:resource_type args) (:resource_id args))))
+                              :plugin-payment-token (:plugin_payment_token args)
+                              :user-id (:user_id args)
+                              :community-file-id (:community_file_id args)
+                              :plugin-id (:plugin_id args)
+                              :widget-id (:widget_id args))))
 
 (defmethod handle-tool "get_oembed" [_ args]
   (handle-promise
@@ -680,6 +743,11 @@
 (defmethod handle-tool "get_library_analytics_style_usages" [_ args]
   (handle-promise (analytics-api/get-library-analytics-style-usages (get-token) (:file_key args))))
 
+(defmethod handle-tool "get_library_analytics_style_actions" [_ args]
+  (handle-promise
+   (analytics-api/get-library-analytics-style-actions (get-token) (:file_key args)
+                                                     :group-by (:group_by args))))
+
 (defmethod handle-tool "get_library_analytics_variable_usages" [_ args]
   (handle-promise (analytics-api/get-library-analytics-variable-usages (get-token) (:file_key args))))
 
@@ -695,7 +763,12 @@
 (defn list-tools
   "Return all registered tool definitions for tools/list."
   []
-  (let [tools (concat all-tools extra-tools
+  (let [official-tools (if (config/mcp-write-enabled?)
+                         (registry/official-tools)
+                         (remove #(registry/write-tool-name? (:name %))
+                                 (registry/official-tools)))
+        tools (concat all-tools extra-tools
+                      official-tools
                       (when (config/mcp-write-enabled?)
                         write-tools))]
     (clj->js {:tools (mapv #(select-keys % [:name :description :inputSchema])
@@ -706,12 +779,16 @@
   [^js request]
   (let [name (.-name (.-params request))
         args (js->clj (.-arguments (.-params request)) :keywordize-keys true)]
-    (if (and (@write-tool-names name)
-             (not (config/mcp-write-enabled?)))
-      (js/Promise.resolve
-       (error (str "Tool " name " is disabled in readonly mode. Set FIGHORSE_MCP_MODE=write to enable write tools.")))
-      (if (and (@local-write-tool-names name)
-               (not (config/mcp-local-write-enabled?)))
-        (js/Promise.resolve
-         (error (str "Tool " name " writes local files and requires FIGHORSE_MCP_LOCAL_WRITE=allow. Allowed output roots are ./.fighorse/exports, ./assets/fighorse, and ~/.fighorse/exports.")))
+    (if-let [msg (policy/violation @write-tool-names name)]
+      (js/Promise.resolve (error msg))
+      (if (registry/official-tool-name? name)
+        (let [operation-id (registry/operation-id-for-tool name)
+              params (or (:params args) {})
+              body (:body args)]
+          (handle-promise
+           (-> (operations/call-operation (get-token) operation-id params body)
+               (.then (fn [data]
+                        (if (:ai_guidance args)
+                          (operations/result-envelope operation-id data)
+                          data))))))
         (handle-tool name args)))))

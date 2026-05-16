@@ -7,12 +7,10 @@
   "GET /v1/activity_logs
    Get activity logs as an organization admin.
    Requires org admin scope."
-  [token & {:keys [after before start-time end-time events limit cursor]}]
+  [token & {:keys [start-time end-time events limit order]}]
   (http/get "/v1/activity_logs" token
-            :params {:after after
-                     :before before
-                     :start_time start-time
+            :params {:start_time start-time
                      :end_time end-time
                      :events events
                      :limit limit
-                     :cursor cursor}))
+                     :order order}))

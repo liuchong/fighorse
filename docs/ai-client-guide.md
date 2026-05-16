@@ -61,7 +61,7 @@ When connected to fighorse, do this before implementation:
 6. Call `get_design_package` with the Figma URL, platform, and asset format.
 7. Export required images/components/fills with `manifest: true` if local assets are needed.
 8. Implement the UI in the target codebase.
-9. Run the app, capture screenshots, compare against Figma references, and fix fidelity gaps.
+9. Run the app, capture screenshots, compare against Figma references, and call `visual_audit` for structured mismatch guidance.
 10. Call `record_experience` for reusable lessons discovered during debugging.
 
 Do not skip self-discovery. The manifest is part of the API contract and may evolve faster than hand-written client instructions.
@@ -87,6 +87,8 @@ Use these high-level tools first:
 - `get_design_package`: structured implementation package.
 - `list_experiences`: reusable local lessons.
 - `record_experience`: write back reusable lessons.
+- `visual_audit`: structure screenshot comparison, mismatch analysis, and experience suggestions.
+- `get_project_playbook`: assemble project-level implementation rules from guidance and local experience.
 
 Use these for assets:
 
@@ -103,6 +105,17 @@ Use lower-level Figma tools only when the design package is insufficient:
 - `get_image_fills`
 - `get_file_tokens`
 
+Use generated official REST tools when exact OpenAPI parity is needed. These tools are named `figma_<operation_id_in_snake_case>`, for example `figma_get_file`, `figma_get_developer_logs`, `figma_put_webhook`, and `figma_post_variables`. In readonly MCP mode, generated Figma write tools are hidden and blocked; set `FIGHORSE_MCP_MODE=write` only when the developer explicitly allows Figma mutations.
+
+Clients that support MCP resources and prompts can also read:
+
+- `fighorse://capabilities`
+- `fighorse://coverage`
+- `fighorse://workflow/design-replication`
+- `fighorse://experience/summary`
+- Prompt: `fighorse_design_replication`
+- Prompt: `fighorse_api_coverage`
+
 ## CLI Equivalents
 
 If MCP is unavailable, run the equivalent CLI commands:
@@ -116,6 +129,10 @@ fighorse design package "<figma-url>" --platform <platform> --asset-format <asse
 fighorse image export <file_key> --ids <node_ids> --dir ./.fighorse/exports --manifest
 fighorse component export <file_key> --ids <node_ids> --format <asset-format> --dir ./assets/fighorse --manifest
 fighorse asset download <file_key> --dir ./assets/fighorse --manifest
+fighorse visual audit "<figma-url>" --screenshot <app-screenshot-path> --platform <platform> --asset-format <asset-format>
+fighorse project playbook --platform <platform> --asset-format <asset-format>
+fighorse figma-api coverage --format json
+fighorse figma api getFile --params '{"file_key":"<file_key>","depth":1}'
 ```
 
 ## Local Write Policy
@@ -141,11 +158,14 @@ Treat `get_design_package` as the implementation source of truth. Important fiel
 
 - `implementation_target`: platform and asset-format assumptions plus warnings.
 - `target`: selected node identity, type, dimensions, and whether it is likely too broad.
+- `screen_candidates` and `component_candidates`: likely frames/components to inspect, narrow to, or export.
 - `context`: compact design data for implementation.
 - `tokens`: extracted colors, typography, spacing, and effects.
+- `token_confidence` and `missing_font_diagnostics`: quality signals for token/font reliability.
 - `screenshots`: render references returned by Figma.
 - `asset_export_plan`: exact next export commands and MCP calls.
 - `learned_experience`: lessons from previous runs.
+- `implementation_risk_checklist`: concrete risks to verify before finalizing.
 - `diagnostics`: readiness status and warnings.
 
 If `diagnostics.status` is not `ready`, follow the warnings before coding when possible. A CANVAS or user-flow target should usually be narrowed to a concrete mobile/web frame.
