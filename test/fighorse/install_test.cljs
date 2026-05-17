@@ -62,11 +62,12 @@
           (is (some #(str/ends-with? % "codex-config.toml") (:files client-result)))
           (is (.existsSync fs (.join path home "clients" "codex" "mcp.json")))
           (is (str/includes? (.readFileSync fs (.join path home "clients" "codex" "codex-config.toml") "utf8")
-                             "command = \"fighorse\""))
+                             "url = \"http://127.0.0.1:9449/mcp\""))
           (is (str/includes? (.readFileSync fs (.join path home "clients" "codex" "codex-config.toml") "utf8")
                              "startup_timeout_sec = 60"))
-          (is (str/includes? (.readFileSync fs (.join path home "clients" "codex" "codex-config.toml") "utf8")
-                             "FIGHORSE_MCP_LOCAL_WRITE = \"allow\""))
+          (is (= "http" (get-in (js->clj (js/JSON.parse (.readFileSync fs (.join path home "clients" "codex" "mcp.json") "utf8"))
+                                         :keywordize-keys true)
+                                [:mcpServers :fighorse :transport])))
           (is (= "kimi" (:client kimi-result)))
           (is (some #(str/ends-with? % "KIMI.md") (:files kimi-result)))
           (is (.existsSync fs (.join path home "clients" "kimi" "mcp.json")))
@@ -76,6 +77,7 @@
           (is (not (str/includes? (get-in (install/client-detection "cursor") [:skill_dir])
                                   "skills-cursor")))
           (is (= "systemd" (:service service-result)))
+          (is (= "http+sse" (:transport service-result)))
           (is (str/includes? (.readFileSync fs (:file service-result) "utf8")
                              "ExecStart=fighorse mcp serve --transport sse --host 127.0.0.1"))
           (is (.existsSync fs (.join path home "skills" "fighorse" "SKILL.md")))
@@ -126,3 +128,22 @@
             (is (= 2 (:total_count summary)))
             (is (= "Project lesson" (get-in summary [:records 0 :summary])))
             (is (= "Global lesson" (get-in summary [:records 1 :summary])))))))))
+
+(deftest cli-mode-install-does-not-configure-or-start-mcp-service
+  (testing "CLI-only install path avoids ports, service managers, and MCP clients"
+    (with-temp-env
+      (fn [_home _project]
+        (let [installed (install/install-all!)]
+          (is (= "cli" (:mode installed)))
+          (is (empty? (:clients installed)))
+          (is (empty? (:clients_result installed)))
+          (is (= "none" (get-in installed [:service :service])))
+          (is (= true (get-in installed [:service :skipped])))))))
+  (testing "long-running MCP service mode must be explicit"
+    (with-temp-env
+      (fn [_home _project]
+        (let [installed (install/install-all! :mode "service" :clients "cursor,codex")]
+          (is (= "service" (:mode installed)))
+          (is (= ["cursor" "codex"] (:clients installed)))
+          (is (= "http+sse" (get-in installed [:service :transport])))
+          (is (some? (get-in installed [:service :file]))))))))

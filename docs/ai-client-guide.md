@@ -16,38 +16,33 @@ fighorse install skill --clients cursor,codex,kimi --apply
 For generated configs without applying:
 
 ```bash
-fighorse mcp config --client cursor --transport stdio
-fighorse mcp config --client codex --transport stdio
-fighorse mcp config --client claude --transport sse
-fighorse mcp config --client opencode --transport stdio
+fighorse mcp config --client cursor --transport http
+fighorse mcp config --client codex --transport http
+fighorse mcp config --client kimi --transport http
+fighorse mcp config --client opencode --transport http
 ```
 
-Recommended stdio MCP config:
+Recommended installed MCP config:
 
 ```json
 {
   "mcpServers": {
     "fighorse": {
-      "command": "fighorse",
-      "args": ["mcp", "serve", "--transport", "stdio"],
-      "env": {
-        "FIGMA_MCP_MODE": "readonly",
-        "FIGHORSE_MCP_MODE": "readonly",
-        "FIGHORSE_MCP_LOCAL_WRITE": "allow"
-      }
+      "transport": "http",
+      "url": "http://127.0.0.1:9449/mcp"
     }
   }
 }
 ```
 
-Recommended SSE service:
+Recommended local service:
 
 ```bash
 FIGHORSE_MCP_MODE=readonly FIGHORSE_MCP_LOCAL_WRITE=allow \
   fighorse mcp serve --transport sse --host 127.0.0.1 --port 9449
 ```
 
-Connect to `http://127.0.0.1:9449/sse`.
+Connect to `http://127.0.0.1:9449/mcp` when the client supports Streamable HTTP. The legacy SSE endpoint remains available at `http://127.0.0.1:9449/sse`, and stdio remains an explicit compatibility mode. Installed clients should prefer the shared local service so the system has only one long-running `fighorse` MCP process.
 
 ## Mandatory Startup Flow
 

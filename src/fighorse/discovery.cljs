@@ -99,7 +99,9 @@
      :reason "Persist reusable lessons so the next AI client can self-learn from this run without a long prompt."}]
    :mcp
    {:transports
-    {:stdio {:command "fighorse"
+    {:http {:url "http://127.0.0.1:9449/mcp"
+            :requires "Run the installed local service once; clients should reuse it instead of spawning stdio processes."}
+     :stdio {:command "fighorse"
              :args ["mcp" "serve" "--transport" "stdio"]
              :env {:FIGHORSE_MCP_MODE "readonly"
                    :FIGHORSE_MCP_LOCAL_WRITE "allow"}}
@@ -129,7 +131,7 @@
      "fighorse experience summary --platform <target-platform> --asset-format <asset-format>"
      "fighorse experience add --summary <issue-pattern> --lesson <generalized-lesson> --platform <target-platform> --asset-format <asset-format>"
      "fighorse design package <figma-url> --platform <target-platform> --asset-format <asset-format> --max-tokens 8000"
-     "fighorse mcp config --client cursor --transport stdio"]
+     "fighorse mcp config --client cursor --transport http"]
     :install_commands
     ["fighorse install home"
      "fighorse install auth --apply"
@@ -234,7 +236,7 @@
 (defn mcp-config
   [& {:keys [client transport port command]
       :or {client "generic"
-           transport "stdio"
+           transport "http"
            port 9449
            command "fighorse"}}]
   (let [stdio {:command command
@@ -249,17 +251,26 @@
              :env {:FIGMA_TOKEN "<FIGMA_TOKEN>"
                    :FIGHORSE_HOME "~/.fighorse"
                    :FIGHORSE_MCP_MODE "readonly"
-                   :FIGHORSE_MCP_LOCAL_WRITE "allow"}}]
+                   :FIGHORSE_MCP_LOCAL_WRITE "allow"}}
+        http {:transport "http"
+              :url (str "http://127.0.0.1:" port "/mcp")}]
     {:kind "fighorse.mcp-config.v1"
      :client client
      :transport transport
      :recommended_tool_order ["discover_fighorse" "check_fighorse_ready" "list_experiences" "get_design_package" "record_experience"]
-     :config (if (= "sse" transport) sse stdio)
+     :config (case transport
+               "http" http
+               "sse" sse
+               stdio)
      :examples
-     {:cursor {:mcpServers {:fighorse (if (= "sse" transport)
-                                        {:url (:url sse)}
+     {:cursor {:mcpServers {:fighorse (case transport
+                                        "http" {:url (:url http)}
+                                        "sse" {:url (:url sse)}
                                         stdio)}}
-      :generic {:fighorse (if (= "sse" transport) sse stdio)}}}))
+      :generic {:fighorse (case transport
+                            "http" http
+                            "sse" sse
+                            stdio)}}}))
 
 (defn manifest->markdown [m]
   (str "# " (:name m) " " (:version m) "\n\n"

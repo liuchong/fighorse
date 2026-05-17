@@ -7,6 +7,8 @@
             [fighorse.utils.url :as url]))
 
 (def ^:private base-url "https://api.figma.com")
+(def ^:private default-timeout-ms 120000)
+(defonce ^:private active-controllers (atom #{}))
 
 (defn- auth-headers [token]
   (cond-> {"Content-Type" "application/json"}
@@ -35,6 +37,46 @@
                            {:status (.-status response)
                             :body body})))))))
 
+(defn request-timeout-ms []
+  (let [raw (.-FIGHORSE_HTTP_TIMEOUT_MS js/process.env)
+        parsed (when raw (js/parseInt raw 10))]
+    (if (and parsed (not (js/isNaN parsed)) (pos? parsed))
+      parsed
+      default-timeout-ms)))
+
+(defn abort-active-requests!
+  "Abort in-flight Figma HTTP requests. Used by one-shot CLI signal handling."
+  []
+  (doseq [controller @active-controllers]
+    (try
+      (.abort controller)
+      (catch :default _ nil)))
+  (reset! active-controllers #{})
+  nil)
+
+(defn fetch-with-timeout
+  "Fetch with the shared timeout/abort registry used by CLI and asset downloads."
+  [url opts]
+  (let [timeout-ms (request-timeout-ms)
+        AbortController (.-AbortController js/globalThis)
+        controller (when AbortController (new AbortController))
+        timeout-id (when controller
+                     (js/setTimeout (fn [] (.abort controller)) timeout-ms))
+        opts (cond-> (or opts {})
+               controller (assoc :signal (.-signal controller)))]
+    (when controller
+      (swap! active-controllers conj controller))
+    (-> (js/fetch url (clj->js opts))
+        (.catch (fn [err]
+                  (if (= "AbortError" (.-name err))
+                    (js/Promise.reject (js/Error. (str "Figma API request timed out after " timeout-ms "ms")))
+                    (js/Promise.reject err))))
+        (.finally (fn []
+                    (when controller
+                      (swap! active-controllers disj controller))
+                    (when timeout-id
+                      (js/clearTimeout timeout-id)))))))
+
 (defn request
   "Make an HTTP request to the Figma API.
    - method: :get, :post, :put, :patch, :delete
@@ -49,7 +91,7 @@
                (= method :patch) (assoc :method "PATCH")
                (= method :delete) (assoc :method "DELETE")
                body (assoc :body (js/JSON.stringify (clj->js body))))]
-    (-> (js/fetch url (clj->js opts))
+    (-> (fetch-with-timeout url opts)
         (.then handle-error)
         (.then parse-json-response))))
 

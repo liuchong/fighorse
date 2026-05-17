@@ -56,13 +56,15 @@ fighorse asset download <file_key> --dir ./assets/fighorse --manifest
 | Assets | `image export`, `component export`, `asset download`, `images render`, `images fills` |
 | Design System | `components`, `component-sets`, `styles`, `variables`, `tokens extract` |
 | Install | `install home`, `install auth`, `install binary`, `install client`, `install service`, `install skill`, `install all` |
-| MCP | `mcp serve --transport stdio`, `mcp serve --transport sse --host 127.0.0.1` |
+| MCP | `mcp serve --transport http`, `mcp serve --transport sse --host 127.0.0.1`, explicit `stdio` compatibility mode |
 
 ## Safety Defaults
 
 - Figma writes are disabled unless `FIGHORSE_MCP_MODE=write`.
 - MCP local file exports require `FIGHORSE_MCP_LOCAL_WRITE=allow`.
 - Export paths are limited to `./.fighorse/exports`, `./assets/fighorse`, and `~/.fighorse/exports`.
+- Installed AI clients default to the shared local HTTP MCP endpoint at `http://127.0.0.1:9449/mcp`; the MCP server uses a singleton lock to avoid duplicate long-running processes.
+- Normal CLI commands remain one-shot processes: they do not start the MCP service, bind ports, or use the MCP singleton lock. `fighorse install all` defaults to CLI-only setup; use `--mode service` or `install service --apply` only when you explicitly want a long-running MCP service.
 - AI clients must ask for the target platform and asset format when missing; PNG is only a render fallback, not a product decision.
 
 ## Development

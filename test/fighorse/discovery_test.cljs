@@ -10,6 +10,7 @@
       (is (= "figma_url" (get-in m [:input_contract :preferred])))
       (is (seq (:recommended_workflow m)))
       (is (= "readonly" (get-in m [:mcp :default_mode])))
+      (is (= "http://127.0.0.1:9449/mcp" (get-in m [:mcp :transports :http :url])))
       (is (= "allow" (get-in m [:mcp :transports :stdio :env :FIGHORSE_MCP_LOCAL_WRITE])))
       (is (contains? (set (get-in m [:mcp :local_write :allowed_roots]))
                      "./.fighorse/exports"))
@@ -41,13 +42,13 @@
       (is (contains? (set (get-in m [:output_contracts :design_package :contains]))
                      "fidelity_workflow")))))
 
-(deftest mcp-config-defaults-to-stdio
+(deftest mcp-config-defaults-to-http-service
   (testing "config is directly usable by MCP clients"
     (let [cfg (discovery/mcp-config :client "cursor")]
       (is (= "fighorse.mcp-config.v1" (:kind cfg)))
-      (is (= "stdio" (:transport cfg)))
+      (is (= "http" (:transport cfg)))
       (is (some #(= "list_experiences" %)
                 (:recommended_tool_order cfg)))
-      (is (= ["mcp" "serve" "--transport" "stdio"] (get-in cfg [:config :args])))
-      (is (= "readonly" (get-in cfg [:config :env :FIGHORSE_MCP_MODE])))
-      (is (= "allow" (get-in cfg [:config :env :FIGHORSE_MCP_LOCAL_WRITE]))))))
+      (is (= "http://127.0.0.1:9449/mcp" (get-in cfg [:config :url])))
+      (is (= "http://127.0.0.1:9449/mcp"
+             (get-in cfg [:examples :cursor :mcpServers :fighorse :url]))))))

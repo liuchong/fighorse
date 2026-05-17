@@ -26,12 +26,15 @@
             [fighorse.export.images :as img-export]
             [fighorse.tokens :as tokens]
             [fighorse.utils.url :as figma-url]
+            [fighorse.utils.http :as http-client]
             [fighorse.mcp.server :as mcp]
             [fighorse.product.playbook :as playbook]
             [fighorse.product.visual-audit :as visual-audit]))
 
 (def ^:private fs (js/require "fs"))
 (def ^:private path (js/require "path"))
+(defonce ^:private cli-exiting (atom false))
+(defonce ^:private cli-signal-handlers-installed (atom false))
 
 ;; --- Output ---
 
@@ -40,6 +43,30 @@
 
 (defn- eprintln [& parts]
   (.error js/console (str/join " " (map str parts))))
+
+(defn- explicit-cli-exit-enabled? []
+  (not= "0" (.-FIGHORSE_CLI_EXPLICIT_EXIT js/process.env)))
+
+(defn- finish-cli!
+  ([] (finish-cli! 0))
+  ([code]
+   (when (and (explicit-cli-exit-enabled?)
+              (compare-and-set! cli-exiting false true))
+     (js/setTimeout (fn [] (js/process.exit code)) 25))))
+
+(defn- fail-cli! [& parts]
+  (apply eprintln parts)
+  (http-client/abort-active-requests!)
+  (finish-cli! 1))
+
+(defn- install-cli-signal-handlers! []
+  (when (and (explicit-cli-exit-enabled?)
+             (compare-and-set! cli-signal-handlers-installed false true))
+    (doseq [signal ["SIGINT" "SIGTERM"]]
+      (.once js/process signal
+             (fn []
+               (http-client/abort-active-requests!)
+               (finish-cli! 130))))))
 
 ;; --- Arg parsing ---
 
@@ -130,15 +157,15 @@
   (-> p
       (.then (fn [data] (print-data data :output output)))
       (.catch (fn [err]
-                (eprintln "Error:" (or (.-message err) (str err)))
-                (js/process.exit 1)))))
+                (fail-cli! "Error:" (or (.-message err) (str err)))))))
 
 (defn- write-output! [content output]
   (if output
     (do
       (.mkdirSync fs (.dirname path output) #js {:recursive true})
       (.writeFileSync fs output content))
-    (println content)))
+    (println content))
+  (finish-cli!))
 
 (defn- print-data [data & {:keys [output]}]
   (write-output! (json-str data) output))
@@ -270,7 +297,7 @@
         port (optional-int (:port flags))]
     (print-data (install/install-client! :client (:client flags)
                                          :dir (:dir flags)
-                                         :transport (or (:transport flags) "stdio")
+                                         :transport (or (:transport flags) "http")
                                          :port (or port 9449)
                                          :command (or (:command flags) "fighorse")
                                          :home (:home flags)
@@ -302,12 +329,13 @@
 (defn cmd-install-all [args]
   (let [[flags _] (parse-flags args ["--client" "--clients" "--transport" "--port" "--command"
                                       "--home" "--project-dir" "--source" "--target" "--link-dir"
-                                      "--link-dirs" "--service" "--token" "--output"])
+                                      "--link-dirs" "--service" "--token" "--mode" "--output"])
         apply (boolean (flag-present? args "--apply"))
+        no-service (boolean (flag-present? args "--no-service"))
         port (optional-int (:port flags))]
     (print-data (install/install-all! :client (or (:client flags) "generic")
                                       :clients (:clients flags)
-                                      :transport (or (:transport flags) "stdio")
+                                      :transport (or (:transport flags) "http")
                                       :port (or port 9449)
                                       :command (or (:command flags) "fighorse")
                                       :home (:home flags)
@@ -318,6 +346,8 @@
                                       :link-dirs (:link_dirs flags)
                                       :service (or (:service flags) "auto")
                                       :token (:token flags)
+                                      :mode (:mode flags)
+                                      :no-service no-service
                                       :apply apply)
                 :output (:output flags))))
 
@@ -348,7 +378,7 @@
   (let [[flags _] (parse-flags args ["--client" "--transport" "--port" "--command" "--output"])
         port (or (optional-int (:port flags)) 9449)]
     (print-data (discovery/mcp-config :client (or (:client flags) "generic")
-                                      :transport (or (:transport flags) "stdio")
+                                      :transport (or (:transport flags) "http")
                                       :port port
                                       :command (or (:command flags) "fighorse"))
                 :output (:output flags))))
@@ -640,7 +670,8 @@
         (.then (fn [results]
                  (println "Exported images:")
                  (doseq [[id path] results]
-                   (println (str "  " id " -> " path)))))
+                   (println (str "  " id " -> " path)))
+                 (finish-cli!)))
         (.catch (fn [err]
                   (println "Error:" (or (.-message err) (str err)))
                   (js/process.exit 1))))))
@@ -665,7 +696,8 @@
         (.then (fn [results]
                  (println "Downloaded assets:")
                  (doseq [[id path] results]
-                   (println (str "  " id " -> " path)))))
+                   (println (str "  " id " -> " path)))
+                 (finish-cli!)))
         (.catch (fn [err]
                   (println "Error:" (or (.-message err) (str err)))
                   (js/process.exit 1))))))
@@ -945,7 +977,7 @@
   (println "  install client --client cursor|codex|kimi|claude|opencode|openclaw|hermes-agent [--apply]  Generate or apply client MCP setup")
   (println "  install service [--service launchd|systemd] [--apply]  Generate or apply auto-start MCP SSE service")
   (println "  install skill [--dir D] [--clients C] [--apply]  Generate or apply fighorse skill/agent files")
-  (println "  install all [--clients C] [--source P] [--apply]  Generate or apply home, binary, client, service, and skill setup")
+  (println "  install all [--mode cli|service|all] [--no-service] [--clients C] [--source P] [--apply]  Generate or apply setup; default mode is cli")
   (println "  install status                                Show install paths and detected state")
   (println "")
   (println "Auth:")
@@ -1021,7 +1053,7 @@
   (println "  tokens extract <file-key> [depth]             Extract design tokens")
   (println "")
   (println "MCP Server:")
-  (println "  mcp serve [--transport sse|stdio] [--port N] [--host 127.0.0.1]  Start MCP server")
+  (println "  mcp serve [--transport http|sse|stdio] [--port N] [--host 127.0.0.1]  Start MCP server")
   (println "")
   (println "Environment:")
   (println "  FIGMA_TOKEN    Figma Personal Access Token")
@@ -1029,6 +1061,9 @@
   (println "  FIGHORSE_MCP_MODE  MCP safety mode: readonly (default) or write")
   (println "  FIGHORSE_MCP_LOCAL_WRITE  Set to allow for MCP local asset exports inside approved roots")
   (println "  FIGHORSE_MCP_STDIO_MAX_BYTES  Max stdio Content-Length message size, default 10485760")
+  (println "  FIGHORSE_MCP_ALLOW_MULTIPLE  Set to 1 only for development when bypassing the MCP singleton lock")
+  (println "  FIGHORSE_HTTP_TIMEOUT_MS  Figma REST request timeout, default 120000")
+  (println "  FIGHORSE_CLI_EXPLICIT_EXIT  Set to 0 only for tests/debugging to disable one-shot CLI explicit exit")
   (println "  FIGHORSE_EXPERIENCE_PATH  Override local experience JSONL store")
   (println "  FIGHORSE_EXPERIENCE_SCOPE  auto (default), global, project, or merged")
   (println "  HTTP_PROXY     HTTP proxy URL (e.g. http://127.0.0.1:7897)")
@@ -1048,6 +1083,8 @@
         cmd2 (second args)
         cmd3 (nth args 2 nil)
         rest-args (drop 2 args)]
+    (when-not (= [cmd1 cmd2] ["mcp" "serve"])
+      (install-cli-signal-handlers!))
     (cond
       ;; Help
       (or (= cmd1 "help")

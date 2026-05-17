@@ -92,10 +92,12 @@
                 (string? clients) (split-list clients)
                 (string? client) [client]
                 :else ["generic"])]
-    (->> items
-         (map normalize-client)
-         distinct
-         vec)))
+    (if (some #(= "none" (str/lower-case (str/trim (str %)))) items)
+      []
+      (->> items
+           (map normalize-client)
+           distinct
+           vec))))
 
 (defn- path-dirs []
   (->> (str/split (or (.-PATH js/process.env) "") (js/RegExp. (or (.-delimiter path) ":") "g"))
@@ -154,23 +156,33 @@
   {:transport "sse"
    :url (str "http://127.0.0.1:" port "/sse")})
 
+(defn- mcp-http-config [port]
+  {:transport "http"
+   :url (str "http://127.0.0.1:" port "/mcp")})
+
 (defn mcp-server-config
   [& {:keys [transport port command home]
-      :or {transport "stdio" port 9449 command "fighorse"}}]
-  (if (= "sse" transport)
-    (mcp-sse-config port)
+      :or {transport "http" port 9449 command "fighorse"}}]
+  (case transport
+    "http" (mcp-http-config port)
+    "sse" (mcp-sse-config port)
     (mcp-stdio-config command home)))
 
-(defn- codex-toml [command home]
-  (str "[mcp_servers.fighorse]\n"
-       "command = \"" command "\"\n"
-       "args = [\"mcp\", \"serve\", \"--transport\", \"stdio\"]\n"
-       "enabled = true\n"
-       "startup_timeout_sec = 60\n\n"
-       "[mcp_servers.fighorse.env]\n"
-       "FIGHORSE_MCP_MODE = \"readonly\"\n"
-       "FIGHORSE_MCP_LOCAL_WRITE = \"allow\"\n"
-       "FIGHORSE_HOME = \"" (home-dir :home home) "\"\n"))
+(defn- codex-toml [server command home]
+  (if-let [url (:url server)]
+    (str "[mcp_servers.fighorse]\n"
+         "url = \"" url "\"\n"
+         "enabled = true\n"
+         "startup_timeout_sec = 60\n")
+    (str "[mcp_servers.fighorse]\n"
+         "command = \"" command "\"\n"
+         "args = [\"mcp\", \"serve\", \"--transport\", \"stdio\"]\n"
+         "enabled = true\n"
+         "startup_timeout_sec = 60\n\n"
+         "[mcp_servers.fighorse.env]\n"
+         "FIGHORSE_MCP_MODE = \"readonly\"\n"
+         "FIGHORSE_MCP_LOCAL_WRITE = \"allow\"\n"
+         "FIGHORSE_HOME = \"" (home-dir :home home) "\"\n")))
 
 (defn skill-markdown []
   (str "---\n"
@@ -191,6 +203,9 @@
        "## Official REST API\n\n"
        "When the task needs a low-level Figma endpoint, call generated MCP tools named `figma_<operation_id_in_snake_case>` or CLI `fighorse figma api <operationId> --params '{...}'`. "
        "Readonly tools are available by default; Figma write tools require `FIGHORSE_MCP_MODE=write` or CLI `--yes`.\n\n"
+       "## MCP Process Model\n\n"
+       "Installed clients should reuse the shared local MCP service at `http://127.0.0.1:9449/mcp` instead of spawning separate long-lived stdio servers. "
+       "Use stdio only as an explicit compatibility mode for clients that cannot connect to the local HTTP endpoint.\n\n"
        "## Assets\n\n"
        "Use `export_images`, `export_component`, or `download_image_fills` with `manifest=true` for local slices, controls, icons, and image fills. "
        "MCP export requires `FIGHORSE_MCP_LOCAL_WRITE=allow` and still only writes inside approved export roots. "
@@ -207,6 +222,7 @@
        "- Start with `fighorse discover --format json` or MCP `discover_fighorse`.\n"
        "- Load local lessons with `list_experiences` before using `get_design_package`.\n"
        "- Use `platform` and `asset_format` explicitly; ask if unknown.\n"
+       "- Prefer the installed shared HTTP MCP endpoint `http://127.0.0.1:9449/mcp`; avoid starting duplicate long-lived stdio servers unless a client requires compatibility mode.\n"
        "- For exact public REST API calls, use `fighorse figma-api coverage` and `fighorse figma api <operationId>` or MCP `figma_*` tools.\n"
        "- Export assets with manifests instead of inventing controls or icons.\n"
        "- Store temporary exports in `./.fighorse/exports`; store packaged assets in `./assets/fighorse` or the app resource directory; MCP export requires `FIGHORSE_MCP_LOCAL_WRITE=allow` and path validation.\n"
@@ -513,9 +529,9 @@
      :ok true
      :file file}))
 
-(defn- codex-managed-block [command home]
+(defn- codex-managed-block [server command home]
   (str "# BEGIN fighorse managed\n"
-       (codex-toml command home)
+       (codex-toml server command home)
        "# END fighorse managed\n"))
 
 (defn- ensure-codex-startup-timeout-text [content]
@@ -555,8 +571,8 @@
          :file file
          :startup_timeout_sec 60}))))
 
-(defn- merge-codex-config! [file command home]
-  (let [block (codex-managed-block command home)
+(defn- merge-codex-config! [file server command home]
+  (let [block (codex-managed-block server command home)
         current (if (file-exists? file) (.readFileSync fs file "utf8") "")
         updated (cond
                   (str/includes? current "# BEGIN fighorse managed")
@@ -601,12 +617,15 @@
         config-file (join-path (homedir) ".codex" "config.toml")]
     (if codex
       (let [remove-result (run-command! codex ["mcp" "remove" "fighorse"] :ignore-error true)
-            add-result (run-command! codex (concat ["mcp" "add"
-                                                    "--env" (str "FIGHORSE_HOME=" (home-dir :home home))
-                                                    "--env" "FIGHORSE_MCP_MODE=readonly"
-                                                   "--env" "FIGHORSE_MCP_LOCAL_WRITE=allow"
-                                                    "fighorse" "--"]
-                                                   [command "mcp" "serve" "--transport" "stdio"])
+            add-args (if-let [url (:url server)]
+                       ["mcp" "add" "--url" url "fighorse"]
+                       (vec (concat ["mcp" "add"
+                                     "--env" (str "FIGHORSE_HOME=" (home-dir :home home))
+                                     "--env" "FIGHORSE_MCP_MODE=readonly"
+                                     "--env" "FIGHORSE_MCP_LOCAL_WRITE=allow"
+                                     "fighorse" "--"]
+                                    [command "mcp" "serve" "--transport" "stdio"])))
+            add-result (run-command! codex add-args
                                      :ignore-error true)]
         (if (:ok add-result)
           {:method "codex-cli"
@@ -614,26 +633,29 @@
            :remove remove-result
            :result add-result
            :config_patch (ensure-codex-startup-timeout! config-file)}
-          (let [fallback (merge-codex-config! config-file command home)]
+          (let [fallback (merge-codex-config! config-file server command home)]
             {:method "codex-cli-with-toml-fallback"
              :ok true
              :remove remove-result
              :result add-result
              :fallback fallback
              :config_patch (ensure-codex-startup-timeout! config-file)})))
-      (let [fallback (merge-codex-config! config-file command home)]
+      (let [fallback (merge-codex-config! config-file server command home)]
         (assoc fallback :config_patch (ensure-codex-startup-timeout! config-file))))))
 
 (defn- apply-kimi-client! [server command home]
   (let [kimi (or (executable-path "kimi") (executable-path "kimi-cli"))]
     (if kimi
-      (let [result (run-command! kimi (concat ["mcp" "add"
-                                               "--transport" "stdio"
-                                               "--env" (str "FIGHORSE_HOME=" (home-dir :home home))
-                                               "--env" "FIGHORSE_MCP_MODE=readonly"
-                                               "--env" "FIGHORSE_MCP_LOCAL_WRITE=allow"
-                                               "fighorse" "--"]
-                                              [command "mcp" "serve" "--transport" "stdio"])
+      (let [add-args (if-let [url (:url server)]
+                       ["mcp" "add" "--transport" "http" "fighorse" url]
+                       (vec (concat ["mcp" "add"
+                                     "--transport" "stdio"
+                                     "--env" (str "FIGHORSE_HOME=" (home-dir :home home))
+                                     "--env" "FIGHORSE_MCP_MODE=readonly"
+                                     "--env" "FIGHORSE_MCP_LOCAL_WRITE=allow"
+                                     "fighorse" "--"]
+                                    [command "mcp" "serve" "--transport" "stdio"])))
+            result (run-command! kimi add-args
                                 :ignore-error true)]
         (if (:ok result)
           {:method "kimi-cli"
@@ -684,13 +706,13 @@
                :mcp_config (join-path (homedir) ".codex" "config.toml")
                :skill_dir (join-path (homedir) ".codex" "skills" "fighorse")
                :apply_supported true
-               :apply_methods ["codex mcp add" "toml-managed-block-fallback"]}
+               :apply_methods ["codex mcp add --url" "toml-managed-block-fallback"]}
       "kimi" {:client client
               :command (or (executable-path "kimi") (executable-path "kimi-cli"))
               :mcp_config (join-path (homedir) ".kimi" "mcp.json")
               :skill_dir (join-path (homedir) ".kimi" "skills" "fighorse")
               :apply_supported true
-              :apply_methods ["kimi mcp add" "json-config-fallback"]}
+              :apply_methods ["kimi mcp add --transport http" "json-config-fallback"]}
       "generic" {:client client
                  :mcp_config (join-path (homedir) ".config" "agents" "mcp.json")
                  :skill_dir (join-path (homedir) ".config" "agents" "skills" "fighorse")
@@ -703,7 +725,7 @@
 
 (defn install-client!
   [& {:keys [client dir transport port command home apply]
-      :or {client "generic" transport "stdio" port 9449 command "fighorse" apply false}}]
+      :or {client "generic" transport "http" port 9449 command "fighorse" apply false}}]
   (let [apply (boolean apply)
         client (normalize-client client)
         base (or dir (.join path (home-dir :home home) "clients" client))
@@ -722,6 +744,7 @@
                                            :ai_contract (guidance/ai-contract)
                                            :notes ["By default this command writes reviewable snippets only."
                                                    "Use --apply to install into detected user-level client config and skill/rule locations."
+                                                   "The default HTTP transport reuses the installed local MCP service, so multiple AI clients do not spawn separate fighorse processes."
                                                    "Use `figma-api coverage` or MCP resource `fighorse://coverage` for exact public REST API coverage."
                                                    "For Codex, apply prefers `codex mcp add` and falls back to a managed TOML block."
                                                    "For Cursor, apply uses `cursor --add-mcp`, writes ~/.cursor/mcp.json for Cursor Agent CLI, and attempts `cursor agent mcp enable fighorse`."
@@ -734,7 +757,7 @@
                                       "For exact public REST API calls, inspect `fighorse://coverage` or run `fighorse figma-api coverage`.\n"))]
         extra-files (cond-> []
                       (= "codex" client)
-                      (conj (write-text! (.join path base "codex-config.toml") (codex-toml command home)))
+                      (conj (write-text! (.join path base "codex-config.toml") (codex-toml server command home)))
                       (= "cursor" client)
                       (conj (write-text! (.join path base "fighorse.cursor.mdc") (cursor-rule)))
                       (= "kimi" client)
@@ -826,38 +849,55 @@
         dir (.join path home "services")
         port (str port)
         file (case service
+               "none" nil
                "launchd" (.join path dir "com.groupultra.fighorse.mcp.plist")
                "systemd" (.join path dir "fighorse-mcp.service")
                (.join path dir "fighorse-mcp.service"))]
-    (mkdirp! dir)
-    (write-text! file
-                 (if (= "launchd" service)
-                   (launchd-plist command port home)
-                   (systemd-unit command port home)))
-    {:kind "fighorse.install-service.v1"
-     :service service
-     :transport "sse"
-     :port (js/parseInt port)
-     :file file
-     :apply apply
-     :applied (when apply (apply-service! service file))
-     :next_steps (if (= "launchd" service)
-                   [(str "launchctl bootstrap gui/$(id -u) " file)
-                    "launchctl kickstart -k gui/$(id -u)/com.groupultra.fighorse.mcp"]
-                   [(str "mkdir -p ~/.config/systemd/user && cp " file " ~/.config/systemd/user/")
-                    "systemctl --user daemon-reload"
-                    "systemctl --user enable --now fighorse-mcp.service"])}))
+    (if (= "none" service)
+      {:kind "fighorse.install-service.v1"
+       :service "none"
+       :transport "none"
+       :port (js/parseInt port)
+       :file nil
+       :apply false
+       :applied nil
+       :skipped true
+       :reason "CLI-only install mode does not start or configure the MCP service."}
+      (do
+        (mkdirp! dir)
+        (write-text! file
+                     (if (= "launchd" service)
+                       (launchd-plist command port home)
+                       (systemd-unit command port home)))
+        {:kind "fighorse.install-service.v1"
+         :service service
+         :transport "http+sse"
+         :port (js/parseInt port)
+         :file file
+         :apply apply
+         :applied (when apply (apply-service! service file))
+         :next_steps (if (= "launchd" service)
+                       [(str "launchctl bootstrap gui/$(id -u) " file)
+                        "launchctl kickstart -k gui/$(id -u)/com.groupultra.fighorse.mcp"]
+                       [(str "mkdir -p ~/.config/systemd/user && cp " file " ~/.config/systemd/user/")
+                        "systemctl --user daemon-reload"
+                        "systemctl --user enable --now fighorse-mcp.service"])}))))
 
 (defn install-all!
-  [& {:keys [client clients transport port command home project-dir source target link-dir link-dirs apply service token]
-      :or {client "generic" transport "stdio" port 9449 command "fighorse" apply false service "auto"}}]
+  [& {:keys [client clients transport port command home project-dir source target link-dir link-dirs apply service token mode no-service]
+      :or {client "generic" transport "http" port 9449 command "fighorse" apply false service "auto"}}]
   (let [apply (boolean apply)
+        mode (str/lower-case (or mode "cli"))
+        cli-mode? (= "cli" mode)
+        mcp-mode? (#{"service" "mcp" "all"} mode)
+        skip-service? (or (not mcp-mode?) no-service (= "none" service))
         home (home-dir :home home)
-        selected-clients (coerce-clients client clients)
+        selected-clients (if mcp-mode? (coerce-clients client clients) [])
         binary-target (or target (default-binary-target :home home))
         command (if (and apply source) binary-target command)]
     {:kind "fighorse.install-all.v1"
      :apply apply
+     :mode mode
      :clients selected-clients
      :home (install-home! :home home)
      :auth (install-auth! :home home
@@ -880,7 +920,7 @@
                                              :home home
                                              :apply apply)
                            selected-clients)
-     :service (install-service! :service service
+     :service (install-service! :service (if skip-service? "none" service)
                                 :port port
                                 :command command
                                 :home home

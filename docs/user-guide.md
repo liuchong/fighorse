@@ -143,51 +143,50 @@ Export commands write safe filenames and can create `manifest.json`. Use the man
 
 ## MCP Server
 
-For subprocess clients, prefer stdio:
+For installed clients, prefer the shared local HTTP service so Cursor, Codex, Kimi, and other clients reuse one `fighorse` process instead of each spawning a stdio subprocess:
 
 ```json
 {
   "mcpServers": {
     "fighorse": {
-      "command": "fighorse",
-      "args": ["mcp", "serve", "--transport", "stdio"],
-      "env": {
-        "FIGHORSE_MCP_MODE": "readonly",
-        "FIGHORSE_MCP_LOCAL_WRITE": "allow"
-      }
+      "transport": "http",
+      "url": "http://127.0.0.1:9449/mcp"
     }
   }
 }
 ```
 
-For an HTTP service:
+Start the local service:
 
 ```bash
 fighorse mcp serve --transport sse --host 127.0.0.1 --port 9449
 ```
 
-SSE endpoints:
+HTTP endpoints:
 
 ```text
+http://127.0.0.1:9449/mcp
 http://127.0.0.1:9449/sse
 http://127.0.0.1:9449/manifest
 http://127.0.0.1:9449/health
 ```
 
-SSE binds to `127.0.0.1` by default. Use `--host` explicitly only when you intend to expose the service beyond localhost.
+The service binds to `127.0.0.1` by default and uses a singleton lock in `~/.fighorse/runtime`. Use `--host` explicitly only when you intend to expose the service beyond localhost. Use stdio only for a client that cannot connect to the local HTTP endpoint.
+
+Normal CLI commands such as `fighorse file get`, `fighorse design package`, and `fighorse image export` are one-shot processes. They are allowed to start each time, do not start the MCP service, do not bind ports, do not take the MCP singleton lock, and should exit after output is written. Figma HTTP calls and image downloads use `FIGHORSE_HTTP_TIMEOUT_MS` with a default of `120000`, and `SIGINT`/`SIGTERM` abort in-flight requests before exiting. `fighorse install all` defaults to CLI-only setup; use `fighorse install all --mode service --apply` or `fighorse install service --apply` only when you explicitly want fighorse to configure or kickstart a long-running MCP service.
 
 ## Safety Modes
 
 Figma write tools are hidden unless enabled:
 
 ```bash
-FIGHORSE_MCP_MODE=write fighorse mcp serve --transport stdio
+FIGHORSE_MCP_MODE=write fighorse mcp serve --transport sse
 ```
 
 Local file export is controlled separately:
 
 ```bash
-FIGHORSE_MCP_LOCAL_WRITE=allow fighorse mcp serve --transport stdio
+FIGHORSE_MCP_LOCAL_WRITE=allow fighorse mcp serve --transport sse
 ```
 
 Even with local write enabled, export paths are validated and must stay under `./.fighorse/exports`, `./assets/fighorse`, or `~/.fighorse/exports`.

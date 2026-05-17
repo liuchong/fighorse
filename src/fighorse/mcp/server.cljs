@@ -2,17 +2,23 @@
   "MCP Server implementation using @modelcontextprotocol/sdk.
    Supports SSE and stdio transports for integration with MCP clients."
   (:require [clojure.string :as str]
+            [fighorse.config :as config]
             [fighorse.discovery :as discovery]
             [fighorse.mcp.resources :as resources]
             [fighorse.mcp.tools :as tools]))
 
 (def ^:private Buffer (.-Buffer js/globalThis))
 (def ^:private fs (js/require "fs"))
+(def ^:private path (js/require "path"))
 (def ^:private default-stdio-max-bytes 10485760)
 
 (def ^:private no-message ::no-message)
 (def ^:private skip-message ::skip-message)
 (defonce ^:private poll-state (atom ::uninitialized))
+(defonce ^:private shutdown-state (atom {:installed false
+                                         :closing false
+                                         :lock nil
+                                         :close nil}))
 
 (defn- stdio-debug [& parts]
   (when (= "1" (.-FIGHORSE_MCP_STDIO_DEBUG js/process.env))
@@ -80,6 +86,118 @@
     (if (and parsed (not (js/isNaN parsed)) (pos? parsed))
       parsed
       default-stdio-max-bytes)))
+
+(defn stdio-poll-enabled?
+  "Polling stdin is kept as an opt-in compatibility mode because it can burn CPU
+   when an MCP server is idle under Bun's compiled runtime."
+  []
+  (contains? #{"1" "true"} (some-> (.-FIGHORSE_MCP_STDIO_POLL js/process.env)
+                                   str/lower-case)))
+
+(defn mcp-multiple-enabled?
+  "Allow multiple MCP server processes only when explicitly requested."
+  []
+  (contains? #{"1" "true"} (some-> (.-FIGHORSE_MCP_ALLOW_MULTIPLE js/process.env)
+                                   str/lower-case)))
+
+(defn mcp-lock-file []
+  (or (.-FIGHORSE_MCP_LOCK_FILE js/process.env)
+      (.join path (config/fighorse-home) "runtime" "mcp.lock")))
+
+(defn- active-pid? [pid]
+  (and (number? pid)
+       (pos? pid)
+       (try
+         (.kill js/process pid 0)
+         true
+         (catch :default err
+           (not= "ESRCH" (.-code err))))))
+
+(defn- read-lock-file [file]
+  (try
+    (js->clj (js/JSON.parse (.readFileSync fs file "utf8")) :keywordize-keys true)
+    (catch :default _
+      nil)))
+
+(defn- write-lock-file! [file data]
+  (.mkdirSync fs (.dirname path file) #js {:recursive true})
+  (let [fd (.openSync fs file "wx")]
+    (try
+      (.writeFileSync fs fd (js/JSON.stringify (clj->js data) nil 2))
+      (finally
+        (.closeSync fs fd)))))
+
+(defn acquire-singleton-lock!
+  "Acquire the process-wide MCP server lock. Stale lock files are removed."
+  [transport port]
+  (when-not (mcp-multiple-enabled?)
+    (let [file (mcp-lock-file)
+          pid (.-pid js/process)
+          data {:kind "fighorse.mcp-lock.v1"
+                :pid pid
+                :transport transport
+                :port port
+                :started_at (.toISOString (js/Date.))}]
+      (loop [attempt 0]
+        (let [result (try
+                       (write-lock-file! file data)
+                       {:file file :pid pid}
+                       (catch :default err
+                         (if (and (= "EEXIST" (.-code err)) (zero? attempt))
+                           (let [existing (read-lock-file file)
+                                 existing-pid (:pid existing)]
+                             (if (active-pid? existing-pid)
+                               (throw (js/Error. (str "Another fighorse MCP server is already running"
+                                                      (when existing-pid (str " (pid " existing-pid ")"))
+                                                      ". Stop it first or set FIGHORSE_MCP_ALLOW_MULTIPLE=1 for development.")))
+                               (do
+                                 (try
+                                   (.unlinkSync fs file)
+                                   (catch :default _ nil))
+                                 ::retry)))
+                           (throw err))))]
+          (if (= ::retry result)
+            (recur (inc attempt))
+            result))))))
+
+(defn release-singleton-lock! [lock]
+  (when-let [file (:file lock)]
+    (try
+      (let [existing (read-lock-file file)]
+        (when (= (:pid existing) (:pid lock))
+          (.unlinkSync fs file)))
+      (catch :default _
+        nil))))
+
+(defn- cleanup! []
+  (when-let [lock (:lock @shutdown-state)]
+    (release-singleton-lock! lock)
+    (swap! shutdown-state assoc :lock nil)))
+
+(defn- close-resource! [close-fn]
+  (if close-fn
+    (try
+      (js/Promise.resolve (close-fn))
+      (catch :default err
+        (js/Promise.reject err)))
+    (js/Promise.resolve)))
+
+(defn- install-shutdown-handlers! [lock close-fn]
+  (swap! shutdown-state assoc :lock lock :close close-fn)
+  (when-not (:installed @shutdown-state)
+    (swap! shutdown-state assoc :installed true)
+    (.on js/process "exit" cleanup!)
+    (doseq [signal ["SIGINT" "SIGTERM"]]
+      (.once js/process signal
+             (fn []
+               (when-not (:closing @shutdown-state)
+                 (swap! shutdown-state assoc :closing true)
+                 (-> (close-resource! (:close @shutdown-state))
+                     (.catch (fn [err]
+                               (js/console.error "MCP shutdown error:" (or (.-message err) (str err)))))
+                     (.finally (fn []
+                                 (cleanup!)
+                                 (js/process.exit 0))))))))))
 
 (defn serialize-stdio-message
   "Serialize an MCP JSON-RPC message. Header mode is required by FastMCP/Codex-style clients;
@@ -150,6 +268,7 @@
         state (atom {:buffer nil
                      :mode nil
                      :started false
+                     :closing false
                      :stdin_fd nil
                      :stdin_fd_owned false
                      :stdin_poller nil
@@ -185,6 +304,10 @@
               (process-buffer))
             (on-error [err]
               (emit-error err))
+            (close-from-stdin []
+              (when-not (:closing @state)
+                (swap! state assoc :closing true)
+                (.close transport)))
             (open-polled-stdin []
               (when-not (= "win32" (.-platform js/process))
                 (when (poll-runtime)
@@ -213,7 +336,7 @@
                         (when-let [poller (:stdin_poller @state)]
                           (js/clearInterval poller))
                         (swap! state assoc :stdin_poller nil)
-                        (emit-close))
+                        (close-from-stdin))
 
                       :else nil)))))
             (start-stream-stdin []
@@ -221,10 +344,13 @@
               (swap! state assoc :using_stream true)
               (.on stdin "data" on-data)
               (.on stdin "error" on-error)
+              (.on stdin "end" close-from-stdin)
+              (.on stdin "close" close-from-stdin)
               (when (.-resume stdin)
                 (.resume stdin)))
             (start-polled-stdin []
-              (if-let [fd (open-polled-stdin)]
+              (if-let [fd (when (stdio-poll-enabled?)
+                            (open-polled-stdin))]
                 (let [poller (js/setInterval poll-stdin-fd 10)]
                   (swap! state assoc
                          :stdin_fd fd
@@ -253,6 +379,8 @@
               (when (:using_stream @state)
                 (.off stdin "data" on-data)
                 (.off stdin "error" on-error)
+                (.off stdin "end" close-from-stdin)
+                (.off stdin "close" close-from-stdin)
                 (when (zero? (.listenerCount stdin "data"))
                   (.pause stdin)))
               (when-let [poller (:stdin_poller @state)]
@@ -264,6 +392,7 @@
               (swap! state assoc
                      :buffer nil
                      :started false
+                     :closing true
                      :stdin_fd nil
                      :stdin_fd_owned false
                      :stdin_poller nil
@@ -368,13 +497,18 @@
     (set! (.-onerror transport)
           (fn [err]
             (js/console.error "MCP stdio error:" (.-message err))))
+    (set! (.-onclose transport)
+          (fn []
+            (cleanup!)
+            (js/process.exit 0)))
     (-> (.start transport)
         (.then (fn []
                  (when (= "1" (.-FIGHORSE_MCP_STDIO_LOG js/process.env))
                    (js/console.error "Fighorse MCP server started on stdio"))))
         (.catch (fn [err]
                   (js/console.error "MCP server error:" (.-message err))
-                  (js/process.exit 1))))))
+                  (js/process.exit 1))))
+    transport))
 
 (defn- send-text [^js res status text]
   (.writeHead res status #js {"Content-Type" "text/plain"})
@@ -391,8 +525,13 @@
         cors-origin (or cors-origin (str "http://" host ":" port))
         http (js/require "http")
         ^js sse (js/require "@modelcontextprotocol/sdk/server/sse.js")
+        ^js streamable (js/require "@modelcontextprotocol/sdk/server/streamableHttp.js")
         SSEServerTransport (.-SSEServerTransport sse)
+        StreamableHTTPServerTransport (.-StreamableHTTPServerTransport streamable)
         transports (atom {})
+        streamable-transport (new StreamableHTTPServerTransport #js {:sessionIdGenerator js/undefined})
+        streamable-server (create-server)
+        streamable-ready (.connect streamable-server streamable-transport)
         handler (fn [^js req ^js res]
                   (let [url (js/URL. (or (.-url req) "/") "http://localhost")
                         pathname (.-pathname url)
@@ -402,13 +541,14 @@
                       (send-json res 200 (assoc (discovery/manifest)
                                                 :service {:transport "sse"
                                                           :endpoint (str "http://" host ":" port "/sse")
+                                                          :streamable_http (str "http://" host ":" port "/mcp")
                                                           :health (str "http://" host ":" port "/health")})
                                  :cors-origin cors-origin)
 
                       (and (= method "GET") (= pathname "/health"))
                       (send-json res 200 (discovery/doctor) :cors-origin cors-origin)
 
-                      (and (= method "GET") (contains? #{"/sse" "/mcp"} pathname))
+                      (and (= method "GET") (= pathname "/sse"))
                       (let [^js transport (new SSEServerTransport "/messages" res)
                             session-id (.-sessionId transport)
                             server (create-server)]
@@ -435,21 +575,67 @@
                                           (send-text res 500 "MCP message error")))))
                           (send-text res 404 "MCP session not found")))
 
+                      (= pathname "/mcp")
+                      (-> streamable-ready
+                          (.then (fn []
+                                   (.handleRequest streamable-transport req res)))
+                          (.catch (fn [err]
+                                    (js/console.error "MCP streamable HTTP error:" (.-message err))
+                                    (when-not (.-headersSent res)
+                                      (send-text res 500 "MCP streamable HTTP error")))))
+
                       :else
                       (send-text res 404 "Not found"))))
         server (.createServer http handler)]
+    (.on server "error"
+         (fn [err]
+           (js/console.error "Fighorse MCP server error:" (or (.-message err) (str err)))
+           (js/process.exit 1)))
     (.listen server port host
              (fn []
-               (js/console.error (str "Fighorse MCP server listening on http://" host ":" port "/sse"))))
+               (js/console.error (str "Fighorse MCP server listening on http://" host ":" port "/sse and /mcp"))))
+    (set! (.-fighorseClose server)
+          (fn []
+            (doseq [[_ transport] @transports]
+              (try
+                (.close ^js transport)
+                (catch :default _ nil)))
+            (reset! transports {})
+            (-> (js/Promise.resolve (.close streamable-transport))
+                (.finally
+                 (fn []
+                   (js/Promise.
+                    (fn [resolve _reject]
+                      (.close server resolve))))))))
     server))
 
 (defn serve
-  "Start the MCP server. Defaults to SSE; pass :transport \"stdio\" for subprocess mode."
+  "Start the MCP server. Defaults to SSE; pass :transport \"stdio\" for subprocess mode.
+   The SSE server also exposes Streamable HTTP at /mcp for clients that can reuse
+   the installed singleton service."
   [& {:keys [transport port host cors-origin]
       :or {transport "sse" port 9449 host "127.0.0.1"}}]
-  (case transport
-    "stdio" (serve-stdio)
-    "sse" (serve-sse port host cors-origin)
-    (do
-      (js/console.error (str "Unknown MCP transport: " transport))
-      (js/process.exit 1))))
+  (let [transport (or transport "sse")
+        lock (try
+               (acquire-singleton-lock! transport port)
+               (catch :default err
+                 (js/console.error (or (.-message err) (str err)))
+                 (js/process.exit 2)))]
+    (try
+      (let [^js resource (case transport
+                           "stdio" (serve-stdio)
+                           "sse" (serve-sse port host cors-origin)
+                           "http" (serve-sse port host cors-origin)
+                           (do
+                             (js/console.error (str "Unknown MCP transport: " transport))
+                             (release-singleton-lock! lock)
+                             (js/process.exit 1)))
+            close-fn (fn []
+                       (if-let [close (.-fighorseClose resource)]
+                         (close)
+                         (.close resource)))]
+        (install-shutdown-handlers! lock close-fn)
+        resource)
+      (catch :default err
+        (release-singleton-lock! lock)
+        (throw err)))))

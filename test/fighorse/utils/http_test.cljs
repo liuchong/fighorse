@@ -37,6 +37,7 @@
                      (is (= {:ok true} body))
                      (is (= "https://api.figma.com/v1/test" (:url @captured)))
                      (is (= "POST" (.-method (:opts @captured))))
+                     (is (some? (.-signal (:opts @captured))))
                      (is (= "{\"a\":1}" (.-body (:opts @captured))))
                      (is (= "token" (aget (.-headers (:opts @captured)) "X-Figma-Token")))))
             (.catch (fn [err]
@@ -79,6 +80,18 @@
             (.finally (fn []
                         (set! js/fetch original-fetch)
                         (done))))))))
+
+(deftest request-timeout-uses-positive-env-override
+  (let [original (.-FIGHORSE_HTTP_TIMEOUT_MS js/process.env)]
+    (try
+      (set! (.-FIGHORSE_HTTP_TIMEOUT_MS js/process.env) "42")
+      (is (= 42 (http/request-timeout-ms)))
+      (set! (.-FIGHORSE_HTTP_TIMEOUT_MS js/process.env) "0")
+      (is (= 120000 (http/request-timeout-ms)))
+      (finally
+        (if (nil? original)
+          (js-delete js/process.env "FIGHORSE_HTTP_TIMEOUT_MS")
+          (set! (.-FIGHORSE_HTTP_TIMEOUT_MS js/process.env) original))))))
 
 (deftest path-segment-encodes-url-path-values
   (testing "path values cannot inject extra URL segments"

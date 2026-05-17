@@ -4,6 +4,9 @@
             [fighorse.mcp.server :as server]))
 
 (def ^:private Buffer (.-Buffer js/globalThis))
+(def ^:private fs (js/require "fs"))
+(def ^:private os (js/require "os"))
+(def ^:private path (js/require "path"))
 
 (defn- buffer [s]
   (.from Buffer s "utf8"))
@@ -55,6 +58,48 @@
     (is (= length (.byteLength Buffer body "utf8")))
     (is (= "中文" (aget (aget (js/JSON.parse body) "result") "text")))
     (is (str/ends-with? (server/serialize-stdio-message message "line") "\n"))))
+
+(deftest stdio-polling-is-opt-in
+  (let [original (.-FIGHORSE_MCP_STDIO_POLL js/process.env)]
+    (try
+      (js-delete js/process.env "FIGHORSE_MCP_STDIO_POLL")
+      (is (false? (server/stdio-poll-enabled?)))
+      (set! (.-FIGHORSE_MCP_STDIO_POLL js/process.env) "1")
+      (is (true? (server/stdio-poll-enabled?)))
+      (set! (.-FIGHORSE_MCP_STDIO_POLL js/process.env) "true")
+      (is (true? (server/stdio-poll-enabled?)))
+      (set! (.-FIGHORSE_MCP_STDIO_POLL js/process.env) "0")
+      (is (false? (server/stdio-poll-enabled?)))
+      (finally
+        (if (nil? original)
+          (js-delete js/process.env "FIGHORSE_MCP_STDIO_POLL")
+          (set! (.-FIGHORSE_MCP_STDIO_POLL js/process.env) original))))))
+
+(deftest mcp-singleton-lock-rejects-active-owner-and-cleans-stale-lock
+  (let [original-lock (.-FIGHORSE_MCP_LOCK_FILE js/process.env)
+        original-multiple (.-FIGHORSE_MCP_ALLOW_MULTIPLE js/process.env)
+        dir (.mkdtempSync fs (.join path (.tmpdir os) "fighorse-lock-"))
+        lock-file (.join path dir "mcp.lock")]
+    (set! (.-FIGHORSE_MCP_LOCK_FILE js/process.env) lock-file)
+    (js-delete js/process.env "FIGHORSE_MCP_ALLOW_MULTIPLE")
+    (try
+      (let [lock (server/acquire-singleton-lock! "sse" 9449)]
+        (is (.existsSync fs lock-file))
+        (is (thrown-with-msg? js/Error #"already running"
+                              (server/acquire-singleton-lock! "stdio" 9449)))
+        (server/release-singleton-lock! lock)
+        (is (not (.existsSync fs lock-file))))
+      (.writeFileSync fs lock-file (js/JSON.stringify #js {:pid 999999999}))
+      (let [lock (server/acquire-singleton-lock! "sse" 9449)]
+        (is (= (.-pid js/process) (:pid lock)))
+        (server/release-singleton-lock! lock))
+      (finally
+        (if (nil? original-lock)
+          (js-delete js/process.env "FIGHORSE_MCP_LOCK_FILE")
+          (set! (.-FIGHORSE_MCP_LOCK_FILE js/process.env) original-lock))
+        (if (nil? original-multiple)
+          (js-delete js/process.env "FIGHORSE_MCP_ALLOW_MULTIPLE")
+          (set! (.-FIGHORSE_MCP_ALLOW_MULTIPLE js/process.env) original-multiple))))))
 
 (deftest stdio-parser-rejects-oversized-header-message
   (let [original (.-FIGHORSE_MCP_STDIO_MAX_BYTES js/process.env)

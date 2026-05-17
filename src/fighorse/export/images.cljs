@@ -2,7 +2,8 @@
   "Image export — render and download images from Figma files.
    Uses Figma /v1/images API to get URLs, then downloads them."
   (:require [clojure.string :as str]
-            [fighorse.api.files :as files-api]))
+            [fighorse.api.files :as files-api]
+            [fighorse.utils.http :as http]))
 
 (def ^:private fs (js/require "fs"))
 (def ^:private path (js/require "path"))
@@ -48,7 +49,7 @@
 (defn- fetch-image
   "Download an image from URL to dest-path using Bun. Resolves to the written path."
   [url dest-path & {:keys [fallback-ext] :or {fallback-ext ""}}]
-  (-> (js/fetch url)
+  (-> (http/fetch-with-timeout url {})
       (.then (fn [response]
                (when-not (.-ok response)
                  (throw (js/Error. (str "Failed to download image: HTTP " (.-status response)))))
