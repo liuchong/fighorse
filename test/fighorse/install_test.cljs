@@ -86,7 +86,17 @@
           (is (str/includes? (.readFileSync fs (first (:files skill-result)) "utf8")
                              "record_experience"))
           (is (str/includes? (.readFileSync fs (first (:files skill-result)) "utf8")
+                             "figma-api coverage"))
+          (is (str/includes? (.readFileSync fs (first (:files skill-result)) "utf8")
+                             "visual_audit"))
+          (is (str/includes? (.readFileSync fs (first (:files skill-result)) "utf8")
                              ".fighorse/exports"))
+          (let [manifest (js->clj (js/JSON.parse (.readFileSync fs (.join path home "clients" "codex" "fighorse-client.json") "utf8"))
+                                  :keywordize-keys true)]
+            (is (some #(= "visual_audit" %)
+                      (:recommended_tool_order manifest)))
+            (is (some #(str/includes? % "fighorse://coverage")
+                      (:notes manifest))))
           (is (= "fighorse.ai-contract.v1" (get-in client-result [:ai_contract :kind]))))))))
 
 (deftest project-install-enables-project-experience

@@ -182,26 +182,37 @@
        "## Discovery\n\n"
        "1. Call `fighorse discover --format json` or MCP `discover_fighorse` first.\n"
        "2. Call `fighorse experience summary --platform <platform> --asset-format <format>` or MCP `list_experiences` before implementation.\n"
-       "3. If platform or asset format is missing, ask the developer before choosing.\n\n"
+       "3. If platform or asset format is missing, ask the developer before choosing.\n"
+       "4. For exact public Figma REST API work, use `fighorse figma-api coverage --format json` or MCP resource `fighorse://coverage` to see the covered OpenAPI operations.\n\n"
        "## Replication\n\n"
        "Use `get_design_package` or `fighorse design package <figma-url> --platform <platform> --asset-format <format>` as the main context source. "
-       "Prioritize screenshots, learned_experience, explicit typography, tokens, compact tree metadata, then assets.\n\n"
+       "Prioritize screenshots, learned_experience, explicit typography, tokens, compact tree metadata, then assets. "
+       "Use screen_candidates/component_candidates to narrow broad canvas or flow nodes before coding.\n\n"
+       "## Official REST API\n\n"
+       "When the task needs a low-level Figma endpoint, call generated MCP tools named `figma_<operation_id_in_snake_case>` or CLI `fighorse figma api <operationId> --params '{...}'`. "
+       "Readonly tools are available by default; Figma write tools require `FIGHORSE_MCP_MODE=write` or CLI `--yes`.\n\n"
        "## Assets\n\n"
        "Use `export_images`, `export_component`, or `download_image_fills` with `manifest=true` for local slices, controls, icons, and image fills. "
        "MCP export requires `FIGHORSE_MCP_LOCAL_WRITE=allow` and still only writes inside approved export roots. "
        "Use `./.fighorse/exports` for temporary slices, `./assets/fighorse` or the app resource directory for packaged assets, and `~/.fighorse/exports` for cross-project scratch data. "
        "Do not write exports to protected system paths, dependency caches, or hard-to-discover temporary locations unless explicitly requested.\n\n"
        "## Feedback Loop\n\n"
-       "Build/run the target app, capture screenshots, compare with Figma, fix overlap/clipping/status-bar/typography issues, then call `record_experience` or `fighorse experience add` for reusable lessons.\n"))
+       "Build/run the target app, capture screenshots, compare with Figma, fix overlap/clipping/status-bar/typography issues, then call `visual_audit` or `fighorse visual audit` for structured mismatch guidance. "
+       "After a reusable fix, call `record_experience` or `fighorse experience add`.\n\n"
+       "## Boundaries\n\n"
+       "fighorse is open-source and REST-transparent. If the user asks for official MCP-only product features such as native canvas mutation, Code to Canvas, automatic Code Connect mapping, Make resources, or FigJam generation, state that public REST does not expose them and offer the closest fighorse workflow instead.\n"))
 
 (defn agents-markdown []
   (str "# fighorse Agent Instructions\n\n"
        "- Start with `fighorse discover --format json` or MCP `discover_fighorse`.\n"
        "- Load local lessons with `list_experiences` before using `get_design_package`.\n"
        "- Use `platform` and `asset_format` explicitly; ask if unknown.\n"
+       "- For exact public REST API calls, use `fighorse figma-api coverage` and `fighorse figma api <operationId>` or MCP `figma_*` tools.\n"
        "- Export assets with manifests instead of inventing controls or icons.\n"
        "- Store temporary exports in `./.fighorse/exports`; store packaged assets in `./assets/fighorse` or the app resource directory; MCP export requires `FIGHORSE_MCP_LOCAL_WRITE=allow` and path validation.\n"
-       "- Record reusable fixes with `record_experience` after visual debugging.\n"))
+       "- Use `visual_audit` or `fighorse visual audit` after implementation screenshots exist.\n"
+       "- Record reusable fixes with `record_experience` after visual debugging.\n"
+       "- Do not claim official MCP-only features are implemented when public REST does not expose them.\n"))
 
 (defn cursor-rule []
   (str "---\n"
@@ -448,7 +459,7 @@
                 :exports {:scratch ".fighorse/exports"
                           :packaged "assets/fighorse"
                           :manifest_required true}
-                :ai {:default_workflow ["discover_fighorse" "list_experiences" "get_design_package" "record_experience"]
+                :ai {:default_workflow ["discover_fighorse" "list_experiences" "get_design_package" "visual_audit" "record_experience"]
                      :must_obey (:must (guidance/ai-contract))
                      :ask_when_missing ["platform" "asset_format"]}}]
     (mkdirp! dir)
@@ -486,6 +497,7 @@
      :usage ["Attach SKILL.md as a skill where supported."
              "Copy AGENTS.md into an AI coding project when a generic agent instruction file is preferred."
              "Copy cursor-rule.mdc into .cursor/rules/fighorse.mdc for Cursor project rules."
+             "The generated instructions are intentionally generic across clients; client-specific files are only generated where install behavior is verified."
              "Use `--apply --clients cursor,codex,kimi` to install known user-level skills/rules."]}))
 
 (defn- cursor-mcp-payload [server]
@@ -706,10 +718,11 @@
                                            :generated_at (now-iso)
                                            :mcp_server server
                                            :detected (client-detection client)
-                                           :recommended_tool_order ["discover_fighorse" "check_fighorse_ready" "list_experiences" "get_design_package" "record_experience"]
+                                           :recommended_tool_order ["discover_fighorse" "check_fighorse_ready" "list_experiences" "get_design_package" "visual_audit" "record_experience"]
                                            :ai_contract (guidance/ai-contract)
                                            :notes ["By default this command writes reviewable snippets only."
                                                    "Use --apply to install into detected user-level client config and skill/rule locations."
+                                                   "Use `figma-api coverage` or MCP resource `fighorse://coverage` for exact public REST API coverage."
                                                    "For Codex, apply prefers `codex mcp add` and falls back to a managed TOML block."
                                                    "For Cursor, apply uses `cursor --add-mcp`, writes ~/.cursor/mcp.json for Cursor Agent CLI, and attempts `cursor agent mcp enable fighorse`."
                                                    "For Kimi, apply prefers `kimi mcp add` and falls back to ~/.kimi/mcp.json."]})
@@ -717,7 +730,8 @@
                                  (str "# fighorse " client " install\n\n"
                                       "Main MCP config: `mcp.json`.\n\n"
                                       "Run with `--apply` to install into detected client config and skill locations.\n\n"
-                                      "Recommended order: discover_fighorse, check_fighorse_ready, list_experiences, get_design_package, record_experience.\n"))]
+                                      "Recommended order: discover_fighorse, check_fighorse_ready, list_experiences, get_design_package, visual_audit, record_experience.\n"
+                                      "For exact public REST API calls, inspect `fighorse://coverage` or run `fighorse figma-api coverage`.\n"))]
         extra-files (cond-> []
                       (= "codex" client)
                       (conj (write-text! (.join path base "codex-config.toml") (codex-toml command home)))
