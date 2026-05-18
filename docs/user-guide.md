@@ -173,6 +173,8 @@ http://127.0.0.1:9449/health
 
 The service binds to `127.0.0.1` by default and uses a singleton lock in `~/.fighorse/runtime`. Use `--host` explicitly only when you intend to expose the service beyond localhost. Use stdio only for a client that cannot connect to the local HTTP endpoint.
 
+Implementation note for maintainers: Streamable HTTP clients such as Codex may initialize a fresh MCP connection every time they start. The `/mcp` endpoint must therefore tolerate repeated handshakes. In stateless mode, create and close a fresh transport/server per request. Reusing one already-initialized `StreamableHTTPServerTransport` can make the first handshake pass and later handshakes fail with `500 text/plain` instead of an MCP JSON/SSE response.
+
 Normal CLI commands such as `fighorse file get`, `fighorse design package`, and `fighorse image export` are one-shot processes. They are allowed to start each time, do not start the MCP service, do not bind ports, do not take the MCP singleton lock, and should exit after output is written. Figma HTTP calls and image downloads use `FIGHORSE_HTTP_TIMEOUT_MS` with a default of `120000`, and `SIGINT`/`SIGTERM` abort in-flight requests before exiting. `fighorse install all` defaults to CLI-only setup; use `fighorse install all --mode service --apply` or `fighorse install service --apply` only when you explicitly want fighorse to configure or kickstart a long-running MCP service.
 
 ## Safety Modes

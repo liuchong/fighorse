@@ -529,9 +529,6 @@
         SSEServerTransport (.-SSEServerTransport sse)
         StreamableHTTPServerTransport (.-StreamableHTTPServerTransport streamable)
         transports (atom {})
-        streamable-transport (new StreamableHTTPServerTransport #js {:sessionIdGenerator js/undefined})
-        streamable-server (create-server)
-        streamable-ready (.connect streamable-server streamable-transport)
         handler (fn [^js req ^js res]
                   (let [url (js/URL. (or (.-url req) "/") "http://localhost")
                         pathname (.-pathname url)
@@ -576,13 +573,30 @@
                           (send-text res 404 "MCP session not found")))
 
                       (= pathname "/mcp")
-                      (-> streamable-ready
+                      (let [^js transport (new StreamableHTTPServerTransport #js {:sessionIdGenerator js/undefined})
+                            server (create-server)
+                            closed (atom false)
+                            close-once (fn []
+                                         (when (compare-and-set! closed false true)
+                                           (try
+                                             (.close transport)
+                                             (catch :default _ nil))
+                                           (try
+                                             (.close server)
+                                             (catch :default _ nil))))]
+                        (.once res "close" close-once)
+                        (-> (.connect server transport)
                           (.then (fn []
-                                   (.handleRequest streamable-transport req res)))
+                                   (.handleRequest transport req res)))
                           (.catch (fn [err]
+                                    (close-once)
                                     (js/console.error "MCP streamable HTTP error:" (.-message err))
                                     (when-not (.-headersSent res)
-                                      (send-text res 500 "MCP streamable HTTP error")))))
+                                      (send-json res 500 {:jsonrpc "2.0"
+                                                          :id nil
+                                                          :error {:code -32603
+                                                                  :message "MCP streamable HTTP error"}}
+                                                 :cors-origin cors-origin))))))
 
                       :else
                       (send-text res 404 "Not found"))))
@@ -601,12 +615,9 @@
                 (.close ^js transport)
                 (catch :default _ nil)))
             (reset! transports {})
-            (-> (js/Promise.resolve (.close streamable-transport))
-                (.finally
-                 (fn []
-                   (js/Promise.
-                    (fn [resolve _reject]
-                      (.close server resolve))))))))
+            (js/Promise.
+             (fn [resolve _reject]
+               (.close server resolve)))))
     server))
 
 (defn serve

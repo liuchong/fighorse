@@ -61,6 +61,7 @@ Run the MCP server:
 - Long-running services must be idle-efficient, release locks on SIGINT/SIGTERM/stdin close, and avoid leaving orphaned MCP processes.
 - One-shot CLI commands must not use the MCP singleton lock; they should bound network work with timeouts, abort in-flight requests on signals, and exit cleanly after output is written.
 - `install all` defaults to CLI-only setup. Long-running MCP service setup must be explicit with `install all --mode service` or `install service`; do not configure, kickstart, or bind the MCP service in CLI-only workflows.
+- Streamable HTTP `/mcp` must support repeated client handshakes. Do not reuse one stateless `StreamableHTTPServerTransport` across multiple initialize requests; create/close a transport and MCP server per request, or manage stateful sessions by `Mcp-Session-Id`.
 - Keep README, discovery output, generated skills, MCP schemas, and actual CLI behavior consistent when changing workflows or defaults.
 
 ## AI Tool Notes
