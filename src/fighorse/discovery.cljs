@@ -4,22 +4,173 @@
             [fighorse.api.coverage :as api-coverage]
             [fighorse.config :as config]
             [fighorse.experience :as experience]
-            [fighorse.guidance :as guidance]))
+            [fighorse.guidance :as guidance]
+            [fighorse.utils.url :as figma-url]))
 
 (def version "0.1.0")
+(def ^:private fs (js/require "fs"))
+(def ^:private path (js/require "path"))
+
+(defn- path-dirs []
+  (->> (str/split (or (.-PATH js/process.env) "") (js/RegExp. (or (.-delimiter path) ":") "g"))
+       (remove str/blank?)
+       vec))
+
+(defn- executable-candidates [command]
+  (let [exts (if (= "win32" (.-platform js/process))
+               ["" ".exe" ".cmd" ".bat"]
+               [""])]
+    (cond
+      (str/blank? command) []
+      (or (.isAbsolute path command)
+          (str/includes? command "/")
+          (str/includes? command "\\"))
+      (mapv #(str command %) exts)
+      :else
+      (vec (for [dir (path-dirs)
+                 ext exts]
+             (.join path dir (str command ext)))))))
+
+(defn- executable-path [command]
+  (some (fn [candidate]
+          (when (.existsSync fs candidate)
+            candidate))
+        (executable-candidates command)))
+
+(defn- home-exists? []
+  (.existsSync fs (config/fighorse-home)))
+
+(defn- mcp-lock-file []
+  (.join path (config/fighorse-home) "runtime" "mcp.lock"))
+
+(defn- read-json-object [file]
+  (try
+    (when (.existsSync fs file)
+      (js->clj (js/JSON.parse (.readFileSync fs file "utf8")) :keywordize-keys true))
+    (catch :default _
+      nil)))
+
+(defn- active-pid? [pid]
+  (and (number? pid)
+       (pos? pid)
+       (try
+         (.kill js/process pid 0)
+         true
+         (catch :default err
+           (not= "ESRCH" (.-code err))))))
+
+(defn mcp-service-status []
+  (let [lock-file (mcp-lock-file)
+        lock (read-json-object lock-file)
+        pid (:pid lock)]
+    {:endpoint "http://127.0.0.1:9449/mcp"
+     :health "http://127.0.0.1:9449/health"
+     :lock_file lock-file
+     :lock_present (boolean lock)
+     :pid pid
+     :running (active-pid? pid)
+     :next_step (if (active-pid? pid)
+                  "Ask the client to call discover_fighorse, or run fighorse doctor --format json."
+                  "For MCP clients, run fighorse install all --mode service --apply --source <path-to-fighorse>.")}))
+
+(defn quickstart
+  "Read-only guided readiness report for new users."
+  [& {:keys [figma-url]}]
+  (let [{:keys [token config-path proxy]} (config/load-config)
+        parsed (when-not (str/blank? figma-url)
+                 (figma-url/parse-figma-url figma-url))
+        has-token? (boolean (seq token))
+        has-url? (boolean parsed)
+        exact-selection? (boolean (:node_id parsed))
+        binary (or (executable-path "fighorse")
+                   (when (.existsSync fs "./dist/fighorse")
+                     (.resolve path "./dist/fighorse")))
+        checks [{:id "runtime"
+                 :ok (boolean (some-> js/globalThis .-Bun .-version))
+                 :message (if (some-> js/globalThis .-Bun .-version)
+                            "Bun runtime is available."
+                            "Bun runtime is not available. Run fighorse with Bun or the compiled binary.")}
+                {:id "binary"
+                 :ok (boolean binary)
+                 :message (if binary
+                            (str "fighorse binary found at " binary)
+                            "Build and install fighorse before using it globally.")
+                 :next_command "bun run build && bun run compile && ./dist/fighorse install all --apply --source ./dist/fighorse"}
+                {:id "auth"
+                 :ok has-token?
+                 :message (if has-token?
+                            "Figma token is configured."
+                            "Figma token is missing.")
+                 :next_command "fighorse auth login --token <FIGMA_TOKEN>"}
+                {:id "figma_url"
+                 :ok (and has-url? (:valid parsed))
+                 :message (cond
+                            (not has-url?) "Paste a Figma frame, component, or group link to continue."
+                            (:valid parsed) "Figma URL or file key parsed successfully."
+                            :else (:error parsed))
+                 :next_command "fighorse quickstart \"<figma-frame-url>\""}
+                {:id "specific_frame"
+                 :ok exact-selection?
+                 :message (cond
+                            exact-selection? "The link includes node-id, so it targets a specific selection."
+                            has-url? "The link has no node-id. Copy a link to a selected frame, component, or group for best results."
+                            :else "Copy a link to a selected frame, component, or group.")
+                 :next_command "In Figma: right click the frame or group, then copy link to selection."}]
+        ready? (every? :ok checks)
+        design-command (when (and (:valid parsed) (:file_key parsed))
+                         (str "fighorse design package \"" (or figma-url (:file_key parsed))
+                              "\" --platform <target-platform> --asset-format <asset-format> --output ./.fighorse/exports/package.json"))]
+    {:kind "fighorse.quickstart.v1"
+     :status (if ready? "ready" "needs-action")
+     :summary (if ready?
+                "Ready to build a design package."
+                "Follow next_steps before building a design package.")
+     :checks checks
+     :auth {:has_token has-token?
+            :config_path config-path}
+     :install {:home (config/fighorse-home)
+               :home_exists (home-exists?)
+               :binary binary
+               :default_mode "cli"
+               :service_mode "explicit: fighorse install all --mode service --apply"}
+     :mcp (mcp-service-status)
+     :figma_url parsed
+     :proxy {:configured (boolean proxy)
+             :value proxy}
+     :next_steps (cond-> []
+                   (not binary) (conj "Build and install the CLI: bun run build && bun run compile && ./dist/fighorse install all --apply --source ./dist/fighorse")
+                   (not has-token?) (conj "Add a Figma token: fighorse auth login --token <FIGMA_TOKEN>")
+                   (not has-url?) (conj "Copy a link to a specific Figma frame, component, or group.")
+                   (and has-url? (not exact-selection?)) (conj "Narrow the input to an exact Figma selection with node-id.")
+                   design-command (conj design-command)
+                   :always (conj "Optional MCP service: fighorse install all --mode service --clients cursor,codex,kimi --apply --source <path-to-fighorse>"))}))
+
+(defn quickstart->markdown [report]
+  (let [line (fn [{:keys [ok id message next_command]}]
+               (str "- " (if ok "OK" "TODO") " `" id "`: " message
+                    (when (and (not ok) next_command)
+                      (str "\n  Next: `" next_command "`"))))]
+    (str "# fighorse Quickstart\n\n"
+         (:summary report) "\n\n"
+         "## Checks\n\n"
+         (str/join "\n" (map line (:checks report)))
+         "\n\n## Next Steps\n\n"
+         (str/join "\n" (map #(str "- " %) (:next_steps report)))
+         "\n")))
 
 (defn manifest []
   {:kind "fighorse.discovery.v1"
    :name "fighorse"
    :version version
-   :purpose "Provide Figma design context, screenshots, tokens, and implementation hints to AI coding tools."
-   :primary_use_case "Given a Figma URL, produce enough structured context for an AI coding tool to recreate the selected design."
+   :purpose "Provide public-first Figma CLI + MCP infrastructure for design context, screenshots, tokens, assets, diagnostics, and implementation hints."
+   :primary_use_case "Given a specific Figma frame URL, produce enough structured context for an AI coding tool to recreate the selected design."
    :production_defaults
    {:mcp_mode "readonly"
     :mcp_local_write "set FIGHORSE_MCP_LOCAL_WRITE=allow only for safe local asset exports"
     :fighorse_home "~/.fighorse"
     :global_experience "~/.fighorse/experience/global.jsonl"
     :project_experience "./.fighorse/experience.jsonl after fighorse install project"
+    :quickstart "fighorse quickstart \"<figma-frame-url>\""
     :default_design_package {:depth 2
                              :max_tokens 8000
                              :include_screenshot true
@@ -52,7 +203,23 @@
                          "Full public REST coverage with transparent operation registry."
                          "AI self-discovery, local experience learning, asset manifests, and reproducible visual feedback loops."
                          "Separate Figma write and local filesystem write safety controls."]
-    :unsupported_by_public_rest api-coverage/official-mcp-only-capabilities}
+    :unsupported_by_public_rest api-coverage/official-mcp-only-capabilities
+    :recommended_setup
+    "Use both fighorse and the official Figma Remote MCP together. fighorse handles design-to-code read workflows; official MCP handles canvas writes, Code to Canvas, and Code Connect."}
+   :complementary_mcp_servers
+   [{:name "figma-official"
+     :purpose "Native canvas writes, Code to Canvas, Code Connect, and product-only Figma capabilities."
+     :remote_url "https://mcp.figma.com/mcp"
+     :transport "http"
+     :auth "OAuth via Figma account"
+     :pricing "Beta: free. Future: usage-based paid feature (per Figma docs)."
+     :seat_requirements "Full seat for write to shared files; Dev seat read-only outside drafts."
+     :when_to_use ["Write directly to Figma canvas"
+                    "Code to Canvas (push running UI into Figma as editable layers)"
+                    "Code Connect automatic mapping"
+                    "FigJam generation"
+                    "Make resources"]
+     :when_not_to_use "Design-to-code replication, asset export with manifests, visual audit, or local experience learning — use fighorse instead."}]
    :experience_loop
    {:store_path (experience/experience-path)
     :store (experience/store-info)
@@ -119,10 +286,18 @@
     :learning_tools ["get_experience_schema" "list_experiences" "record_experience"]
     :replication_tools ["get_design_package" "get_design_context" "get_screenshot" "export_images" "export_component" "download_image_fills" "get_tokens" "visual_audit" "get_project_playbook"]
     :resources ["fighorse://capabilities" "fighorse://coverage" "fighorse://workflow/design-replication" "fighorse://experience/summary"]
-    :prompts ["fighorse_design_replication" "fighorse_api_coverage"]}
+    :prompts ["fighorse_design_replication" "fighorse_api_coverage"]
+     :complementary_servers
+     [{:name "figma-official"
+       :url "https://mcp.figma.com/mcp"
+       :transport "http"
+       :auth "OAuth"
+       :purpose "Canvas writes, Code to Canvas, Code Connect"
+       :pricing_note "Free during beta; will become usage-based paid"}]}
    :cli
    {:self_discovery_commands
-    ["fighorse discover --format json"
+    ["fighorse quickstart \"<figma-frame-url>\" --format json"
+     "fighorse discover --format json"
      "fighorse doctor --format json"
      "fighorse install status"
      "fighorse install project"
@@ -206,7 +381,12 @@
 
 (defn doctor []
   (let [{:keys [token config-path proxy]} (config/load-config)
-        bun-version (some-> js/globalThis .-Bun .-version)]
+        bun-version (some-> js/globalThis .-Bun .-version)
+        has-token? (boolean (seq token))
+        local-write? (config/mcp-local-write-enabled?)
+        mcp-service (mcp-service-status)
+        stale-lock? (and (:lock_present mcp-service)
+                         (not (:running mcp-service)))]
     {:kind "fighorse.doctor.v1"
      :runtime {:name "bun"
                :version bun-version
@@ -227,9 +407,42 @@
             :config_path config-path
             :env_token_present (boolean (or (seq (.-FIGMA_TOKEN js/process.env))
                                             (seq (.-FIGMA_API_KEY js/process.env))))}
+     :checks [{:id "token"
+               :ok has-token?
+               :message (if has-token?
+                          "Figma token is configured."
+                          "Figma token is missing; Figma API calls will fail.")
+               :next_step "Run fighorse auth login --token <FIGMA_TOKEN> or set FIGMA_TOKEN for one command."}
+              {:id "mcp_service"
+               :ok (:running mcp-service)
+               :message (if (:running mcp-service)
+                          "Local MCP service appears to have an active singleton owner."
+                          "Local MCP service is not running. This is fine for CLI-only mode.")
+               :next_step "For AI clients, run fighorse install all --mode service --apply --source <path-to-fighorse>."}
+              {:id "mcp_repeated_handshake"
+               :ok true
+               :message "The /mcp endpoint is expected to create a fresh stateless transport/server per request, so Codex-style repeated initialize handshakes stay valid."
+               :next_step "If a client reports text/plain during initialize, restart the installed fighorse service and verify /mcp implementation notes in AGENTS.md."}
+              {:id "local_write"
+               :ok local-write?
+               :message (if local-write?
+                          "MCP local file export is enabled."
+                          "MCP local file export is disabled by default.")
+               :next_step "Set FIGHORSE_MCP_LOCAL_WRITE=allow only when the client may write under ./.fighorse/exports, ./assets/fighorse, or ~/.fighorse/exports."}
+              {:id "stale_singleton_lock"
+               :ok (not stale-lock?)
+               :message (if stale-lock?
+                          "A stale MCP singleton lock was found."
+                          "No stale MCP singleton lock detected.")
+               :next_step (str "Remove " (:lock_file mcp-service) " only after confirming no fighorse MCP service is running.")}]
+     :mcp_service mcp-service
+     :troubleshooting {:broad_canvas_target "If diagnostics mention CANVAS, page, or user-flow target, copy a link to a specific frame, component, or group."
+                       :export_path_rejected "Use ./.fighorse/exports, ./assets/fighorse, or ~/.fighorse/exports. MCP also requires FIGHORSE_MCP_LOCAL_WRITE=allow."
+                       :mcp_unexpected_content_type "Codex/Cursor should target http://127.0.0.1:9449/mcp. The handler must return MCP JSON/SSE for every initialize request, including repeats."
+                       :quickstart "Run fighorse quickstart \"<figma-frame-url>\" for the shortest public onboarding path."}
      :proxy {:configured (boolean proxy)
              :value proxy}
-     :recommended_next_step (if (seq token)
+     :recommended_next_step (if has-token?
                               "Call list_experiences, then get_design_package with a Figma URL."
                               "Set FIGMA_TOKEN or run fighorse auth login --token <FIGMA_TOKEN>.")}))
 

@@ -1,6 +1,6 @@
 # fighorse Design
 
-`fighorse` is a Bun-first ClojureScript CLI and MCP server for turning Figma REST API data into implementation-grade context for humans and AI agents. It focuses on context quality, safety, debuggability, and visual feedback loops rather than direct code generation.
+`fighorse` is a Bun-first ClojureScript CLI and MCP server for turning Figma REST API data into implementation-grade context for humans and AI agents. It is public-first infrastructure: easy enough for a first-time user to reach a successful design package quickly, deep enough for teams and AI tools to build reproducible visual workflows over time.
 
 ## Product Goals
 
@@ -11,7 +11,13 @@ The project exists because the common Figma-to-AI paths each miss something impo
 - Raw Figma JSON is too large and noisy for LLM context windows.
 - MCP-only community tools are useful inside an IDE but weak for scripts, CI, reproducible debugging, and non-MCP agents.
 
-fighorse's goal is to provide a white-box data pipeline:
+fighorse's goal is to provide a white-box data pipeline with three progressive layers:
+
+- Simple first run: install, token, specific frame link, quickstart check, design package.
+- Deep second run: asset manifests, exact REST dispatch, visual audit, project playbook.
+- Long-term learning: local experience records that improve future AI runs without hidden memory.
+
+The pipeline provides:
 
 - Accurate Figma facts: node structure, dimensions, styles, layout, images, tokens, metadata.
 - AI-ready context: compact, budget-aware, and explicit about assumptions.
@@ -33,6 +39,7 @@ Figma REST API
 
 This keeps the system:
 
+- Public-first: users can succeed with the CLI before learning MCP.
 - Inspectable: developers can run the same command an AI tool calls.
 - Scriptable: shell, CI, and custom agents can use the binary directly.
 - Transport-neutral: stdio MCP, SSE MCP, and CLI all share behavior.
@@ -167,6 +174,8 @@ SSE MCP defaults to localhost (`127.0.0.1`) and supports controlled CORS. Stdio 
 - macOS launchd and Linux systemd user services for SSE MCP.
 
 When native client commands are available, installer code prefers them. Otherwise it writes standard user configuration files with backups.
+
+`fighorse install all` defaults to CLI-only because a public CLI should not surprise users with a background service or bound port. Long-running MCP service setup is explicit through `install all --mode service` or `install service`. Installed clients should share the local HTTP endpoint at `http://127.0.0.1:9449/mcp`, guarded by a singleton lock and compatible with repeated Streamable HTTP handshakes.
 
 ## Ecosystem Position
 

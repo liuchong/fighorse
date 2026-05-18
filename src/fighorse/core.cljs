@@ -365,6 +365,15 @@
       (write-output! (discovery/manifest->markdown manifest) (:output flags))
       (print-data manifest :output (:output flags)))))
 
+(defn cmd-quickstart [args]
+  (let [[flags clean-args] (parse-flags args ["--format" "--output" "--figma-url"])
+        figma-url (or (:figma_url flags) (first clean-args))
+        report (discovery/quickstart :figma-url figma-url)
+        format (or (:format flags) "md")]
+    (if (= "json" format)
+      (print-data report :output (:output flags))
+      (write-output! (discovery/quickstart->markdown report) (:output flags)))))
+
 (defn cmd-doctor [args]
   (let [[flags _] (parse-flags args ["--output"])]
     (print-data (discovery/doctor) :output (:output flags))))
@@ -467,7 +476,8 @@
 (defn cmd-smoke [args]
   (let [token (require-token!)
         [flags clean-args] (parse-flags args ["--output"])
-        input (require-arg clean-args 0 "figma-url-or-file-key")]
+        input (require-arg clean-args 0 "figma-url-or-file-key")
+        parsed (figma-url/parse-figma-url input)]
     (-> (design-package/get-design-package token
                                            :figma-url input
                                            :depth 1
@@ -477,15 +487,28 @@
         (.then (fn [pkg]
                  (print-data {:kind "fighorse.smoke.v1"
                               :ok (= "ready" (get-in pkg [:diagnostics :status]))
+                              :parsed_input parsed
                               :source (:source pkg)
                               :file (:file pkg)
                               :target (:target pkg)
-                              :diagnostics (:diagnostics pkg)}
+                              :diagnostics (:diagnostics pkg)
+                              :next_steps (cond-> ["Use fighorse design package with explicit --platform and --asset-format for implementation context."]
+                                            (not (:node_id parsed))
+                                            (conj "Copy a link to a selected frame, component, or group so the URL includes node-id.")
+                                            (= "CANVAS" (get-in pkg [:target :type]))
+                                            (conj "Current target is a CANVAS/page; use screen_candidates from a design package to pick exact frames."))}
                              :output (:output flags))))
         (.catch (fn [err]
                   (print-data {:kind "fighorse.smoke.v1"
                                :ok false
                                :error (or (.-message err) (str err))
+                               :parsed_input parsed
+                               :checks [{:id "token"
+                                         :next_step "Run fighorse auth login --token <FIGMA_TOKEN> or set FIGMA_TOKEN."}
+                                        {:id "figma_url"
+                                         :next_step "Use fighorse quickstart \"<figma-frame-url>\" to verify URL parsing before smoke."}
+                                        {:id "proxy"
+                                         :next_step "If your network requires a proxy, set HTTPS_PROXY or ALL_PROXY."}]
                                :next_step "Run fighorse doctor --format json and verify FIGMA_TOKEN, file permissions, proxy, and Figma URL."}
                               :output (:output flags))
                   (js/process.exit 1))))))
@@ -951,6 +974,7 @@
   (println "Usage: fighorse <command> [args...]")
   (println "")
   (println "Self Discovery and AI Replication:")
+  (println "  quickstart [figma-url] [--format json]        Guided first-run readiness check")
   (println "  discover [--format json|md]                  Describe capabilities for AI tools")
   (println "  doctor [--format json]                       Check runtime/auth readiness")
   (println "  smoke <figma-url>                            Verify real Figma access and design package readiness")
@@ -1091,6 +1115,7 @@
           (flag-present? args "--help")
           (flag-present? args "-h"))       (cmd-help)
       ;; Self discovery and AI replication
+      (= [cmd1] ["quickstart"])            (cmd-quickstart (rest args))
       (= [cmd1] ["discover"])              (cmd-discover (rest args))
       (= [cmd1] ["doctor"])                (cmd-doctor (rest args))
       (= [cmd1] ["smoke"])                 (cmd-smoke (rest args))

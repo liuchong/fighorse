@@ -8,19 +8,24 @@ Figma 数据的瑞士军刀，专门打磨成 AI 最容易消化的形状。
 
 ## Quick Start
 
+The default path is CLI-only. It does not start a long-running MCP service or bind any port.
+
 ```bash
 bun install
 bun run build
 bun run compile
-./dist/fighorse --help
+./dist/fighorse install all --apply --source ./dist/fighorse
 ```
 
 ```bash
 fighorse auth login --token <FIGMA_TOKEN>
-fighorse discover --format json
-fighorse doctor --format json
-fighorse smoke "https://www.figma.com/design/<fileKey>/<name>?node-id=<node-id>"
-fighorse figma-api coverage --format json
+fighorse quickstart
+```
+
+In Figma, copy a link to the exact frame, component, or group you want to inspect. Avoid starting from a whole page/canvas unless you are exploring.
+
+```bash
+fighorse quickstart "https://www.figma.com/design/<fileKey>/<name>?node-id=<node-id>"
 ```
 
 生成复刻设计所需的上下文包：
@@ -39,8 +44,15 @@ fighorse component export <file_key> --ids 2:8 --format svg --dir ./assets/figho
 fighorse asset download <file_key> --dir ./assets/fighorse --manifest
 ```
 
+Optional MCP service mode for AI clients:
+
+```bash
+fighorse install all --mode service --clients cursor,codex,kimi --apply --source ./dist/fighorse
+```
+
 ## Documentation
 
+- [Quickstart](docs/quickstart.md): first successful CLI run, frame link, design package, optional MCP setup.
 - [User Guide](docs/user-guide.md): install, auth, CLI, MCP service, local asset export, experience storage, troubleshooting.
 - [AI Client Guide](docs/ai-client-guide.md): how AI tools should self-discover, call MCP/CLI, export assets, ask for platform/asset format, and record reusable lessons.
 - [Design](docs/design.md): architecture, product goals, ecosystem tradeoffs, self-discovery/self-learning model, safety boundaries.

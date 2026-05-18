@@ -30,16 +30,24 @@ Recommended installed MCP config:
     "fighorse": {
       "transport": "http",
       "url": "http://127.0.0.1:9449/mcp"
+    },
+    "figma-official": {
+      "transport": "http",
+      "url": "https://mcp.figma.com/mcp"
     }
   }
 }
 ```
 
+**Why both?** fighorse handles design-to-code read workflows (design package, asset export, visual audit, experience learning). The official Figma Remote MCP handles product-only capabilities not exposed by public REST: native canvas writes, Code to Canvas, Code Connect auto-mapping, FigJam generation, and Make resources. They complement each other and can coexist in the same client.
+
+- Official Remote MCP: `https://mcp.figma.com/mcp` — OAuth auth, free during beta, will become usage-based paid.
+- Seat requirements: Full seat for writes to shared files; Dev seat is read-only outside drafts.
+
 Recommended local service:
 
 ```bash
-FIGHORSE_MCP_MODE=readonly FIGHORSE_MCP_LOCAL_WRITE=allow \
-  fighorse mcp serve --transport sse --host 127.0.0.1 --port 9449
+fighorse install all --mode service --clients cursor,codex,kimi --apply --source ./dist/fighorse
 ```
 
 Connect to `http://127.0.0.1:9449/mcp` when the client supports Streamable HTTP. The legacy SSE endpoint remains available at `http://127.0.0.1:9449/sse`, and stdio remains an explicit compatibility mode. Installed clients should prefer the shared local service so the system has only one long-running `fighorse` MCP process.
@@ -206,13 +214,189 @@ Do not record:
 - One-off project decisions that are not reusable.
 - Lessons that merely restate the design content.
 
-## Cursor, Codex, Kimi, Claude, opencode Notes
+## Client-Specific Setup
 
-All clients should receive the same fighorse contract. Differences should be limited to config file shape and transport.
+All clients should receive the same fighorse contract. Differences should be limited to config file shape and transport. The recommended public setup is one shared local HTTP MCP service at `http://127.0.0.1:9449/mcp`.
 
-- Cursor: use `install client --client cursor --apply` where possible; it also installs rules/skills for agent behavior.
-- Codex: use `install client --client codex --apply`; generated TOML includes local-write environment when configured.
-- Kimi: use `install client --client kimi --apply`; generated config follows Kimi MCP conventions.
-- Claude and opencode: generate config with `mcp config` or install client if supported on the host.
+### Cursor
+
+Install:
+
+```bash
+fighorse install all --mode service --clients cursor --apply --source ./dist/fighorse
+```
+
+Expected config shape:
+
+```json
+{
+  "mcpServers": {
+    "fighorse": {
+      "transport": "http",
+      "url": "http://127.0.0.1:9449/mcp"
+    }
+  }
+}
+```
+
+Verify:
+
+```bash
+fighorse quickstart --format json
+fighorse doctor --format json
+```
+
+Common failure: Cursor is configured to spawn stdio repeatedly. Replace that config with the shared HTTP endpoint unless the client cannot connect to localhost HTTP.
+
+### Codex
+
+Install:
+
+```bash
+fighorse install all --mode service --clients codex --apply --source ./dist/fighorse
+```
+
+Expected generated TOML:
+
+```toml
+[mcp_servers.fighorse]
+url = "http://127.0.0.1:9449/mcp"
+enabled = true
+startup_timeout_sec = 60
+```
+
+Verify:
+
+```bash
+fighorse install status
+curl http://127.0.0.1:9449/health
+```
+
+Common failure: Codex may initialize a fresh Streamable HTTP session each time it starts. `/mcp` must accept repeated `initialize` requests and return MCP JSON/SSE, not `text/plain`. Restart the fighorse service after upgrading.
+
+### Kimi
+
+Install:
+
+```bash
+fighorse install all --mode service --clients kimi --apply --source ./dist/fighorse
+```
+
+Expected command shape:
+
+```bash
+kimi mcp add --transport http fighorse http://127.0.0.1:9449/mcp
+```
+
+Verify:
+
+```bash
+fighorse quickstart --format json
+```
+
+Common failure: older Kimi clients may only support stdio. Use `fighorse mcp config --client kimi --transport stdio` only for that compatibility case.
+
+### Claude
+
+Generate or install:
+
+```bash
+fighorse install client --client claude --apply
+fighorse mcp config --client claude --transport http
+```
+
+Expected config shape:
+
+```json
+{
+  "mcpServers": {
+    "fighorse": {
+      "transport": "http",
+      "url": "http://127.0.0.1:9449/mcp"
+    }
+  }
+}
+```
+
+Verify by asking Claude to call `discover_fighorse`, then `check_fighorse_ready`.
+
+Common failure: the desktop/client environment may not inherit shell tokens. Store the token with `fighorse auth login --token <FIGMA_TOKEN>` so the service can read local config.
+
+### opencode
+
+Install or generate:
+
+```bash
+fighorse install client --client opencode --apply
+fighorse mcp config --client opencode --transport http
+```
+
+Expected config shape is the same HTTP MCP entry:
+
+```json
+{
+  "mcpServers": {
+    "fighorse": {
+      "transport": "http",
+      "url": "http://127.0.0.1:9449/mcp"
+    }
+  }
+}
+```
+
+Verify:
+
+```bash
+fighorse doctor --format json
+```
+
+Common failure: service mode was not installed because `install all` defaults to CLI-only. Re-run with `--mode service`.
+
+### VS Code-Compatible Clients
+
+Use the generic HTTP MCP config unless the client documents a different schema:
+
+```bash
+fighorse mcp config --client generic --transport http
+```
+
+Expected shape:
+
+```json
+{
+  "fighorse": {
+    "transport": "http",
+    "url": "http://127.0.0.1:9449/mcp"
+  }
+}
+```
+
+Common failure: the client expects an `mcpServers` wrapper. If so, use the Cursor-style shape above.
+
+### Generic MCP
+
+For Streamable HTTP:
+
+```json
+{
+  "transport": "http",
+  "url": "http://127.0.0.1:9449/mcp"
+}
+```
+
+For explicit stdio compatibility only:
+
+```json
+{
+  "command": "fighorse",
+  "args": ["mcp", "serve", "--transport", "stdio"],
+  "env": {
+    "FIGHORSE_MCP_MODE": "readonly",
+    "FIGHORSE_MCP_LOCAL_WRITE": "allow"
+  }
+}
+```
+
+Common failure: multiple long-lived stdio processes consume resources. Prefer the shared HTTP service for clients that support it.
 
 When an AI tool sees a Figma URL and fighorse is available, it should not manually scrape the URL, guess frame ids, or implement from visual memory. Use fighorse first.

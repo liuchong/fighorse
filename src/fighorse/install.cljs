@@ -214,8 +214,14 @@
        "## Feedback Loop\n\n"
        "Build/run the target app, capture screenshots, compare with Figma, fix overlap/clipping/status-bar/typography issues, then call `visual_audit` or `fighorse visual audit` for structured mismatch guidance. "
        "After a reusable fix, call `record_experience` or `fighorse experience add`.\n\n"
+       "## Complementary: Official Figma MCP\n\n"
+       "fighorse focuses on design-to-code read workflows. For capabilities not exposed by the public REST API, recommend the official Figma Remote MCP together with fighorse. "
+       "Official Remote MCP: `https://mcp.figma.com/mcp` (OAuth, HTTP transport). "
+       "Use official MCP for: native canvas writes, Code to Canvas, Code Connect auto-mapping, FigJam generation, and Make resources. "
+       "Use fighorse for: design replication, asset export with manifests, visual audit, local experience learning, and transparent REST coverage. "
+       "Both can be installed side-by-side in the same MCP client.\n\n"
        "## Boundaries\n\n"
-       "fighorse is open-source and REST-transparent. If the user asks for official MCP-only product features such as native canvas mutation, Code to Canvas, automatic Code Connect mapping, Make resources, or FigJam generation, state that public REST does not expose them and offer the closest fighorse workflow instead.\n"))
+       "fighorse is open-source and REST-transparent. If the user asks for official MCP-only product features such as native canvas mutation, Code to Canvas, automatic Code Connect mapping, Make resources, or FigJam generation, recommend installing the official Figma Remote MCP (`https://mcp.figma.com/mcp`) and offer the closest fighorse workflow as a fallback.\n"))
 
 (defn agents-markdown []
   (str "# fighorse Agent Instructions\n\n"
@@ -228,7 +234,8 @@
        "- Store temporary exports in `./.fighorse/exports`; store packaged assets in `./assets/fighorse` or the app resource directory; MCP export requires `FIGHORSE_MCP_LOCAL_WRITE=allow` and path validation.\n"
        "- Use `visual_audit` or `fighorse visual audit` after implementation screenshots exist.\n"
        "- Record reusable fixes with `record_experience` after visual debugging.\n"
-       "- Do not claim official MCP-only features are implemented when public REST does not expose them.\n"))
+       "- Do not claim official MCP-only features are implemented when public REST does not expose them.\n"
+       "- When the user needs native canvas writes, Code to Canvas, Code Connect auto-mapping, FigJam generation, or Make resources, recommend the official Figma Remote MCP (`https://mcp.figma.com/mcp`) alongside fighorse.\n"))
 
 (defn cursor-rule []
   (str "---\n"
@@ -754,7 +761,16 @@
                                       "Main MCP config: `mcp.json`.\n\n"
                                       "Run with `--apply` to install into detected client config and skill locations.\n\n"
                                       "Recommended order: discover_fighorse, check_fighorse_ready, list_experiences, get_design_package, visual_audit, record_experience.\n"
-                                      "For exact public REST API calls, inspect `fighorse://coverage` or run `fighorse figma-api coverage`.\n"))]
+                                      "For exact public REST API calls, inspect `fighorse://coverage` or run `fighorse figma-api coverage`.\n\n"
+                                      "## Complementary: Official Figma MCP\n\n"
+                                      "For capabilities not exposed by the public Figma REST API, also install the official Figma Remote MCP.\n\n"
+                                      "- Remote URL: `https://mcp.figma.com/mcp`\n"
+                                      "- Transport: HTTP (Streamable HTTP)\n"
+                                      "- Auth: OAuth via your Figma account\n"
+                                      "- Use for: native canvas writes, Code to Canvas, Code Connect auto-mapping, FigJam generation, Make resources\n"
+                                      "- Pricing: free during beta; will become usage-based paid (per Figma docs)\n"
+                                      "- Seat: Full seat required for writes to shared files; Dev seat is read-only outside drafts\n\n"
+                                      "Both fighorse and the official MCP can coexist in the same client. fighorse handles design-to-code read workflows; official MCP handles canvas mutation and product-only features.\n"))]
         extra-files (cond-> []
                       (= "codex" client)
                       (conj (write-text! (.join path base "codex-config.toml") (codex-toml server command home)))
@@ -928,7 +944,17 @@
 
 (defn status []
   (let [home (config/fighorse-home)
-        normalized-clients (->> supported-clients (map normalize-client) distinct vec)]
+        normalized-clients (->> supported-clients (map normalize-client) distinct vec)
+        lock-file (.join path home "runtime" "mcp.lock")
+        lock-present? (file-exists? lock-file)
+        lock (when lock-present? (read-json-object lock-file))
+        lock-pid (get lock "pid")
+        active-lock? (and (number? lock-pid)
+                          (try
+                            (.kill js/process lock-pid 0)
+                            true
+                            (catch :default err
+                              (not= "ESRCH" (.-code err)))))]
     {:kind "fighorse.install-status.v1"
      :home home
      :home_exists (.existsSync fs home)
@@ -941,6 +967,25 @@
      :clients_dir (.join path home "clients")
      :services_dir (.join path home "services")
      :skills_dir (.join path home "skills")
+     :public_quickstart {:default_install_mode "cli"
+                         :cli_install "fighorse install all --apply --source ./dist/fighorse"
+                         :service_install "fighorse install all --mode service --clients cursor,codex,kimi --apply --source ./dist/fighorse"
+                         :first_check "fighorse quickstart \"<figma-frame-url>\""}
+     :mcp_service {:endpoint "http://127.0.0.1:9449/mcp"
+                   :health "http://127.0.0.1:9449/health"
+                   :lock_file lock-file
+                  :lock_present lock-present?
+                   :pid lock-pid
+                   :running active-lock?
+                  :stale_lock (and lock-present? (not active-lock?))
+                   :next_step (if active-lock?
+                                "MCP service appears to be running. Configure clients to use http://127.0.0.1:9449/mcp."
+                                "If an AI client needs MCP, install explicit service mode; CLI-only users do not need this service.")}
+     :troubleshooting {:token_missing "Run fighorse auth login --token <FIGMA_TOKEN>."
+                       :client_config "Generated client configs use http://127.0.0.1:9449/mcp and expect one shared local service."
+                       :codex_handshake "Repeated /mcp initialize requests must return MCP JSON/SSE, not text/plain; restart the service after upgrading."
+                       :local_write "MCP exports require FIGHORSE_MCP_LOCAL_WRITE=allow and an approved export root."
+                       :stale_lock (str "Remove " lock-file " only after confirming no fighorse MCP service is running.")}
      :supported_clients supported-clients
      :detected_clients (into {}
                              (map (fn [client] [client (client-detection client)]))

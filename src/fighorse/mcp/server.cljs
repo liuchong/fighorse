@@ -519,6 +519,37 @@
                               "Access-Control-Allow-Origin" cors-origin})
   (.end res (js/JSON.stringify (clj->js data) nil 2)))
 
+(defn handle-streamable-http-request!
+  "Handle one stateless Streamable HTTP MCP request.
+
+   A fresh transport and MCP server are created for every request. This is
+   required for clients such as Codex that repeat initialize handshakes."
+  [^js req ^js res transport-factory server-factory cors-origin]
+  (let [^js transport (transport-factory)
+        ^js server (server-factory)
+        closed (atom false)
+        close-once (fn []
+                     (when (compare-and-set! closed false true)
+                       (try
+                         (.close transport)
+                         (catch :default _ nil))
+                       (try
+                         (.close server)
+                         (catch :default _ nil))))]
+    (.once res "close" close-once)
+    (-> (.connect server transport)
+        (.then (fn []
+                 (.handleRequest transport req res)))
+        (.catch (fn [err]
+                  (close-once)
+                  (js/console.error "MCP streamable HTTP error:" (.-message err))
+                  (when-not (.-headersSent res)
+                    (send-json res 500 {:jsonrpc "2.0"
+                                        :id nil
+                                        :error {:code -32603
+                                                :message "MCP streamable HTTP error"}}
+                               :cors-origin cors-origin)))))))
+
 (defn- serve-sse [port host cors-origin]
   (let [port (if (number? port) port (js/parseInt port 10))
         host (or host "127.0.0.1")
@@ -573,30 +604,10 @@
                           (send-text res 404 "MCP session not found")))
 
                       (= pathname "/mcp")
-                      (let [^js transport (new StreamableHTTPServerTransport #js {:sessionIdGenerator js/undefined})
-                            server (create-server)
-                            closed (atom false)
-                            close-once (fn []
-                                         (when (compare-and-set! closed false true)
-                                           (try
-                                             (.close transport)
-                                             (catch :default _ nil))
-                                           (try
-                                             (.close server)
-                                             (catch :default _ nil))))]
-                        (.once res "close" close-once)
-                        (-> (.connect server transport)
-                          (.then (fn []
-                                   (.handleRequest transport req res)))
-                          (.catch (fn [err]
-                                    (close-once)
-                                    (js/console.error "MCP streamable HTTP error:" (.-message err))
-                                    (when-not (.-headersSent res)
-                                      (send-json res 500 {:jsonrpc "2.0"
-                                                          :id nil
-                                                          :error {:code -32603
-                                                                  :message "MCP streamable HTTP error"}}
-                                                 :cors-origin cors-origin))))))
+                      (handle-streamable-http-request! req res
+                                                       (fn [] (new StreamableHTTPServerTransport #js {:sessionIdGenerator js/undefined}))
+                                                       create-server
+                                                       cors-origin)
 
                       :else
                       (send-text res 404 "Not found"))))

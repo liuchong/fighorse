@@ -147,3 +147,15 @@
           (is (= ["cursor" "codex"] (:clients installed)))
           (is (= "http+sse" (get-in installed [:service :transport])))
           (is (some? (get-in installed [:service :file]))))))))
+
+(deftest install-status-explains-public-onboarding-and-service-mode
+  (testing "status makes CLI-only and explicit service paths visible"
+    (with-temp-env
+      (fn [_home _project]
+        (let [status (install/status)]
+          (is (= "cli" (get-in status [:public_quickstart :default_install_mode])))
+          (is (clojure.string/includes? (get-in status [:public_quickstart :service_install])
+                                        "--mode service"))
+          (is (= "http://127.0.0.1:9449/mcp"
+                 (get-in status [:mcp_service :endpoint])))
+          (is (contains? (:troubleshooting status) :codex_handshake)))))))

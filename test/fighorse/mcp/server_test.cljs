@@ -1,5 +1,5 @@
 (ns fighorse.mcp.server-test
-  (:require [cljs.test :refer [deftest is testing]]
+  (:require [cljs.test :refer [async deftest is testing]]
             [clojure.string :as str]
             [fighorse.mcp.server :as server]))
 
@@ -115,3 +115,35 @@
         (if (nil? original)
           (js-delete js/process.env "FIGHORSE_MCP_STDIO_MAX_BYTES")
           (set! (.-FIGHORSE_MCP_STDIO_MAX_BYTES js/process.env) original))))))
+
+(deftest streamable-http-uses-fresh-transport-per-request
+  (testing "Codex-style repeated handshakes get a new stateless transport and server"
+    (async done
+      (let [created-transports (atom 0)
+            created-servers (atom 0)
+            closed-transports (atom 0)
+            closed-servers (atom 0)
+            transport-factory (fn []
+                                (swap! created-transports inc)
+                                #js {:handleRequest (fn [_req _res] (js/Promise.resolve #js {}))
+                                     :close (fn [] (swap! closed-transports inc))})
+            server-factory (fn []
+                             (swap! created-servers inc)
+                             #js {:connect (fn [_transport] (js/Promise.resolve #js {}))
+                                  :close (fn [] (swap! closed-servers inc))})
+            req #js {}
+            res #js {:headersSent false
+                     :once (fn [_event _handler] nil)
+                     :writeHead (fn [_status _headers] nil)
+                     :end (fn [_body] nil)}]
+        (-> (js/Promise.all
+             #js [(server/handle-streamable-http-request! req res transport-factory server-factory "*")
+                  (server/handle-streamable-http-request! req res transport-factory server-factory "*")])
+            (.then (fn []
+                     (is (= 2 @created-transports))
+                     (is (= 2 @created-servers))
+                     (is (= 0 @closed-transports))
+                     (is (= 0 @closed-servers))))
+            (.catch (fn [err]
+                      (is nil (or (.-message err) (str err)))))
+            (.finally done))))))

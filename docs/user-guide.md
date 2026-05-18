@@ -1,8 +1,12 @@
 # fighorse User Guide
 
-`fighorse` turns Figma REST API data into AI-friendly context and developer-friendly CLI output. It is useful when you want to inspect a design, export assets, prepare implementation context for an AI coding tool, or run a local MCP server.
+`fighorse` is a public-first, open-source Figma CLI + MCP. It turns public Figma REST API data into AI-friendly context and developer-friendly CLI output. The first run should be simple: install, add a token, paste a specific frame link, and generate a useful design package. The second run can go deeper with asset manifests, visual audit, project playbooks, full REST coverage, and local experience learning.
+
+Use the CLI when you want reproducible commands, scripts, CI, or quick inspection. Use the MCP service when an AI coding tool should call fighorse directly.
 
 ## Install From Source
+
+For the fastest path, see [Quickstart](quickstart.md). The default install mode is CLI-only and does not start MCP service processes.
 
 ```bash
 bun install
@@ -17,11 +21,17 @@ Install the compiled binary and optional AI client integrations:
 ./dist/fighorse install status
 ./dist/fighorse install auth --apply
 ./dist/fighorse install binary --source ./dist/fighorse --apply
+./dist/fighorse install all --apply --source ./dist/fighorse
+```
+
+Install MCP service and AI client integrations only when needed:
+
+```bash
 ./dist/fighorse install client --client cursor --apply
 ./dist/fighorse install client --client codex --apply
 ./dist/fighorse install client --client kimi --apply
 ./dist/fighorse install service --service launchd --apply
-./dist/fighorse install all --clients cursor,codex,kimi --source ./dist/fighorse --apply
+./dist/fighorse install all --mode service --clients cursor,codex,kimi --source ./dist/fighorse --apply
 ```
 
 Install commands generate reviewable files by default. Add `--apply` only when you want fighorse to mutate user-level client config, skill/rule locations, binary links, or service managers.
@@ -45,6 +55,8 @@ FIGMA_TOKEN=<FIGMA_TOKEN> fighorse file tree <file_key>
 ## Verify Readiness
 
 ```bash
+fighorse quickstart
+fighorse quickstart "https://www.figma.com/design/<fileKey>/<name>?node-id=<node-id>"
 fighorse doctor --format json
 fighorse discover --format json
 fighorse smoke "https://www.figma.com/design/<fileKey>/<name>?node-id=<node-id>"
@@ -156,11 +168,13 @@ For installed clients, prefer the shared local HTTP service so Cursor, Codex, Ki
 }
 ```
 
-Start the local service:
+Install and start the local service through the explicit service path when possible:
 
 ```bash
-fighorse mcp serve --transport sse --host 127.0.0.1 --port 9449
+fighorse install all --mode service --clients cursor,codex,kimi --apply --source ./dist/fighorse
 ```
+
+For development, you can also run it directly with `fighorse mcp serve --transport sse --host 127.0.0.1 --port 9449`.
 
 HTTP endpoints:
 
@@ -246,7 +260,10 @@ fighorse image export <file_key> --ids "$IDS" --dir ./.fighorse/exports --manife
 
 ## Troubleshooting
 
+- First run is unclear: run `fighorse quickstart "<figma-frame-url>"` and follow `next_steps`.
 - `doctor.auth.has_token` is false: run `fighorse auth login --token <FIGMA_TOKEN>` or `fighorse install auth --apply`.
+- `doctor.checks` reports MCP service not running: ignore it for CLI-only work, or run `fighorse install all --mode service --apply --source ./dist/fighorse` for AI clients.
+- Codex/Cursor reports `text/plain` or repeated initialize failures: restart the fighorse service after upgrading; `/mcp` must support repeated Streamable HTTP handshakes.
 - `smoke.ok` is false but file metadata exists: follow `diagnostics.warnings`; often the selected target is too broad or platform/asset format is missing.
 - MCP export tool reports local-write disabled: set `FIGHORSE_MCP_LOCAL_WRITE=allow` in the MCP server environment.
 - Export path is rejected: use `./.fighorse/exports`, `./assets/fighorse`, or `~/.fighorse/exports`.
