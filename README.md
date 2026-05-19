@@ -12,9 +12,7 @@ The default path is CLI-only. It does not start a long-running MCP service or bi
 
 ```bash
 bun install
-bun run build
-bun run compile
-./dist/fighorse install all --apply --source ./dist/fighorse
+bun run install:local
 ```
 
 ```bash
@@ -47,7 +45,13 @@ fighorse asset download <file_key> --dir ./assets/fighorse --manifest
 Optional MCP service mode for AI clients:
 
 ```bash
-fighorse install all --mode service --clients cursor,codex,kimi --apply --source ./dist/fighorse
+fighorse install --default --mode service --clients cursor,codex,kimi --apply
+```
+
+Package distributable macOS binaries:
+
+```bash
+bun run package
 ```
 
 ## Documentation
@@ -67,7 +71,7 @@ fighorse install all --mode service --clients cursor,codex,kimi --apply --source
 | Figma Data | `file get`, `file nodes`, `node get`, `file tree`, `file compact` |
 | Assets | `image export`, `component export`, `asset download`, `images render`, `images fills` |
 | Design System | `components`, `component-sets`, `styles`, `variables`, `tokens extract` |
-| Install | `install home`, `install auth`, `install binary`, `install client`, `install service`, `install skill`, `install all` |
+| Install | `install`, `install self`, `install home`, `install auth`, `install binary`, `install client`, `install service`, `install skill`, `install all` |
 | MCP | `mcp serve --transport http`, `mcp serve --transport sse --host 127.0.0.1`, explicit `stdio` compatibility mode |
 
 ## Safety Defaults
@@ -85,6 +89,8 @@ fighorse install all --mode service --clients cursor,codex,kimi --apply --source
 bun run test
 bun run build
 bun run compile
+bun run package
+bun run install:local
 bun run check
 ```
 

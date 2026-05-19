@@ -255,6 +255,31 @@
 
 ;; --- Installation commands ---
 
+(defn cmd-install-self [args]
+  (let [[flags _] (parse-flags args ["--source" "--path" "--target" "--client" "--clients"
+                                     "--transport" "--port" "--command" "--home" "--token"
+                                     "--mode" "--service" "--link-dir" "--link-dirs" "--output"])
+        apply (boolean (flag-present? args "--apply"))
+        default? (boolean (flag-present? args "--default"))
+        port (optional-int (:port flags))]
+    (print-data (install/install-self! :source (:source flags)
+                                       :path (:path flags)
+                                       :target (:target flags)
+                                       :default? default?
+                                       :client (:client flags)
+                                       :clients (:clients flags)
+                                       :transport (or (:transport flags) "http")
+                                       :port (or port 9449)
+                                       :command (or (:command flags) "fighorse")
+                                       :home (:home flags)
+                                       :token (:token flags)
+                                       :mode (:mode flags)
+                                       :service (or (:service flags) "auto")
+                                       :link-dir (:link_dir flags)
+                                       :link-dirs (:link_dirs flags)
+                                       :apply apply)
+                :output (:output flags))))
+
 (defn cmd-install-home [args]
   (let [[flags _] (parse-flags args ["--home" "--output"])]
     (print-data (install/install-home! :home (:home flags))
@@ -973,6 +998,15 @@
   (println "")
   (println "Usage: fighorse <command> [args...]")
   (println "")
+  (println "Start here:")
+  (println "  fighorse quickstart                         Guided first-run setup")
+  (println "  fighorse quickstart \"<figma-frame-url>\"      Validate token, frame link, and next command")
+  (println "  fighorse quickstart \"<figma-frame-url>\" --format json")
+  (println "                                                Machine-readable setup check for AI clients")
+  (println "")
+  (println "Run quickstart first. It explains required Figma token setup, frame-link scope,")
+  (println "design-package commands, and MCP client setup when needed.")
+  (println "")
   (println "Self Discovery and AI Replication:")
   (println "  quickstart [figma-url] [--format json]        Guided first-run readiness check")
   (println "  discover [--format json|md]                  Describe capabilities for AI tools")
@@ -1001,6 +1035,8 @@
   (println "  install client --client cursor|codex|kimi|claude|opencode|openclaw|hermes-agent [--apply]  Generate or apply client MCP setup")
   (println "  install service [--service launchd|systemd] [--apply]  Generate or apply auto-start MCP SSE service")
   (println "  install skill [--dir D] [--clients C] [--apply]  Generate or apply fighorse skill/agent files")
+  (println "  install [--default|--path D|--target P] [--mode cli|service] [--apply]  Self-install this binary and emit AI-readable install guidance")
+  (println "  install self [--default|--path D|--target P] [--apply]  Same as install root command")
   (println "  install all [--mode cli|service|all] [--no-service] [--clients C] [--source P] [--apply]  Generate or apply setup; default mode is cli")
   (println "  install status                                Show install paths and detected state")
   (println "")
@@ -1131,6 +1167,10 @@
       (= [cmd1 cmd2] ["experience" "list"]) (cmd-experience-list rest-args)
       (= [cmd1 cmd2] ["experience" "add"]) (cmd-experience-add rest-args)
       (= [cmd1 cmd2] ["experience" "path"]) (cmd-experience-path rest-args)
+      (and (= cmd1 "install")
+           (or (nil? cmd2)
+               (str/starts-with? cmd2 "--"))) (cmd-install-self (rest args))
+      (= [cmd1 cmd2] ["install" "self"]) (cmd-install-self rest-args)
       (= [cmd1 cmd2] ["install" "home"]) (cmd-install-home rest-args)
       (= [cmd1 cmd2] ["install" "auth"]) (cmd-install-auth rest-args)
       (= [cmd1 cmd2] ["install" "project"]) (cmd-install-project rest-args)

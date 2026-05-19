@@ -88,6 +88,10 @@
           (is (str/includes? (.readFileSync fs (first (:files skill-result)) "utf8")
                              "record_experience"))
           (is (str/includes? (.readFileSync fs (first (:files skill-result)) "utf8")
+                             "fighorse auth login --token <FIGMA_TOKEN>"))
+          (is (str/includes? (.readFileSync fs (first (:files skill-result)) "utf8")
+                             "auth.has_token"))
+          (is (str/includes? (.readFileSync fs (first (:files skill-result)) "utf8")
                              "figma-api coverage"))
           (is (str/includes? (.readFileSync fs (first (:files skill-result)) "utf8")
                              "visual_audit"))
@@ -159,3 +163,40 @@
           (is (= "http://127.0.0.1:9449/mcp"
                  (get-in status [:mcp_service :endpoint])))
           (is (contains? (:troubleshooting status) :codex_handshake)))))))
+
+(deftest package-scripts-cover-source-build-package-and-install
+  (testing "package.json exposes source-state package and install workflows"
+    (let [pkg (js->clj (js/JSON.parse (.readFileSync fs "package.json" "utf8"))
+                       :keywordize-keys true)
+          scripts (:scripts pkg)]
+      (is (str/includes? (:package scripts) "package:macos"))
+      (is (str/includes? (get scripts (keyword "package:darwin-x64")) "bun run build"))
+      (is (str/includes? (get scripts (keyword "package:darwin-arm64")) "--target=bun-darwin-arm64"))
+      (is (str/includes? (get scripts (keyword "install:local")) "fighorse install --default --apply")))))
+
+(deftest self-install-plans-and-can-copy-current-binary
+  (testing "self install supports default/path guidance and explicit apply"
+    (with-temp-env
+      (fn [home _project]
+        (let [source (.join path home "source-fighorse")
+              install-dir (.join path home "target-bin")]
+          (.writeFileSync fs source "#!/bin/sh\necho fighorse\n")
+          (.chmodSync fs source 493)
+          (let [dry (install/install-self! :source source
+                                           :home home
+                                           :path install-dir
+                                           :link-dirs "none")
+                installed (install/install-self! :source source
+                                                 :home home
+                                                 :path install-dir
+                                                 :link-dirs "none"
+                                                 :apply true)]
+            (is (= "fighorse.install-self.v1" (:kind dry)))
+            (is (= "fighorse.install-guide.v1" (get-in dry [:guide :kind])))
+            (is (str/includes? (get-in dry [:guide :default_install :command])
+                               "--default --apply"))
+            (is (= (.join path install-dir "fighorse")
+                   (get-in dry [:binary :target])))
+            (is (.existsSync fs (.join path install-dir "fighorse")))
+            (is (= [] (get-in installed [:binary :links])))
+            (is (.existsSync fs (.join path home "skills" "fighorse" "SKILL.md")))))))))

@@ -8,6 +8,27 @@
 (def ^:private os (js/require "os"))
 (def ^:private path (js/require "path"))
 
+(defn- with-missing-token-env [f]
+  (let [original-home (.-FIGHORSE_HOME js/process.env)
+        original-token (.-FIGMA_TOKEN js/process.env)
+        original-api-key (.-FIGMA_API_KEY js/process.env)
+        home (.mkdtempSync fs (.join path (.tmpdir os) "fighorse-tools-"))]
+    (set! (.-FIGHORSE_HOME js/process.env) home)
+    (js-delete js/process.env "FIGMA_TOKEN")
+    (js-delete js/process.env "FIGMA_API_KEY")
+    (try
+      (f)
+      (finally
+        (if (nil? original-home)
+          (js-delete js/process.env "FIGHORSE_HOME")
+          (set! (.-FIGHORSE_HOME js/process.env) original-home))
+        (if (nil? original-token)
+          (js-delete js/process.env "FIGMA_TOKEN")
+          (set! (.-FIGMA_TOKEN js/process.env) original-token))
+        (if (nil? original-api-key)
+          (js-delete js/process.env "FIGMA_API_KEY")
+          (set! (.-FIGMA_API_KEY js/process.env) original-api-key))))))
+
 (defn- result->data [result]
   (js->clj (js/JSON.parse (-> result .-content first .-text))
            :keywordize-keys true))
@@ -37,6 +58,7 @@
     (let [result (js->clj (tools/list-tools) :keywordize-keys true)
           names (set (map :name (:tools result)))]
       (is (contains? names "discover_fighorse"))
+      (is (contains? names "check_fighorse_ready"))
       (is (contains? names "parse_figma_url"))
       (is (contains? names "get_replicate_workflow"))
       (is (contains? names "get_design_package"))
@@ -76,6 +98,28 @@
       (is (contains? props :platform))
       (is (contains? props :asset_format)))))
 
+(deftest ready-tool-tells-ai-how-to-handle-missing-token
+  (testing "tool description is actionable for AI clients"
+    (let [result (js->clj (tools/list-tools) :keywordize-keys true)
+          tool (first (filter #(= "check_fighorse_ready" (:name %)) (:tools result)))]
+      (is (str/includes? (:description tool) "fighorse auth login"))
+      (is (str/includes? (:description tool) "FIGMA_TOKEN")))))
+
+(deftest figma-api-tools-return-actionable-missing-token-error
+  (testing "AI clients get setup instructions instead of a remote 401"
+    (async done
+      (with-missing-token-env
+        (fn []
+          (let [request #js {:params #js {:name "get_file"
+                                          :arguments #js {:file_key "abc123"}}}]
+            (-> (tools/call-tool request)
+                (.then (fn [^js result]
+                         (is (= true (.-isError result)))
+                         (let [text (-> result .-content first .-text)]
+                           (is (str/includes? text "fighorse auth login --token <FIGMA_TOKEN>"))
+                           (is (str/includes? text "check_fighorse_ready")))))
+                (.finally done))))))))
+
 (deftest handle-tool-unknown-test
   (testing "unknown tool returns error"
     (async done
@@ -98,6 +142,8 @@
                    (let [text (-> result .-content first .-text)
                          data (js->clj (js/JSON.parse text) :keywordize-keys true)]
                      (is (= "fighorse.discovery.v1" (:kind data)))
+                     (is (some #(= "check_fighorse_ready" (:tool %))
+                               (:recommended_workflow data)))
                      (is (some #(= "list_experiences" (:tool %))
                                (:recommended_workflow data)))
                      (is (some #(= "get_design_package" (:tool %))

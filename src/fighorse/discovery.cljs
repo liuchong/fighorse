@@ -71,7 +71,37 @@
      :running (active-pid? pid)
      :next_step (if (active-pid? pid)
                   "Ask the client to call discover_fighorse, or run fighorse doctor --format json."
-                  "For MCP clients, run fighorse install all --mode service --apply --source <path-to-fighorse>.")}))
+                  "For MCP clients, run fighorse install --default --mode service --clients cursor,codex,kimi --apply.")}))
+
+(defn setup-guidance
+  "Structured setup instructions for humans and AI clients."
+  []
+  {:kind "fighorse.setup-guidance.v1"
+   :required_for_figma_api
+   [{:id "figma_token"
+     :name "Figma Personal Access Token"
+     :why "fighorse uses the public Figma REST API; file, node, image, component, variable, comment, webhook, analytics, and design-package calls require a token."
+     :accepted_sources ["FIGMA_TOKEN environment variable"
+                        "FIGMA_API_KEY environment variable"
+                        "~/.fighorse/config.json written by fighorse auth login"]
+     :recommended_command "fighorse auth login --token <FIGMA_TOKEN>"
+     :one_shot_command "FIGMA_TOKEN=<FIGMA_TOKEN> fighorse quickstart \"<figma-frame-url>\""
+     :safety "Do not paste tokens into prompts, commits, screenshots, or shared logs. Store them through local config or environment variables only."}]
+   :recommended_first_run
+   ["Run fighorse auth login --token <FIGMA_TOKEN>."
+    "Copy a link to a selected Figma frame, component, or group so the URL includes node-id."
+    "Run fighorse quickstart \"<figma-frame-url>\"."
+    "Run fighorse design package \"<figma-frame-url>\" --platform <target-platform> --asset-format <asset-format>."]
+   :optional_mcp_service
+   {:when "Only when an AI client such as Cursor, Codex, or Kimi should call fighorse directly."
+    :command "fighorse install --default --mode service --clients cursor,codex,kimi --apply"
+    :endpoint "http://127.0.0.1:9449/mcp"}
+   :ai_client_behavior
+   {:must_check_first ["discover_fighorse" "check_fighorse_ready"]
+    :if_auth_missing "Do not call Figma API tools yet. Tell the user: fighorse needs a Figma Personal Access Token. Run `fighorse auth login --token <FIGMA_TOKEN>` or set FIGMA_TOKEN, then retry."
+    :if_url_missing "Ask the user to paste a specific Figma frame/group/component link, not a full canvas link."
+    :if_platform_or_asset_format_missing "Ask the user for target platform/framework and preferred asset format before implementation."
+    :after_user_fixes_setup "Call check_fighorse_ready again, then parse_figma_url and get_design_package."}})
 
 (defn quickstart
   "Read-only guided readiness report for new users."
@@ -95,7 +125,7 @@
                  :message (if binary
                             (str "fighorse binary found at " binary)
                             "Build and install fighorse before using it globally.")
-                 :next_command "bun run build && bun run compile && ./dist/fighorse install all --apply --source ./dist/fighorse"}
+                 :next_command "From source: bun run install:local. From a downloaded binary: ./fighorse install --default --apply."}
                 {:id "auth"
                  :ok has-token?
                  :message (if has-token?
@@ -132,18 +162,19 @@
                :home_exists (home-exists?)
                :binary binary
                :default_mode "cli"
-               :service_mode "explicit: fighorse install all --mode service --apply"}
+               :service_mode "explicit: fighorse install --default --mode service --clients cursor,codex,kimi --apply"}
      :mcp (mcp-service-status)
+     :setup (setup-guidance)
      :figma_url parsed
      :proxy {:configured (boolean proxy)
              :value proxy}
      :next_steps (cond-> []
-                   (not binary) (conj "Build and install the CLI: bun run build && bun run compile && ./dist/fighorse install all --apply --source ./dist/fighorse")
+                   (not binary) (conj "Build and install from source: bun run install:local. Or install a downloaded binary: ./fighorse install --default --apply.")
                    (not has-token?) (conj "Add a Figma token: fighorse auth login --token <FIGMA_TOKEN>")
                    (not has-url?) (conj "Copy a link to a specific Figma frame, component, or group.")
                    (and has-url? (not exact-selection?)) (conj "Narrow the input to an exact Figma selection with node-id.")
                    design-command (conj design-command)
-                   :always (conj "Optional MCP service: fighorse install all --mode service --clients cursor,codex,kimi --apply --source <path-to-fighorse>"))}))
+                   :always (conj "Optional MCP service: fighorse install --default --mode service --clients cursor,codex,kimi --apply"))}))
 
 (defn quickstart->markdown [report]
   (let [line (fn [{:keys [ok id message next_command]}]
@@ -152,6 +183,22 @@
                       (str "\n  Next: `" next_command "`"))))]
     (str "# fighorse Quickstart\n\n"
          (:summary report) "\n\n"
+         "## Required Figma Setup\n\n"
+         "1. Save a Figma Personal Access Token before calling Figma APIs:\n"
+         "   `fighorse auth login --token <FIGMA_TOKEN>`\n"
+         "   Or run one command with `FIGMA_TOKEN=<token> fighorse ...`.\n"
+         "2. Copy a specific Figma frame, group, or component link. Avoid whole-canvas links for implementation.\n"
+         "3. Run quickstart again with the selected link:\n"
+         "   `fighorse quickstart \"<figma-frame-url>\"`\n"
+         "4. Build an AI-ready design package:\n"
+         "   `fighorse design package \"<figma-frame-url>\" --platform <target> --asset-format <format>`\n"
+         "5. Optional MCP service for Cursor/Codex/Kimi:\n"
+         "   `fighorse install --default --mode service --clients cursor,codex,kimi --apply`\n\n"
+         "## AI Client Setup Rule\n\n"
+         "First run `fighorse quickstart --format json` or MCP `check_fighorse_ready`. "
+         "If `auth.has_token=false`, do not call Figma API tools yet. "
+         "Tell the user: fighorse needs a Figma Personal Access Token; run "
+         "`fighorse auth login --token <FIGMA_TOKEN>` or set `FIGMA_TOKEN`, then retry.\n\n"
          "## Checks\n\n"
          (str/join "\n" (map line (:checks report)))
          "\n\n## Next Steps\n\n"
@@ -171,6 +218,7 @@
     :global_experience "~/.fighorse/experience/global.jsonl"
     :project_experience "./.fighorse/experience.jsonl after fighorse install project"
     :quickstart "fighorse quickstart \"<figma-frame-url>\""
+    :auth_setup "fighorse auth login --token <FIGMA_TOKEN>"
     :default_design_package {:depth 2
                              :max_tokens 8000
                              :include_screenshot true
@@ -178,6 +226,7 @@
                              :platform "ask-developer-if-unspecified"
                              :asset_format "ask-developer-if-unspecified; png is only the render fallback"}
     :smoke_test "fighorse smoke <figma-url>"}
+   :setup_requirements (setup-guidance)
    :input_contract
    {:preferred "figma_url"
     :accepted ["Figma design/file/proto/board URL"
@@ -235,33 +284,36 @@
      :tool "discover_fighorse"
      :reason "Learn available tools and contracts without external instructions."}
     {:step 2
+     :tool "check_fighorse_ready"
+     :reason "Verify local setup. If auth.has_token is false, prompt the user to run fighorse auth login --token <FIGMA_TOKEN> before calling Figma APIs."}
+    {:step 3
      :tool "list_experiences"
      :reason "Load reusable local lessons before repeating known layout, typography, asset, or platform mistakes."}
-    {:step 3
+    {:step 4
      :tool "parse_figma_url"
      :reason "Extract file_key and node_id from a pasted Figma URL when needed."}
-    {:step 4
+    {:step 5
      :tool "get_design_package"
      :reason "Fetch compact structure, screenshots, tokens, platform guidance, learned experience, asset export plan, and implementation hints in one call."}
-    {:step 5
+    {:step 6
      :action "If the target is a CANVAS/page/user flow or contains many children, narrow to exact frame/screen nodes before coding."
      :reason "Whole-flow pages are context for navigation, not a single UI surface to implement directly."}
-    {:step 6
+    {:step 7
      :action "Ask the developer for missing platform/framework or asset format before implementation."
      :reason "Platform and asset format change typography, density, vector/raster export, and build-pipeline choices."}
-    {:step 7
+    {:step 8
      :action "Export assets into a project-local or fighorse-managed directory with manifest enabled."
      :reason "Reasonable output locations avoid permission failures and make generated files discoverable by AI tools and build scripts."}
-    {:step 8
+    {:step 9
      :action "Implement from the design package."
      :reason "Use screenshots for visual fidelity, context for layout, tokens for styling, and assets for image fills."}
-    {:step 9
+    {:step 10
      :action "Run the implementation, capture screenshots, compare, and fix overlap/clipping/typography before finalizing."
      :reason "Real app screenshots catch container stacking, system chrome, compact typography, and localization issues."}
-    {:step 10
+    {:step 11
      :tool "visual_audit"
      :reason "After implementation screenshots exist, structure fidelity checks and reusable experience suggestions."}
-    {:step 11
+    {:step 12
      :tool "record_experience"
      :reason "Persist reusable lessons so the next AI client can self-learn from this run without a long prompt."}]
    :mcp
@@ -321,11 +373,14 @@
      "fighorse install client --client opencode"
      "fighorse install service --service launchd --apply"
      "fighorse install skill --clients cursor,codex,kimi --apply"
-     "fighorse install all --clients cursor,codex,kimi --source <path-to-fighorse-binary> --apply"]}
+     "fighorse install --default --apply"
+     "fighorse install --path ~/.local/bin --apply"
+     "fighorse install --default --mode service --clients cursor,codex,kimi --apply"]}
    :auth
    {:required_for_figma_api true
     :env ["FIGMA_TOKEN" "FIGMA_API_KEY"]
     :local_config "fighorse auth login --token <FIGMA_TOKEN>"
+    :missing_token_ai_prompt "fighorse needs a Figma Personal Access Token before it can read Figma files. Please run `fighorse auth login --token <FIGMA_TOKEN>` or set FIGMA_TOKEN, then ask me to retry."
     :safety "Do not commit tokens. Pass tokens through environment variables or local config only."}
    :quality_rules
    ["Use screenshot output as the visual source of truth."
@@ -406,7 +461,10 @@
      :auth {:has_token (boolean (seq token))
             :config_path config-path
             :env_token_present (boolean (or (seq (.-FIGMA_TOKEN js/process.env))
-                                            (seq (.-FIGMA_API_KEY js/process.env))))}
+                                            (seq (.-FIGMA_API_KEY js/process.env))))
+            :required_for_figma_api true
+            :setup_command "fighorse auth login --token <FIGMA_TOKEN>"
+            :missing_token_ai_prompt "fighorse needs a Figma Personal Access Token before it can read Figma files. Please run `fighorse auth login --token <FIGMA_TOKEN>` or set FIGMA_TOKEN, then ask me to retry."}
      :checks [{:id "token"
                :ok has-token?
                :message (if has-token?
@@ -418,7 +476,7 @@
                :message (if (:running mcp-service)
                           "Local MCP service appears to have an active singleton owner."
                           "Local MCP service is not running. This is fine for CLI-only mode.")
-               :next_step "For AI clients, run fighorse install all --mode service --apply --source <path-to-fighorse>."}
+               :next_step "For AI clients, run fighorse install --default --mode service --clients cursor,codex,kimi --apply."}
               {:id "mcp_repeated_handshake"
                :ok true
                :message "The /mcp endpoint is expected to create a fresh stateless transport/server per request, so Codex-style repeated initialize handshakes stay valid."
@@ -436,7 +494,9 @@
                           "No stale MCP singleton lock detected.")
                :next_step (str "Remove " (:lock_file mcp-service) " only after confirming no fighorse MCP service is running.")}]
      :mcp_service mcp-service
+     :setup (setup-guidance)
      :troubleshooting {:broad_canvas_target "If diagnostics mention CANVAS, page, or user-flow target, copy a link to a specific frame, component, or group."
+                       :token_missing "Run fighorse auth login --token <FIGMA_TOKEN>. AI clients should surface this exact command when auth.has_token is false."
                        :export_path_rejected "Use ./.fighorse/exports, ./assets/fighorse, or ~/.fighorse/exports. MCP also requires FIGHORSE_MCP_LOCAL_WRITE=allow."
                        :mcp_unexpected_content_type "Codex/Cursor should target http://127.0.0.1:9449/mcp. The handler must return MCP JSON/SSE for every initialize request, including repeats."
                        :quickstart "Run fighorse quickstart \"<figma-frame-url>\" for the shortest public onboarding path."}
@@ -490,6 +550,11 @@
        (:purpose m) "\n\n"
        "## Primary Use Case\n\n"
        (:primary_use_case m) "\n\n"
+       "## Setup Requirements\n\n"
+       "- Figma API calls require a Figma Personal Access Token.\n"
+       "- Recommended setup: `fighorse auth login --token <FIGMA_TOKEN>`.\n"
+       "- One-shot setup: `FIGMA_TOKEN=<FIGMA_TOKEN> fighorse quickstart \"<figma-frame-url>\"`.\n"
+       "- If `check_fighorse_ready` reports `auth.has_token=false`, ask the user to configure the token before calling Figma API tools.\n\n"
        "## Recommended Workflow\n\n"
        (str/join "\n"
                  (map (fn [{:keys [step tool action reason]}]

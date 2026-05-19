@@ -191,11 +191,17 @@
        "---\n\n"
        "# fighorse\n\n"
        "Use fighorse when a user asks to recreate, inspect, export, or debug a Figma design.\n\n"
+       "## Required User Setup\n\n"
+       "Figma API calls require a Figma Personal Access Token. Before calling Figma API tools, run `check_fighorse_ready` or `fighorse quickstart --format json`. "
+       "If `auth.has_token` is false, do not keep trying Figma calls. Tell the user: "
+       "`fighorse needs a Figma Personal Access Token. Run fighorse auth login --token <FIGMA_TOKEN> or set FIGMA_TOKEN, then retry.` "
+       "Never ask the user to paste the token into chat unless they explicitly choose to; prefer local config or environment variables.\n\n"
        "## Discovery\n\n"
        "1. Call `fighorse discover --format json` or MCP `discover_fighorse` first.\n"
-       "2. Call `fighorse experience summary --platform <platform> --asset-format <format>` or MCP `list_experiences` before implementation.\n"
-       "3. If platform or asset format is missing, ask the developer before choosing.\n"
-       "4. For exact public Figma REST API work, use `fighorse figma-api coverage --format json` or MCP resource `fighorse://coverage` to see the covered OpenAPI operations.\n\n"
+       "2. Call `check_fighorse_ready` or `fighorse doctor --format json`; surface setup commands if auth/token is missing.\n"
+       "3. Call `fighorse experience summary --platform <platform> --asset-format <format>` or MCP `list_experiences` before implementation.\n"
+       "4. If platform or asset format is missing, ask the developer before choosing.\n"
+       "5. For exact public Figma REST API work, use `fighorse figma-api coverage --format json` or MCP resource `fighorse://coverage` to see the covered OpenAPI operations.\n\n"
        "## Replication\n\n"
        "Use `get_design_package` or `fighorse design package <figma-url> --platform <platform> --asset-format <format>` as the main context source. "
        "Prioritize screenshots, learned_experience, explicit typography, tokens, compact tree metadata, then assets. "
@@ -226,6 +232,7 @@
 (defn agents-markdown []
   (str "# fighorse Agent Instructions\n\n"
        "- Start with `fighorse discover --format json` or MCP `discover_fighorse`.\n"
+       "- Then call `check_fighorse_ready` or `fighorse doctor --format json`. If `auth.has_token` is false, tell the user to run `fighorse auth login --token <FIGMA_TOKEN>` or set `FIGMA_TOKEN`; do not retry Figma API calls until setup is fixed.\n"
        "- Load local lessons with `list_experiences` before using `get_design_package`.\n"
        "- Use `platform` and `asset_format` explicitly; ask if unknown.\n"
        "- Prefer the installed shared HTTP MCP endpoint `http://127.0.0.1:9449/mcp`; avoid starting duplicate long-lived stdio servers unless a client requires compatibility mode.\n"
@@ -257,6 +264,26 @@
          distinct
          vec)))
 
+(defn- expand-home-path [p]
+  (cond
+    (str/blank? p) p
+    (= p "~") (homedir)
+    (str/starts-with? p "~/") (join-path (homedir) (subs p 2))
+    :else p))
+
+(defn- install-path->target [p home]
+  (let [p (expand-home-path p)]
+    (cond
+      (str/blank? p) (default-binary-target :home home)
+      (str/ends-with? p "/") (join-path p "fighorse")
+      (and (file-exists? p) (.isDirectory (.statSync fs p))) (join-path p "fighorse")
+      (= "fighorse" (.basename path p)) p
+      :else (join-path p "fighorse"))))
+
+(defn- current-executable-path []
+  (or (second (js->clj js/process.argv))
+      (.-execPath js/process)))
+
 (defn- copy-executable! [source target]
   (when (str/blank? source)
     (throw (js/Error. "--source is required when applying binary installation")))
@@ -287,9 +314,13 @@
       :or {apply false}}]
   (let [apply (boolean apply)
         target (or target (default-binary-target :home home))
-        link-dirs (vec (concat (split-list link-dirs)
-                               (when link-dir [link-dir])
-                               (path-preferred-link-dirs)))
+        requested-link-dirs (vec (concat (split-list link-dirs)
+                                         (when link-dir [link-dir])))
+        disable-links? (some #(= "none" (str/lower-case (str/trim (str %))))
+                             requested-link-dirs)
+        link-dirs (if disable-links?
+                    []
+                    (vec (concat requested-link-dirs (path-preferred-link-dirs))))
         link-dirs (->> link-dirs (remove str/blank?) distinct vec)
         links (mapv #(join-path % "fighorse") link-dirs)
         applied (when apply
@@ -899,6 +930,92 @@
                         "systemctl --user daemon-reload"
                         "systemctl --user enable --now fighorse-mcp.service"])}))))
 
+(defn install-guide
+  [& {:keys [source path target home clients mode]}]
+  (let [home (home-dir :home home)
+        target (or target (install-path->target path home))
+        source (or source (current-executable-path))]
+    {:kind "fighorse.install-guide.v1"
+     :purpose "AI-readable guide for installing a distributed fighorse binary."
+     :human_first_command "fighorse quickstart"
+     :default_install {:command "fighorse install --default --apply"
+                       :target (default-binary-target :home home)
+                       :effect "Copy this binary into the fighorse home bin directory, generate local config, and install fighorse skills/instructions."}
+     :custom_path_install {:command "fighorse install --path <install-dir> --apply"
+                           :exact_file_command "fighorse install --target <absolute-target-file> --apply"
+                           :target target}
+     :source_checkout_install {:command "bun run install:local"
+                               :effect "Build from source, compile the binary, then run the same self-install flow as a packaged binary."}
+     :packaging {:all "bun run package"
+                 :macos "bun run package:macos"
+                 :darwin_x64 "bun run package:darwin-x64"
+                 :darwin_arm64 "bun run package:darwin-arm64"}
+     :optional_mcp_service {:command "fighorse install --default --mode service --clients cursor,codex,kimi --apply"
+                            :endpoint "http://127.0.0.1:9449/mcp"}
+     :ai_client_instructions ["If the binary is not on PATH, copy it to the target path and use that absolute path in MCP/service config."
+                              "After install, run fighorse quickstart --format json or MCP check_fighorse_ready."
+                              "If auth.has_token is false, prompt the user to run fighorse auth login --token <FIGMA_TOKEN> or set FIGMA_TOKEN."
+                              "Use service mode only when Cursor/Codex/Kimi or another MCP client should call fighorse directly."]
+     :current {:source source
+               :planned_target target
+               :clients clients
+               :mode (or mode "cli")}}))
+
+(defn install-self!
+  [& {:keys [source path target default? client clients transport port command home token mode service link-dir link-dirs apply]
+      :or {transport "http" port 9449 command "fighorse" service "auto" apply false}}]
+  (let [apply (boolean apply)
+        home (home-dir :home home)
+        source (or source (current-executable-path))
+        target (or target
+                   (when default? (default-binary-target :home home))
+                   (install-path->target path home))
+        mode (str/lower-case (or mode "cli"))
+        mcp-mode? (#{"service" "mcp" "all"} mode)
+        selected-clients (if mcp-mode? (coerce-clients client clients) [])
+        command (if apply target command)]
+    {:kind "fighorse.install-self.v1"
+     :apply apply
+     :mode mode
+     :source source
+     :target target
+     :guide (install-guide :source source
+                           :path path
+                           :target target
+                           :home home
+                           :clients selected-clients
+                           :mode mode)
+     :home (install-home! :home home)
+     :auth (install-auth! :home home
+                          :token token
+                          :apply apply)
+     :binary (install-binary! :source source
+                              :target target
+                              :link-dir link-dir
+                              :link-dirs link-dirs
+                              :home home
+                              :apply apply)
+     :skill (install-skill! :home home
+                            :clients selected-clients
+                            :apply apply)
+     :clients selected-clients
+     :clients_result (mapv #(install-client! :client %
+                                             :transport transport
+                                             :port port
+                                             :command command
+                                             :home home
+                                             :apply apply)
+                           selected-clients)
+     :service (install-service! :service (if mcp-mode? service "none")
+                                :port port
+                                :command command
+                                :home home
+                                :apply apply)
+     :next_steps (cond-> ["Run `fighorse quickstart` to verify setup."
+                          "Run `fighorse auth login --token <FIGMA_TOKEN>` before calling Figma APIs."]
+                   (not apply) (conj "Add --apply to copy this binary and install generated config.")
+                   mcp-mode? (conj "Restart or reload Cursor/Codex/Kimi and ask it to call discover_fighorse."))}))
+
 (defn install-all!
   [& {:keys [client clients transport port command home project-dir source target link-dir link-dirs apply service token mode no-service]
       :or {client "generic" transport "http" port 9449 command "fighorse" apply false service "auto"}}]
@@ -968,8 +1085,9 @@
      :services_dir (.join path home "services")
      :skills_dir (.join path home "skills")
      :public_quickstart {:default_install_mode "cli"
-                         :cli_install "fighorse install all --apply --source ./dist/fighorse"
-                         :service_install "fighorse install all --mode service --clients cursor,codex,kimi --apply --source ./dist/fighorse"
+                         :cli_install "fighorse install --default --apply"
+                         :source_cli_install "bun run install:local"
+                         :service_install "fighorse install --default --mode service --clients cursor,codex,kimi --apply"
                          :first_check "fighorse quickstart \"<figma-frame-url>\""}
      :mcp_service {:endpoint "http://127.0.0.1:9449/mcp"
                    :health "http://127.0.0.1:9449/health"

@@ -200,7 +200,7 @@
     :description "Call this first. Returns fighorse's self-description, Figma replication workflow, input/output contracts, and recommended tool order."
     :inputSchema {:type "object" :properties {} :required []}}
    {:name "check_fighorse_ready"
-    :description "Check whether fighorse is ready to call Figma APIs, including Bun runtime and token presence. Does not call Figma."
+    :description "Check whether fighorse is ready to call Figma APIs, including Bun runtime and token presence. Does not call Figma. If auth.has_token is false, tell the user to run `fighorse auth login --token <FIGMA_TOKEN>` or set FIGMA_TOKEN before calling Figma API tools."
     :inputSchema {:type "object" :properties {} :required []}}
    {:name "parse_figma_url"
     :description "Parse a pasted Figma URL into file_key and node_id. Use before lower-level tools when the user gives a Figma URL."
@@ -385,8 +385,14 @@
 (def ^:private write-tool-names
   (delay (set (map :name write-tools))))
 
+(def ^:private missing-token-message
+  "fighorse needs a Figma Personal Access Token before calling Figma APIs. Run `fighorse auth login --token <FIGMA_TOKEN>` or set FIGMA_TOKEN, then call check_fighorse_ready again.")
+
 (defn- get-token []
-  (:token (config/load-config)))
+  (let [token (:token (config/load-config))]
+    (when (str/blank? token)
+      (throw (js/Error. missing-token-message)))
+    token))
 
 (defn- handle-promise
   "Execute a promise and return MCP result."
@@ -777,18 +783,21 @@
 (defn call-tool
   "Execute a tool call for tools/call."
   [^js request]
-  (let [name (.-name (.-params request))
-        args (js->clj (.-arguments (.-params request)) :keywordize-keys true)]
-    (if-let [msg (policy/violation @write-tool-names name)]
-      (js/Promise.resolve (error msg))
-      (if (registry/official-tool-name? name)
-        (let [operation-id (registry/operation-id-for-tool name)
-              params (or (:params args) {})
-              body (:body args)]
-          (handle-promise
-           (-> (operations/call-operation (get-token) operation-id params body)
-               (.then (fn [data]
-                        (if (:ai_guidance args)
-                          (operations/result-envelope operation-id data)
-                          data))))))
-        (handle-tool name args)))))
+  (try
+    (let [name (.-name (.-params request))
+          args (js->clj (.-arguments (.-params request)) :keywordize-keys true)]
+      (if-let [msg (policy/violation @write-tool-names name)]
+        (js/Promise.resolve (error msg))
+        (if (registry/official-tool-name? name)
+          (let [operation-id (registry/operation-id-for-tool name)
+                params (or (:params args) {})
+                body (:body args)]
+            (handle-promise
+             (-> (operations/call-operation (get-token) operation-id params body)
+                 (.then (fn [data]
+                          (if (:ai_guidance args)
+                            (operations/result-envelope operation-id data)
+                            data))))))
+          (handle-tool name args))))
+    (catch :default err
+      (js/Promise.resolve (error (or (.-message err) (str err)))))))

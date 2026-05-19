@@ -10,8 +10,7 @@ For the fastest path, see [Quickstart](quickstart.md). The default install mode 
 
 ```bash
 bun install
-bun run build
-bun run compile
+bun run install:local
 ./dist/fighorse --help
 ```
 
@@ -20,8 +19,7 @@ Install the compiled binary and optional AI client integrations:
 ```bash
 ./dist/fighorse install status
 ./dist/fighorse install auth --apply
-./dist/fighorse install binary --source ./dist/fighorse --apply
-./dist/fighorse install all --apply --source ./dist/fighorse
+./dist/fighorse install --default --apply
 ```
 
 Install MCP service and AI client integrations only when needed:
@@ -31,7 +29,7 @@ Install MCP service and AI client integrations only when needed:
 ./dist/fighorse install client --client codex --apply
 ./dist/fighorse install client --client kimi --apply
 ./dist/fighorse install service --service launchd --apply
-./dist/fighorse install all --mode service --clients cursor,codex,kimi --source ./dist/fighorse --apply
+./dist/fighorse install --default --mode service --clients cursor,codex,kimi --apply
 ```
 
 Install commands generate reviewable files by default. Add `--apply` only when you want fighorse to mutate user-level client config, skill/rule locations, binary links, or service managers.
@@ -171,7 +169,7 @@ For installed clients, prefer the shared local HTTP service so Cursor, Codex, Ki
 Install and start the local service through the explicit service path when possible:
 
 ```bash
-fighorse install all --mode service --clients cursor,codex,kimi --apply --source ./dist/fighorse
+fighorse install --default --mode service --clients cursor,codex,kimi --apply
 ```
 
 For development, you can also run it directly with `fighorse mcp serve --transport sse --host 127.0.0.1 --port 9449`.
@@ -189,7 +187,7 @@ The service binds to `127.0.0.1` by default and uses a singleton lock in `~/.fig
 
 Implementation note for maintainers: Streamable HTTP clients such as Codex may initialize a fresh MCP connection every time they start. The `/mcp` endpoint must therefore tolerate repeated handshakes. In stateless mode, create and close a fresh transport/server per request. Reusing one already-initialized `StreamableHTTPServerTransport` can make the first handshake pass and later handshakes fail with `500 text/plain` instead of an MCP JSON/SSE response.
 
-Normal CLI commands such as `fighorse file get`, `fighorse design package`, and `fighorse image export` are one-shot processes. They are allowed to start each time, do not start the MCP service, do not bind ports, do not take the MCP singleton lock, and should exit after output is written. Figma HTTP calls and image downloads use `FIGHORSE_HTTP_TIMEOUT_MS` with a default of `120000`, and `SIGINT`/`SIGTERM` abort in-flight requests before exiting. `fighorse install all` defaults to CLI-only setup; use `fighorse install all --mode service --apply` or `fighorse install service --apply` only when you explicitly want fighorse to configure or kickstart a long-running MCP service.
+Normal CLI commands such as `fighorse file get`, `fighorse design package`, and `fighorse image export` are one-shot processes. They are allowed to start each time, do not start the MCP service, do not bind ports, do not take the MCP singleton lock, and should exit after output is written. Figma HTTP calls and image downloads use `FIGHORSE_HTTP_TIMEOUT_MS` with a default of `120000`, and `SIGINT`/`SIGTERM` abort in-flight requests before exiting. `fighorse install --default --apply` defaults to CLI-only setup; use `fighorse install --default --mode service --apply` or `fighorse install service --apply` only when you explicitly want fighorse to configure or kickstart a long-running MCP service.
 
 ## Safety Modes
 
@@ -262,7 +260,7 @@ fighorse image export <file_key> --ids "$IDS" --dir ./.fighorse/exports --manife
 
 - First run is unclear: run `fighorse quickstart "<figma-frame-url>"` and follow `next_steps`.
 - `doctor.auth.has_token` is false: run `fighorse auth login --token <FIGMA_TOKEN>` or `fighorse install auth --apply`.
-- `doctor.checks` reports MCP service not running: ignore it for CLI-only work, or run `fighorse install all --mode service --apply --source ./dist/fighorse` for AI clients.
+- `doctor.checks` reports MCP service not running: ignore it for CLI-only work, or run `fighorse install --default --mode service --clients cursor,codex,kimi --apply` for AI clients.
 - Codex/Cursor reports `text/plain` or repeated initialize failures: restart the fighorse service after upgrading; `/mcp` must support repeated Streamable HTTP handshakes.
 - `smoke.ok` is false but file metadata exists: follow `diagnostics.warnings`; often the selected target is too broad or platform/asset format is missing.
 - MCP export tool reports local-write disabled: set `FIGHORSE_MCP_LOCAL_WRITE=allow` in the MCP server environment.

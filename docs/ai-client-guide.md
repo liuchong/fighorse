@@ -47,7 +47,7 @@ Recommended installed MCP config:
 Recommended local service:
 
 ```bash
-fighorse install all --mode service --clients cursor,codex,kimi --apply --source ./dist/fighorse
+fighorse install --default --mode service --clients cursor,codex,kimi --apply
 ```
 
 Connect to `http://127.0.0.1:9449/mcp` when the client supports Streamable HTTP. The legacy SSE endpoint remains available at `http://127.0.0.1:9449/sse`, and stdio remains an explicit compatibility mode. Installed clients should prefer the shared local service so the system has only one long-running `fighorse` MCP process.
@@ -223,7 +223,7 @@ All clients should receive the same fighorse contract. Differences should be lim
 Install:
 
 ```bash
-fighorse install all --mode service --clients cursor --apply --source ./dist/fighorse
+fighorse install --default --mode service --clients cursor --apply
 ```
 
 Expected config shape:
@@ -253,7 +253,7 @@ Common failure: Cursor is configured to spawn stdio repeatedly. Replace that con
 Install:
 
 ```bash
-fighorse install all --mode service --clients codex --apply --source ./dist/fighorse
+fighorse install --default --mode service --clients codex --apply
 ```
 
 Expected generated TOML:
@@ -279,7 +279,7 @@ Common failure: Codex may initialize a fresh Streamable HTTP session each time i
 Install:
 
 ```bash
-fighorse install all --mode service --clients kimi --apply --source ./dist/fighorse
+fighorse install --default --mode service --clients kimi --apply
 ```
 
 Expected command shape:

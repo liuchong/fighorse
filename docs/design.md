@@ -175,7 +175,7 @@ SSE MCP defaults to localhost (`127.0.0.1`) and supports controlled CORS. Stdio 
 
 When native client commands are available, installer code prefers them. Otherwise it writes standard user configuration files with backups.
 
-`fighorse install all` defaults to CLI-only because a public CLI should not surprise users with a background service or bound port. Long-running MCP service setup is explicit through `install all --mode service` or `install service`. Installed clients should share the local HTTP endpoint at `http://127.0.0.1:9449/mcp`, guarded by a singleton lock and compatible with repeated Streamable HTTP handshakes.
+`fighorse install --default --apply` defaults to CLI-only because a public CLI should not surprise users with a background service or bound port. Long-running MCP service setup is explicit through `install --default --mode service` or `install service`. Installed clients should share the local HTTP endpoint at `http://127.0.0.1:9449/mcp`, guarded by a singleton lock and compatible with repeated Streamable HTTP handshakes.
 
 ## Ecosystem Position
 

@@ -8,12 +8,24 @@ Build from source:
 
 ```bash
 bun install
-bun run build
-bun run compile
-./dist/fighorse install all --apply --source ./dist/fighorse
+bun run install:local
 ```
 
-`install all` defaults to CLI-only setup. It installs the binary and local fighorse home, but it does not start an MCP service or bind a port.
+`install:local` builds from source, compiles the binary, then runs the same self-install path used by a packaged binary.
+
+Install a downloaded binary:
+
+```bash
+./fighorse install --default --apply
+```
+
+Install to a custom directory:
+
+```bash
+./fighorse install --path ~/.local/bin --apply
+```
+
+These default to CLI-only setup. They install the binary and local fighorse home, but do not start an MCP service or bind a port.
 
 ## 2. Add A Figma Token
 
@@ -67,7 +79,7 @@ This is the main context source for AI implementation. It includes compact struc
 Only use service mode when an AI client should call fighorse directly:
 
 ```bash
-fighorse install all --mode service --clients cursor,codex,kimi --apply --source ./dist/fighorse
+fighorse install --default --mode service --clients cursor,codex,kimi --apply
 ```
 
 Installed clients should use:
@@ -97,6 +109,6 @@ Use fighorse to inspect this Figma frame. First call discover_fighorse, then lis
 
 - Token missing: run `fighorse auth login --token <FIGMA_TOKEN>`.
 - Link is too broad: copy a link to a selected frame or component.
-- MCP service not running: use `fighorse install all --mode service --apply --source ./dist/fighorse`.
+- MCP service not running: use `fighorse install --default --mode service --clients cursor,codex,kimi --apply`.
 - Codex reports unexpected content type: verify `curl http://127.0.0.1:9449/health`; the `/mcp` endpoint must return MCP JSON/SSE, not `text/plain`.
 - Local export rejected: use `./.fighorse/exports`, `./assets/fighorse`, or `~/.fighorse/exports`.
