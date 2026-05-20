@@ -145,6 +145,8 @@
                              (or (:stderr data) (:error data) "")))))
     data))
 
+(declare command-path expand-home-path)
+
 (defn- mcp-stdio-config [command home]
   {:command command
    :args ["mcp" "serve" "--transport" "stdio"]
@@ -163,10 +165,11 @@
 (defn mcp-server-config
   [& {:keys [transport port command home]
       :or {transport "http" port 9449 command "fighorse"}}]
-  (case transport
-    "http" (mcp-http-config port)
-    "sse" (mcp-sse-config port)
-    (mcp-stdio-config command home)))
+  (let [command (command-path command :home home)]
+    (case transport
+      "http" (mcp-http-config port)
+      "sse" (mcp-sse-config port)
+      (mcp-stdio-config command home))))
 
 (defn- codex-toml [server command home]
   (if-let [url (:url server)]
@@ -264,6 +267,13 @@
          distinct
          vec)))
 
+(defn- absolute-path [p]
+  (when-not (str/blank? p)
+    (let [p (expand-home-path p)]
+      (if (.isAbsolute path p)
+        p
+        (.resolve path p)))))
+
 (defn- expand-home-path [p]
   (cond
     (str/blank? p) p
@@ -272,7 +282,7 @@
     :else p))
 
 (defn- install-path->target [p home]
-  (let [p (expand-home-path p)]
+  (let [p (absolute-path p)]
     (cond
       (str/blank? p) (default-binary-target :home home)
       (str/ends-with? p "/") (join-path p "fighorse")
@@ -281,8 +291,23 @@
       :else (join-path p "fighorse"))))
 
 (defn- current-executable-path []
-  (or (second (js->clj js/process.argv))
-      (.-execPath js/process)))
+  (absolute-path
+   (or (second (js->clj js/process.argv))
+       (.-execPath js/process))))
+
+(defn- command-path
+  "Resolve an installed command to an absolute path for service/stdio configs."
+  [command & {:keys [home]}]
+  (cond
+    (str/blank? command) (default-binary-target :home home)
+    (or (.isAbsolute path (expand-home-path command))
+        (str/includes? command "/")
+        (str/includes? command "\\")
+        (str/starts-with? command "~"))
+    (absolute-path command)
+    :else
+    (or (executable-path command)
+        (default-binary-target :home home))))
 
 (defn- copy-executable! [source target]
   (when (str/blank? source)
@@ -313,7 +338,8 @@
   [& {:keys [source target link-dir link-dirs home apply]
       :or {apply false}}]
   (let [apply (boolean apply)
-        target (or target (default-binary-target :home home))
+        source (absolute-path source)
+        target (absolute-path (or target (default-binary-target :home home)))
         requested-link-dirs (vec (concat (split-list link-dirs)
                                          (when link-dir [link-dir])))
         disable-links? (some #(= "none" (str/lower-case (str/trim (str %))))
@@ -321,7 +347,7 @@
         link-dirs (if disable-links?
                     []
                     (vec (concat requested-link-dirs (path-preferred-link-dirs))))
-        link-dirs (->> link-dirs (remove str/blank?) distinct vec)
+        link-dirs (->> link-dirs (remove str/blank?) (map absolute-path) distinct vec)
         links (mapv #(join-path % "fighorse") link-dirs)
         applied (when apply
                   {:binary (copy-executable! source target)
@@ -767,6 +793,7 @@
   (let [apply (boolean apply)
         client (normalize-client client)
         base (or dir (.join path (home-dir :home home) "clients" client))
+        command (command-path command :home home)
         server (mcp-server-config :transport transport :port port :command command :home home)
         mcp-json (.join path base "mcp.json")
         manifest (.join path base "fighorse-client.json")
@@ -890,6 +917,7 @@
       :or {service "auto" port 9449 command "fighorse" apply false}}]
   (let [apply (boolean apply)
         home (home-dir :home home)
+        command (command-path command :home home)
         service (if (= "auto" service)
                   (if (= "darwin" js/process.platform) "launchd" "systemd")
                   service)
@@ -933,8 +961,8 @@
 (defn install-guide
   [& {:keys [source path target home clients mode]}]
   (let [home (home-dir :home home)
-        target (or target (install-path->target path home))
-        source (or source (current-executable-path))]
+        target (or (absolute-path target) (install-path->target path home))
+        source (or (absolute-path source) (current-executable-path))]
     {:kind "fighorse.install-guide.v1"
      :purpose "AI-readable guide for installing a distributed fighorse binary."
      :human_first_command "fighorse quickstart"
@@ -966,8 +994,8 @@
       :or {transport "http" port 9449 command "fighorse" service "auto" apply false}}]
   (let [apply (boolean apply)
         home (home-dir :home home)
-        source (or source (current-executable-path))
-        target (or target
+        source (or (absolute-path source) (current-executable-path))
+        target (or (absolute-path target)
                    (when default? (default-binary-target :home home))
                    (install-path->target path home))
         mode (str/lower-case (or mode "cli"))
@@ -1026,8 +1054,8 @@
         skip-service? (or (not mcp-mode?) no-service (= "none" service))
         home (home-dir :home home)
         selected-clients (if mcp-mode? (coerce-clients client clients) [])
-        binary-target (or target (default-binary-target :home home))
-        command (if (and apply source) binary-target command)]
+        binary-target (absolute-path (or target (default-binary-target :home home)))
+        command (if (and apply source) binary-target (command-path command :home home))]
     {:kind "fighorse.install-all.v1"
      :apply apply
      :mode mode

@@ -78,8 +78,9 @@
                                   "skills-cursor")))
           (is (= "systemd" (:service service-result)))
           (is (= "http+sse" (:transport service-result)))
-          (is (str/includes? (.readFileSync fs (:file service-result) "utf8")
-                             "ExecStart=fighorse mcp serve --transport sse --host 127.0.0.1"))
+          (let [unit (.readFileSync fs (:file service-result) "utf8")]
+            (is (str/includes? unit "ExecStart=/"))
+            (is (str/includes? unit " mcp serve --transport sse --host 127.0.0.1")))
           (is (.existsSync fs (.join path home "skills" "fighorse" "SKILL.md")))
           (is (str/includes? (.readFileSync fs (first (:files skill-result)) "utf8")
                              "name: fighorse"))
@@ -197,6 +198,36 @@
                                "--default --apply"))
             (is (= (.join path install-dir "fighorse")
                    (get-in dry [:binary :target])))
+            (is (.isAbsolute path (get-in dry [:binary :target])))
             (is (.existsSync fs (.join path install-dir "fighorse")))
             (is (= [] (get-in installed [:binary :links])))
             (is (.existsSync fs (.join path home "skills" "fighorse" "SKILL.md")))))))))
+
+(deftest installer-uses-absolute-command-paths-after-install
+  (testing "stdio client configs and service managers never depend on PATH"
+    (with-temp-env
+      (fn [home _project]
+        (let [source (.join path home "source-fighorse")
+              relative-dir "relative-install-bin"]
+          (.writeFileSync fs source "#!/bin/sh\necho fighorse\n")
+          (.chmodSync fs source 493)
+          (let [self (install/install-self! :source source
+                                            :home home
+                                            :path relative-dir
+                                            :link-dirs "none")
+                target (:target self)
+                stdio-client (install/install-client! :client "generic"
+                                                      :transport "stdio"
+                                                      :command "fighorse"
+                                                      :home home)
+                stdio-config (js->clj (js/JSON.parse (.readFileSync fs (first (:files stdio-client)) "utf8"))
+                                      :keywordize-keys true)
+                stdio-command (get-in stdio-config [:mcpServers :fighorse :command])
+                service (install/install-service! :service "systemd"
+                                                  :command "fighorse"
+                                                  :home home)
+                unit (.readFileSync fs (:file service) "utf8")]
+            (is (.isAbsolute path target))
+            (is (.isAbsolute path stdio-command))
+            (is (str/includes? unit "ExecStart=/"))
+            (is (not (str/includes? unit "ExecStart=fighorse ")))))))))
