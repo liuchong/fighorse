@@ -170,9 +170,22 @@
     (let [pkg (js->clj (js/JSON.parse (.readFileSync fs "package.json" "utf8"))
                        :keywordize-keys true)
           scripts (:scripts pkg)]
-      (is (str/includes? (:package scripts) "package:macos"))
-      (is (str/includes? (get scripts (keyword "package:darwin-x64")) "bun run build"))
-      (is (str/includes? (get scripts (keyword "package:darwin-arm64")) "--target=bun-darwin-arm64"))
+      (is (str/includes? (:package scripts) "package:bundle"))
+      (is (str/includes? (get scripts (keyword "package:bundle")) "scripts/package.mjs bundle"))
+      (is (str/includes? (get scripts (keyword "package:macos")) "scripts/package.mjs macos"))
+      (is (str/includes? (get scripts (keyword "package:darwin-x64")) "scripts/package.mjs darwin-x64"))
+      (is (str/includes? (get scripts (keyword "package:darwin-arm64")) "scripts/package.mjs darwin-arm64"))
+      (is (str/includes? (get scripts (keyword "package:darwin-universal")) "scripts/package.mjs darwin-universal"))
+      (is (str/includes? (get scripts (keyword "package:linux")) "scripts/package.mjs linux"))
+      (let [packager (.readFileSync fs "scripts/package.mjs" "utf8")]
+        (is (str/includes? packager "bun-darwin-x64"))
+        (is (str/includes? packager "bun-darwin-arm64"))
+        (is (str/includes? packager "llvm-lipo"))
+        (is (str/includes? packager "-create"))
+        (is (str/includes? packager "uname -m"))
+        (is (str/includes? packager "multi-platform"))
+        (is (str/includes? packager "bun-linux-x64"))
+        (is (str/includes? packager "bun-linux-arm64")))
       (is (str/includes? (get scripts (keyword "install:local")) "fighorse install --default --apply")))))
 
 (deftest self-install-plans-and-can-copy-current-binary

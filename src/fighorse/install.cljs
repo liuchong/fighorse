@@ -974,10 +974,17 @@
                            :target target}
      :source_checkout_install {:command "bun run install:local"
                                :effect "Build from source, compile the binary, then run the same self-install flow as a packaged binary."}
-     :packaging {:all "bun run package"
+     :packaging {:default "bun run package"
+                 :bundle "bun run package:bundle"
+                 :all "bun run package:all"
                  :macos "bun run package:macos"
+                 :darwin_bundle "bun run package:macos"
+                 :darwin_universal "bun run package:darwin-universal"
                  :darwin_x64 "bun run package:darwin-x64"
-                 :darwin_arm64 "bun run package:darwin-arm64"}
+                 :darwin_arm64 "bun run package:darwin-arm64"
+                 :linux "bun run package:linux"
+                 :linux_x64 "bun run package:linux-x64"
+                 :linux_arm64 "bun run package:linux-arm64"}
      :optional_mcp_service {:command "fighorse install --default --mode service --clients cursor,codex,kimi --apply"
                             :endpoint "http://127.0.0.1:9449/mcp"}
      :ai_client_instructions ["If the binary is not on PATH, copy it to the target path and use that absolute path in MCP/service config."

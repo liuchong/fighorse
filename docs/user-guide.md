@@ -34,6 +34,33 @@ Install MCP service and AI client integrations only when needed:
 
 Install commands generate reviewable files by default. Add `--apply` only when you want fighorse to mutate user-level client config, skill/rule locations, binary links, or service managers.
 
+## Package Binaries
+
+The default package command builds a multi-platform bundle. Its top-level
+`fighorse` launcher detects `uname -s` and `uname -m`, then runs the matching
+native binary for macOS Intel, macOS Apple Silicon, Linux x64, or Linux arm64:
+
+```bash
+bun run package
+tar -tzf dist/fighorse-multi-platform.tar.gz
+```
+
+You can also build per-platform archives:
+
+```bash
+bun run package:macos
+bun run package:darwin-x64
+bun run package:darwin-arm64
+bun run package:linux-x64
+bun run package:linux-arm64
+bun run package:all
+```
+
+`package:macos` creates the two macOS architecture archives plus a macOS bundle
+that auto-detects Intel vs Apple Silicon. If you specifically need a single
+Mach-O file that contains both macOS slices, run `bun run package:darwin-universal`
+on macOS with `lipo` available.
+
 ## Authentication
 
 Create a Figma personal access token from the Figma developer settings, then store it locally:

@@ -48,10 +48,15 @@ Optional MCP service mode for AI clients:
 fighorse install --default --mode service --clients cursor,codex,kimi --apply
 ```
 
-Package distributable macOS binaries:
+Package distributable binaries. The default package is a multi-platform bundle
+whose `fighorse` launcher auto-detects macOS Intel, macOS Apple Silicon, and
+Linux x64/arm64:
 
 ```bash
 bun run package
+bun run package:macos
+bun run package:linux
+bun run package:darwin-universal
 ```
 
 ## Documentation
