@@ -537,6 +537,7 @@
                          (.close server)
                          (catch :default _ nil))))]
     (.once res "close" close-once)
+    (.once res "finish" close-once)
     (-> (.connect server transport)
         (.then (fn []
                  (.handleRequest transport req res)))
@@ -560,6 +561,7 @@
         SSEServerTransport (.-SSEServerTransport sse)
         StreamableHTTPServerTransport (.-StreamableHTTPServerTransport streamable)
         transports (atom {})
+        max-sse-connections 32
         handler (fn [^js req ^js res]
                   (let [url (js/URL. (or (.-url req) "/") "http://localhost")
                         pathname (.-pathname url)
@@ -577,20 +579,30 @@
                       (send-json res 200 (discovery/doctor) :cors-origin cors-origin)
 
                       (and (= method "GET") (= pathname "/sse"))
-                      (let [^js transport (new SSEServerTransport "/messages" res)
-                            session-id (.-sessionId transport)
-                            server (create-server)]
-                        (swap! transports assoc session-id transport)
-                        (set! (.-onclose transport)
-                              (fn [] (swap! transports dissoc session-id)))
-                        (-> (.connect server transport)
-                            (.then (fn []
-                                     (js/console.error (str "Fighorse MCP SSE session started: " session-id))))
-                            (.catch (fn [err]
-                                      (swap! transports dissoc session-id)
-                                      (js/console.error "MCP SSE error:" (.-message err))
-                                      (when-not (.-headersSent res)
-                                        (send-text res 500 "MCP SSE error"))))))
+                      (if (>= (count @transports) max-sse-connections)
+                        (send-text res 503 "MCP SSE connection limit reached")
+                        (let [^js transport (new SSEServerTransport "/messages" res)
+                              session-id (.-sessionId transport)
+                              server (create-server)]
+                          (swap! transports assoc session-id transport)
+                          (js/console.error (str "Fighorse MCP SSE active connections: " (count @transports)))
+                          (set! (.-onclose transport)
+                                (fn []
+                                  (swap! transports dissoc session-id)
+                                  (try
+                                    (.close server)
+                                    (catch :default _ nil))))
+                          (-> (.connect server transport)
+                              (.then (fn []
+                                       (js/console.error (str "Fighorse MCP SSE session started: " session-id))))
+                              (.catch (fn [err]
+                                        (swap! transports dissoc session-id)
+                                        (try
+                                          (.close server)
+                                          (catch :default _ nil))
+                                        (js/console.error "MCP SSE error:" (.-message err))
+                                        (when-not (.-headersSent res)
+                                          (send-text res 500 "MCP SSE error")))))))
 
                       (and (= method "POST") (= pathname "/messages"))
                       (let [session-id (.get (.-searchParams url) "sessionId")
