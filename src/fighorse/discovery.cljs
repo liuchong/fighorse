@@ -248,7 +248,7 @@
    {:official_strengths ["Native Figma canvas writes through official MCP product APIs."
                          "Code Connect-aware context and code generation inside Figma's product surface."
                          "Make resources, FigJam generation, and hosted Remote MCP ergonomics."]
-    :fighorse_strengths ["MIT self-hosted CLI-first pipeline."
+    :fighorse_strengths ["Self-hosted CLI-first pipeline under 1PL."
                          "Full public REST coverage with transparent operation registry."
                          "AI self-discovery, local experience learning, asset manifests, and reproducible visual feedback loops."
                          "Separate Figma write and local filesystem write safety controls."]

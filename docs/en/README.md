@@ -1,6 +1,6 @@
 # fighorse
 
-> [English](docs/en/README.md) | [中文](docs/zh/README.md) | [Русский](docs/ru/README.md)
+> [English](README.md) | [中文](../zh/README.md) | [Русский](../ru/README.md)
 
 The Swiss Army knife for Figma data, shaped for AI consumption.
 
@@ -63,10 +63,10 @@ bun run package:darwin-universal
 
 ## Documentation
 
-- [Quickstart](docs/en/quickstart.md): first successful CLI run, frame link, design package, optional MCP setup.
-- [User Guide](docs/en/user-guide.md): install, auth, CLI, MCP service, local asset export, experience storage, troubleshooting.
-- [AI Client Guide](docs/en/ai-client-guide.md): how AI tools should self-discover, call MCP/CLI, export assets, ask for platform/asset format, and record reusable lessons.
-- [Design](docs/en/design.md): architecture, product goals, ecosystem tradeoffs, self-discovery/self-learning model, safety boundaries.
+- [Quickstart](quickstart.md): first successful CLI run, frame link, design package, optional MCP setup.
+- [User Guide](user-guide.md): install, auth, CLI, MCP service, local asset export, experience storage, troubleshooting.
+- [AI Client Guide](ai-client-guide.md): how AI tools should self-discover, call MCP/CLI, export assets, ask for platform/asset format, and record reusable lessons.
+- [Design](design.md): architecture, product goals, ecosystem tradeoffs, self-discovery/self-learning model, safety boundaries.
 
 ## Core Commands
 
