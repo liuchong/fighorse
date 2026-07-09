@@ -5,15 +5,6 @@
 /exports
 /coverage
 
-# Bun dependency/runtime artifacts
-/node_modules
-/.bun
-bun-error.log
-*.bun-debug.log
-
-# ClojureScript compiler cache
-/.shadow-cljs
-
 # Editor backups
 *~
 

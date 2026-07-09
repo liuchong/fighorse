@@ -7,11 +7,11 @@ This guide gets a new user from zero to useful Figma context as quickly as possi
 Build from source:
 
 ```bash
-bun install
-bun run install:local
+cargo build --release
+./target/release/fighorse install --default --apply --source ./target/release/fighorse
 ```
 
-`install:local` builds from source, compiles the binary, then runs the same self-install path used by a packaged binary.
+`install --default --apply` copies the binary into the fighorse home, generates local config, and installs fighorse skills/instructions — the same self-install path used by a packaged binary.
 
 Install a downloaded binary:
 

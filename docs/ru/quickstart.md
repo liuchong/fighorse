@@ -7,11 +7,11 @@
 Сборка из исходников:
 
 ```bash
-bun install
-bun run install:local
+cargo build --release
+./target/release/fighorse install --default --apply --source ./target/release/fighorse
 ```
 
-`install:local` собирает из исходников, компилирует бинарник, затем запускает тот же путь самоустановки, который используется упакованным бинарником.
+`install --default --apply` копирует бинарник в дом fighorse, генерирует локальную конфигурацию и устанавливает skills/инструкции fighorse — тот же путь самоустановки, который используется упакованным бинарником.
 
 Установка скачанного бинарника:
 

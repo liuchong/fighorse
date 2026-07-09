@@ -4,7 +4,7 @@
 
 Швейцарский армейский нож для данных Figma, заточенный под потребление AI.
 
-`fighorse` — это Bun-first ClojureScript CLI и MCP Server. Он не генерирует код, а преобразует данные Figma REST API в стабильный, потребляемый контекст для инструментов AI-программирования и разработчиков: полный публичный REST API, дерево структуры, компактный JSON, URL скриншотов, дизайн-токены, экспорт изображений/компонентов, манифесты, информация самообнаружения и локальный опыт.
+`fighorse` — это Rust CLI и MCP Server. Он не генерирует код, а преобразует данные Figma REST API в стабильный, потребляемый контекст для инструментов AI-программирования и разработчиков: полный публичный REST API, дерево структуры, компактный JSON, URL скриншотов, дизайн-токены, экспорт изображений/компонентов, манифесты, информация самообнаружения и локальный опыт.
 
 Ключевая идея — **CLI в ядре, MCP в оболочке**. CLI остается белым ящиком, скриптуемым и отлаживаемым; MCP позволяет Cursor, Codex, Kimi, Claude, opencode и другим AI-инструментам напрямую вызывать тот же набор возможностей.
 
@@ -13,8 +13,8 @@
 Путь по умолчанию — только CLI. Он не запускает долгоживущий MCP-сервис и не привязывает никакой порт.
 
 ```bash
-bun install
-bun run install:local
+cargo build --release
+./target/release/fighorse install --default --apply --source ./target/release/fighorse
 ```
 
 ```bash
@@ -50,15 +50,15 @@ fighorse asset download <file_key> --dir ./assets/fighorse --manifest
 fighorse install --default --mode service --clients cursor,codex,kimi --apply
 ```
 
-Упаковка распространяемых бинарников. Пакет по умолчанию — многоплатформенный бандл,
-чей лаунчер `fighorse` автоопределяет macOS Intel, macOS Apple Silicon и
-Linux x64/arm64:
+Упаковка распространяемых бинарников с помощью Cargo. Кросс-компилируйте под каждую
+цель с соответствующим Rust-тулчейном (или `cargo-zigbuild` для Linux-целей):
 
 ```bash
-bun run package
-bun run package:macos
-bun run package:linux
-bun run package:darwin-universal
+cargo build --release
+cargo build --release --target x86_64-apple-darwin
+cargo build --release --target aarch64-apple-darwin
+cargo build --release --target x86_64-unknown-linux-gnu
+cargo build --release --target aarch64-unknown-linux-gnu
 ```
 
 ## Документация
@@ -93,18 +93,15 @@ bun run package:darwin-universal
 ## Разработка
 
 ```bash
-bun run test
-bun run build
-bun run compile
-bun run package
-bun run install:local
-bun run check
+cargo test
+cargo build --release
+cargo clippy
 ```
 
 Тесты с реальным Figma API — опционально:
 
 ```bash
-FIGMA_TOKEN=<token> bun run test:integration
+FIGMA_INTEGRATION_TESTS=1 FIGMA_TOKEN=<token> cargo test -- --ignored
 ```
 
 ## Лицензия

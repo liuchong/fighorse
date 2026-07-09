@@ -7,11 +7,11 @@
 从源码构建：
 
 ```bash
-bun install
-bun run install:local
+cargo build --release
+./target/release/fighorse install --default --apply --source ./target/release/fighorse
 ```
 
-`install:local` 从源码构建，编译二进制文件，然后运行与打包二进制文件相同的自安装路径。
+`install --default --apply` 将二进制文件复制到 fighorse home，生成本地配置，并安装 fighorse 的 skills/instructions——与打包二进制文件所使用的自安装路径相同。
 
 安装已下载的二进制文件：
 

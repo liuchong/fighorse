@@ -1,6 +1,6 @@
 # fighorse Design
 
-`fighorse` is a Bun-first ClojureScript CLI and MCP server for turning Figma REST API data into implementation-grade context for humans and AI agents. It is public-first infrastructure: easy enough for a first-time user to reach a successful design package quickly, deep enough for teams and AI tools to build reproducible visual workflows over time.
+`fighorse` is a Rust CLI and MCP server for turning Figma REST API data into implementation-grade context for humans and AI agents. It is public-first infrastructure: easy enough for a first-time user to reach a successful design package quickly, deep enough for teams and AI tools to build reproducible visual workflows over time.
 
 ## Product Goals
 
@@ -122,7 +122,7 @@ The discovery manifest describes:
 - Installation and client configuration hints.
 - MCP resources and prompts for clients that support them.
 
-`doctor` complements discovery with runtime state: Bun/runtime information, auth status, home directory, MCP mode, local-write mode, and experience-store readiness.
+`doctor` complements discovery with runtime state: runtime information, auth status, home directory, MCP mode, local-write mode, and experience-store readiness.
 
 ## Self-Learning Model
 

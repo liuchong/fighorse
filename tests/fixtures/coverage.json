@@ -1,0 +1,658 @@
+{
+  "kind": "fighorse.api-coverage.v1",
+  "source": {
+    "name": "Figma REST OpenAPI",
+    "version": "0.38.0",
+    "url": "https://github.com/figma/rest-api-spec/blob/main/openapi/openapi.yaml"
+  },
+  "summary": {
+    "openapi_version": "0.38.0",
+    "operation_count": 48,
+    "covered_count": 48,
+    "write_count": 11,
+    "deprecated_count": 1,
+    "by_tag": {
+      "Activity Logs": {
+        "total": 1,
+        "write": 0,
+        "deprecated": 0
+      },
+      "Comment Reactions": {
+        "total": 3,
+        "write": 2,
+        "deprecated": 0
+      },
+      "Comments": {
+        "total": 3,
+        "write": 2,
+        "deprecated": 0
+      },
+      "Component Sets": {
+        "total": 3,
+        "write": 0,
+        "deprecated": 0
+      },
+      "Components": {
+        "total": 3,
+        "write": 0,
+        "deprecated": 0
+      },
+      "Dev Resources": {
+        "total": 4,
+        "write": 3,
+        "deprecated": 0
+      },
+      "Developer Logs": {
+        "total": 1,
+        "write": 0,
+        "deprecated": 0
+      },
+      "Files": {
+        "total": 6,
+        "write": 0,
+        "deprecated": 0
+      },
+      "Library Analytics": {
+        "total": 6,
+        "write": 0,
+        "deprecated": 0
+      },
+      "Payments": {
+        "total": 1,
+        "write": 0,
+        "deprecated": 0
+      },
+      "Projects": {
+        "total": 2,
+        "write": 0,
+        "deprecated": 0
+      },
+      "Styles": {
+        "total": 3,
+        "write": 0,
+        "deprecated": 0
+      },
+      "Users": {
+        "total": 1,
+        "write": 0,
+        "deprecated": 0
+      },
+      "Variables": {
+        "total": 3,
+        "write": 1,
+        "deprecated": 0
+      },
+      "Webhooks": {
+        "total": 7,
+        "write": 3,
+        "deprecated": 1
+      },
+      "oEmbed": {
+        "total": 1,
+        "write": 0,
+        "deprecated": 0
+      }
+    }
+  },
+  "operations": [
+    {
+      "path": "/v1/files/{file_key}",
+      "method": "GET",
+      "cli_command": "fighorse figma api getFile --params '{...}'",
+      "policy": "readonly",
+      "operation_id": "getFile",
+      "status": "covered",
+      "deprecated": false,
+      "mcp_tool": "figma_get_file",
+      "tag": "Files"
+    },
+    {
+      "path": "/v1/files/{file_key}/nodes",
+      "method": "GET",
+      "cli_command": "fighorse figma api getFileNodes --params '{...}'",
+      "policy": "readonly",
+      "operation_id": "getFileNodes",
+      "status": "covered",
+      "deprecated": false,
+      "mcp_tool": "figma_get_file_nodes",
+      "tag": "Files"
+    },
+    {
+      "path": "/v1/images/{file_key}",
+      "method": "GET",
+      "cli_command": "fighorse figma api getImages --params '{...}'",
+      "policy": "readonly",
+      "operation_id": "getImages",
+      "status": "covered",
+      "deprecated": false,
+      "mcp_tool": "figma_get_images",
+      "tag": "Files"
+    },
+    {
+      "path": "/v1/files/{file_key}/images",
+      "method": "GET",
+      "cli_command": "fighorse figma api getImageFills --params '{...}'",
+      "policy": "readonly",
+      "operation_id": "getImageFills",
+      "status": "covered",
+      "deprecated": false,
+      "mcp_tool": "figma_get_image_fills",
+      "tag": "Files"
+    },
+    {
+      "path": "/v1/files/{file_key}/meta",
+      "method": "GET",
+      "cli_command": "fighorse figma api getFileMeta --params '{...}'",
+      "policy": "readonly",
+      "operation_id": "getFileMeta",
+      "status": "covered",
+      "deprecated": false,
+      "mcp_tool": "figma_get_file_meta",
+      "tag": "Files"
+    },
+    {
+      "path": "/v1/teams/{team_id}/projects",
+      "method": "GET",
+      "cli_command": "fighorse figma api getTeamProjects --params '{...}'",
+      "policy": "readonly",
+      "operation_id": "getTeamProjects",
+      "status": "covered",
+      "deprecated": false,
+      "mcp_tool": "figma_get_team_projects",
+      "tag": "Projects"
+    },
+    {
+      "path": "/v1/projects/{project_id}/files",
+      "method": "GET",
+      "cli_command": "fighorse figma api getProjectFiles --params '{...}'",
+      "policy": "readonly",
+      "operation_id": "getProjectFiles",
+      "status": "covered",
+      "deprecated": false,
+      "mcp_tool": "figma_get_project_files",
+      "tag": "Projects"
+    },
+    {
+      "path": "/v1/files/{file_key}/versions",
+      "method": "GET",
+      "cli_command": "fighorse figma api getFileVersions --params '{...}'",
+      "policy": "readonly",
+      "operation_id": "getFileVersions",
+      "status": "covered",
+      "deprecated": false,
+      "mcp_tool": "figma_get_file_versions",
+      "tag": "Files"
+    },
+    {
+      "path": "/v1/files/{file_key}/comments",
+      "method": "GET",
+      "cli_command": "fighorse figma api getComments --params '{...}'",
+      "policy": "readonly",
+      "operation_id": "getComments",
+      "status": "covered",
+      "deprecated": false,
+      "mcp_tool": "figma_get_comments",
+      "tag": "Comments"
+    },
+    {
+      "path": "/v1/files/{file_key}/comments",
+      "method": "POST",
+      "cli_command": "fighorse figma api postComment --params '{...}'",
+      "policy": "write",
+      "operation_id": "postComment",
+      "status": "covered",
+      "deprecated": false,
+      "mcp_tool": "figma_post_comment",
+      "tag": "Comments"
+    },
+    {
+      "path": "/v1/files/{file_key}/comments/{comment_id}",
+      "method": "DELETE",
+      "cli_command": "fighorse figma api deleteComment --params '{...}'",
+      "policy": "write",
+      "operation_id": "deleteComment",
+      "status": "covered",
+      "deprecated": false,
+      "mcp_tool": "figma_delete_comment",
+      "tag": "Comments"
+    },
+    {
+      "path": "/v1/files/{file_key}/comments/{comment_id}/reactions",
+      "method": "GET",
+      "cli_command": "fighorse figma api getCommentReactions --params '{...}'",
+      "policy": "readonly",
+      "operation_id": "getCommentReactions",
+      "status": "covered",
+      "deprecated": false,
+      "mcp_tool": "figma_get_comment_reactions",
+      "tag": "Comment Reactions"
+    },
+    {
+      "path": "/v1/files/{file_key}/comments/{comment_id}/reactions",
+      "method": "POST",
+      "cli_command": "fighorse figma api postCommentReaction --params '{...}'",
+      "policy": "write",
+      "operation_id": "postCommentReaction",
+      "status": "covered",
+      "deprecated": false,
+      "mcp_tool": "figma_post_comment_reaction",
+      "tag": "Comment Reactions"
+    },
+    {
+      "path": "/v1/files/{file_key}/comments/{comment_id}/reactions",
+      "method": "DELETE",
+      "cli_command": "fighorse figma api deleteCommentReaction --params '{...}'",
+      "policy": "write",
+      "operation_id": "deleteCommentReaction",
+      "status": "covered",
+      "deprecated": false,
+      "mcp_tool": "figma_delete_comment_reaction",
+      "tag": "Comment Reactions"
+    },
+    {
+      "path": "/v1/me",
+      "method": "GET",
+      "cli_command": "fighorse figma api getMe --params '{...}'",
+      "policy": "readonly",
+      "operation_id": "getMe",
+      "status": "covered",
+      "deprecated": false,
+      "mcp_tool": "figma_get_me",
+      "tag": "Users"
+    },
+    {
+      "path": "/v1/teams/{team_id}/components",
+      "method": "GET",
+      "cli_command": "fighorse figma api getTeamComponents --params '{...}'",
+      "policy": "readonly",
+      "operation_id": "getTeamComponents",
+      "status": "covered",
+      "deprecated": false,
+      "mcp_tool": "figma_get_team_components",
+      "tag": "Components"
+    },
+    {
+      "path": "/v1/files/{file_key}/components",
+      "method": "GET",
+      "cli_command": "fighorse figma api getFileComponents --params '{...}'",
+      "policy": "readonly",
+      "operation_id": "getFileComponents",
+      "status": "covered",
+      "deprecated": false,
+      "mcp_tool": "figma_get_file_components",
+      "tag": "Components"
+    },
+    {
+      "path": "/v1/components/{key}",
+      "method": "GET",
+      "cli_command": "fighorse figma api getComponent --params '{...}'",
+      "policy": "readonly",
+      "operation_id": "getComponent",
+      "status": "covered",
+      "deprecated": false,
+      "mcp_tool": "figma_get_component",
+      "tag": "Components"
+    },
+    {
+      "path": "/v1/teams/{team_id}/component_sets",
+      "method": "GET",
+      "cli_command": "fighorse figma api getTeamComponentSets --params '{...}'",
+      "policy": "readonly",
+      "operation_id": "getTeamComponentSets",
+      "status": "covered",
+      "deprecated": false,
+      "mcp_tool": "figma_get_team_component_sets",
+      "tag": "Component Sets"
+    },
+    {
+      "path": "/v1/files/{file_key}/component_sets",
+      "method": "GET",
+      "cli_command": "fighorse figma api getFileComponentSets --params '{...}'",
+      "policy": "readonly",
+      "operation_id": "getFileComponentSets",
+      "status": "covered",
+      "deprecated": false,
+      "mcp_tool": "figma_get_file_component_sets",
+      "tag": "Component Sets"
+    },
+    {
+      "path": "/v1/component_sets/{key}",
+      "method": "GET",
+      "cli_command": "fighorse figma api getComponentSet --params '{...}'",
+      "policy": "readonly",
+      "operation_id": "getComponentSet",
+      "status": "covered",
+      "deprecated": false,
+      "mcp_tool": "figma_get_component_set",
+      "tag": "Component Sets"
+    },
+    {
+      "path": "/v1/teams/{team_id}/styles",
+      "method": "GET",
+      "cli_command": "fighorse figma api getTeamStyles --params '{...}'",
+      "policy": "readonly",
+      "operation_id": "getTeamStyles",
+      "status": "covered",
+      "deprecated": false,
+      "mcp_tool": "figma_get_team_styles",
+      "tag": "Styles"
+    },
+    {
+      "path": "/v1/files/{file_key}/styles",
+      "method": "GET",
+      "cli_command": "fighorse figma api getFileStyles --params '{...}'",
+      "policy": "readonly",
+      "operation_id": "getFileStyles",
+      "status": "covered",
+      "deprecated": false,
+      "mcp_tool": "figma_get_file_styles",
+      "tag": "Styles"
+    },
+    {
+      "path": "/v1/styles/{key}",
+      "method": "GET",
+      "cli_command": "fighorse figma api getStyle --params '{...}'",
+      "policy": "readonly",
+      "operation_id": "getStyle",
+      "status": "covered",
+      "deprecated": false,
+      "mcp_tool": "figma_get_style",
+      "tag": "Styles"
+    },
+    {
+      "path": "/v2/webhooks",
+      "method": "GET",
+      "cli_command": "fighorse figma api getWebhooks --params '{...}'",
+      "policy": "readonly",
+      "operation_id": "getWebhooks",
+      "status": "covered",
+      "deprecated": false,
+      "mcp_tool": "figma_get_webhooks",
+      "tag": "Webhooks"
+    },
+    {
+      "path": "/v2/webhooks",
+      "method": "POST",
+      "cli_command": "fighorse figma api postWebhook --params '{...}'",
+      "policy": "write",
+      "operation_id": "postWebhook",
+      "status": "covered",
+      "deprecated": false,
+      "mcp_tool": "figma_post_webhook",
+      "tag": "Webhooks"
+    },
+    {
+      "path": "/v2/webhooks/{webhook_id}",
+      "method": "GET",
+      "cli_command": "fighorse figma api getWebhook --params '{...}'",
+      "policy": "readonly",
+      "operation_id": "getWebhook",
+      "status": "covered",
+      "deprecated": false,
+      "mcp_tool": "figma_get_webhook",
+      "tag": "Webhooks"
+    },
+    {
+      "path": "/v2/webhooks/{webhook_id}",
+      "method": "PUT",
+      "cli_command": "fighorse figma api putWebhook --params '{...}'",
+      "policy": "write",
+      "operation_id": "putWebhook",
+      "status": "covered",
+      "deprecated": false,
+      "mcp_tool": "figma_put_webhook",
+      "tag": "Webhooks"
+    },
+    {
+      "path": "/v2/webhooks/{webhook_id}",
+      "method": "DELETE",
+      "cli_command": "fighorse figma api deleteWebhook --params '{...}'",
+      "policy": "write",
+      "operation_id": "deleteWebhook",
+      "status": "covered",
+      "deprecated": false,
+      "mcp_tool": "figma_delete_webhook",
+      "tag": "Webhooks"
+    },
+    {
+      "path": "/v2/teams/{team_id}/webhooks",
+      "method": "GET",
+      "cli_command": "fighorse figma api getTeamWebhooks --params '{...}'",
+      "policy": "readonly",
+      "operation_id": "getTeamWebhooks",
+      "status": "covered",
+      "deprecated": true,
+      "mcp_tool": "figma_get_team_webhooks",
+      "tag": "Webhooks"
+    },
+    {
+      "path": "/v2/webhooks/{webhook_id}/requests",
+      "method": "GET",
+      "cli_command": "fighorse figma api getWebhookRequests --params '{...}'",
+      "policy": "readonly",
+      "operation_id": "getWebhookRequests",
+      "status": "covered",
+      "deprecated": false,
+      "mcp_tool": "figma_get_webhook_requests",
+      "tag": "Webhooks"
+    },
+    {
+      "path": "/v1/activity_logs",
+      "method": "GET",
+      "cli_command": "fighorse figma api getActivityLogs --params '{...}'",
+      "policy": "readonly",
+      "operation_id": "getActivityLogs",
+      "status": "covered",
+      "deprecated": false,
+      "mcp_tool": "figma_get_activity_logs",
+      "tag": "Activity Logs"
+    },
+    {
+      "path": "/v1/developer_logs",
+      "method": "POST",
+      "cli_command": "fighorse figma api getDeveloperLogs --params '{...}'",
+      "policy": "readonly",
+      "operation_id": "getDeveloperLogs",
+      "status": "covered",
+      "deprecated": false,
+      "mcp_tool": "figma_get_developer_logs",
+      "tag": "Developer Logs"
+    },
+    {
+      "path": "/v1/payments",
+      "method": "GET",
+      "cli_command": "fighorse figma api getPayments --params '{...}'",
+      "policy": "readonly",
+      "operation_id": "getPayments",
+      "status": "covered",
+      "deprecated": false,
+      "mcp_tool": "figma_get_payments",
+      "tag": "Payments"
+    },
+    {
+      "path": "/v1/files/{file_key}/variables/local",
+      "method": "GET",
+      "cli_command": "fighorse figma api getLocalVariables --params '{...}'",
+      "policy": "readonly",
+      "operation_id": "getLocalVariables",
+      "status": "covered",
+      "deprecated": false,
+      "mcp_tool": "figma_get_local_variables",
+      "tag": "Variables"
+    },
+    {
+      "path": "/v1/files/{file_key}/variables/published",
+      "method": "GET",
+      "cli_command": "fighorse figma api getPublishedVariables --params '{...}'",
+      "policy": "readonly",
+      "operation_id": "getPublishedVariables",
+      "status": "covered",
+      "deprecated": false,
+      "mcp_tool": "figma_get_published_variables",
+      "tag": "Variables"
+    },
+    {
+      "path": "/v1/files/{file_key}/variables",
+      "method": "POST",
+      "cli_command": "fighorse figma api postVariables --params '{...}'",
+      "policy": "write",
+      "operation_id": "postVariables",
+      "status": "covered",
+      "deprecated": false,
+      "mcp_tool": "figma_post_variables",
+      "tag": "Variables"
+    },
+    {
+      "path": "/v1/files/{file_key}/dev_resources",
+      "method": "GET",
+      "cli_command": "fighorse figma api getDevResources --params '{...}'",
+      "policy": "readonly",
+      "operation_id": "getDevResources",
+      "status": "covered",
+      "deprecated": false,
+      "mcp_tool": "figma_get_dev_resources",
+      "tag": "Dev Resources"
+    },
+    {
+      "path": "/v1/dev_resources",
+      "method": "POST",
+      "cli_command": "fighorse figma api postDevResources --params '{...}'",
+      "policy": "write",
+      "operation_id": "postDevResources",
+      "status": "covered",
+      "deprecated": false,
+      "mcp_tool": "figma_post_dev_resources",
+      "tag": "Dev Resources"
+    },
+    {
+      "path": "/v1/dev_resources",
+      "method": "PUT",
+      "cli_command": "fighorse figma api putDevResources --params '{...}'",
+      "policy": "write",
+      "operation_id": "putDevResources",
+      "status": "covered",
+      "deprecated": false,
+      "mcp_tool": "figma_put_dev_resources",
+      "tag": "Dev Resources"
+    },
+    {
+      "path": "/v1/files/{file_key}/dev_resources/{dev_resource_id}",
+      "method": "DELETE",
+      "cli_command": "fighorse figma api deleteDevResource --params '{...}'",
+      "policy": "write",
+      "operation_id": "deleteDevResource",
+      "status": "covered",
+      "deprecated": false,
+      "mcp_tool": "figma_delete_dev_resource",
+      "tag": "Dev Resources"
+    },
+    {
+      "path": "/v1/analytics/libraries/{file_key}/component/actions",
+      "method": "GET",
+      "cli_command": "fighorse figma api getLibraryAnalyticsComponentActions --params '{...}'",
+      "policy": "readonly",
+      "operation_id": "getLibraryAnalyticsComponentActions",
+      "status": "covered",
+      "deprecated": false,
+      "mcp_tool": "figma_get_library_analytics_component_actions",
+      "tag": "Library Analytics"
+    },
+    {
+      "path": "/v1/analytics/libraries/{file_key}/component/usages",
+      "method": "GET",
+      "cli_command": "fighorse figma api getLibraryAnalyticsComponentUsages --params '{...}'",
+      "policy": "readonly",
+      "operation_id": "getLibraryAnalyticsComponentUsages",
+      "status": "covered",
+      "deprecated": false,
+      "mcp_tool": "figma_get_library_analytics_component_usages",
+      "tag": "Library Analytics"
+    },
+    {
+      "path": "/v1/analytics/libraries/{file_key}/style/actions",
+      "method": "GET",
+      "cli_command": "fighorse figma api getLibraryAnalyticsStyleActions --params '{...}'",
+      "policy": "readonly",
+      "operation_id": "getLibraryAnalyticsStyleActions",
+      "status": "covered",
+      "deprecated": false,
+      "mcp_tool": "figma_get_library_analytics_style_actions",
+      "tag": "Library Analytics"
+    },
+    {
+      "path": "/v1/analytics/libraries/{file_key}/style/usages",
+      "method": "GET",
+      "cli_command": "fighorse figma api getLibraryAnalyticsStyleUsages --params '{...}'",
+      "policy": "readonly",
+      "operation_id": "getLibraryAnalyticsStyleUsages",
+      "status": "covered",
+      "deprecated": false,
+      "mcp_tool": "figma_get_library_analytics_style_usages",
+      "tag": "Library Analytics"
+    },
+    {
+      "path": "/v1/analytics/libraries/{file_key}/variable/actions",
+      "method": "GET",
+      "cli_command": "fighorse figma api getLibraryAnalyticsVariableActions --params '{...}'",
+      "policy": "readonly",
+      "operation_id": "getLibraryAnalyticsVariableActions",
+      "status": "covered",
+      "deprecated": false,
+      "mcp_tool": "figma_get_library_analytics_variable_actions",
+      "tag": "Library Analytics"
+    },
+    {
+      "path": "/v1/analytics/libraries/{file_key}/variable/usages",
+      "method": "GET",
+      "cli_command": "fighorse figma api getLibraryAnalyticsVariableUsages --params '{...}'",
+      "policy": "readonly",
+      "operation_id": "getLibraryAnalyticsVariableUsages",
+      "status": "covered",
+      "deprecated": false,
+      "mcp_tool": "figma_get_library_analytics_variable_usages",
+      "tag": "Library Analytics"
+    },
+    {
+      "path": "/v1/oembed",
+      "method": "GET",
+      "cli_command": "fighorse figma api getOembed --params '{...}'",
+      "policy": "readonly",
+      "operation_id": "getOembed",
+      "status": "covered",
+      "deprecated": false,
+      "mcp_tool": "figma_get_oembed",
+      "tag": "oEmbed"
+    }
+  ],
+  "official_mcp_only": [
+    {
+      "capability": "native_canvas_write",
+      "status": "unsupported-by-public-rest-api",
+      "reason": "Figma MCP use_figma-style native canvas mutations are not exposed by the public REST OpenAPI."
+    },
+    {
+      "capability": "code_to_canvas",
+      "status": "unsupported-by-public-rest-api",
+      "reason": "generate_figma_design is an official MCP product capability, not a public REST endpoint."
+    },
+    {
+      "capability": "code_connect_auto_mapping",
+      "status": "unsupported-by-public-rest-api",
+      "reason": "Automatic Code Connect mapping discovery is tied to Figma's product integration."
+    },
+    {
+      "capability": "make_resources",
+      "status": "unsupported-by-public-rest-api",
+      "reason": "Make resources are exposed through official MCP product surfaces, not this REST snapshot."
+    },
+    {
+      "capability": "figjam_generation",
+      "status": "unsupported-by-public-rest-api",
+      "reason": "FigJam generation is not present in the public REST OpenAPI snapshot."
+    }
+  ],
+  "ai_guidance": {
+    "use": "Use this report to verify REST parity before relying on low-level Figma tools.",
+    "next_step": "If any operation is not covered, update fighorse.api operations, MCP tools, CLI dispatch, discovery, and tests together."
+  }
+}

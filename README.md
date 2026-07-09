@@ -4,7 +4,7 @@
 
 The Swiss Army knife for Figma data, shaped for AI consumption.
 
-`fighorse` is a Bun-first ClojureScript CLI and MCP Server. It does not generate code; instead, it transforms Figma REST API data into stable, consumable context for both AI programming tools and developers: the complete public REST API, structural trees, compact JSON, screenshot URLs, design tokens, image/component exports, manifests, self-discovery info, and local experience.
+`fighorse` is a Rust CLI and MCP Server. It does not generate code; instead, it transforms Figma REST API data into stable, consumable context for both AI programming tools and developers: the complete public REST API, structural trees, compact JSON, screenshot URLs, design tokens, image/component exports, manifests, self-discovery info, and local experience.
 
 The core philosophy is **CLI as kernel, MCP as shell**. The CLI stays white-box, scriptable, and debuggable; MCP lets Cursor, Codex, Kimi, Claude, opencode, and other AI tools call the same capabilities directly.
 
@@ -13,8 +13,8 @@ The core philosophy is **CLI as kernel, MCP as shell**. The CLI stays white-box,
 The default path is CLI-only. It does not start a long-running MCP service or bind any port.
 
 ```bash
-bun install
-bun run install:local
+cargo build --release
+./target/release/fighorse install --default --apply --source ./target/release/fighorse
 ```
 
 ```bash
@@ -50,15 +50,15 @@ Optional MCP service mode for AI clients:
 fighorse install --default --mode service --clients cursor,codex,kimi --apply
 ```
 
-Package distributable binaries. The default package is a multi-platform bundle
-whose `fighorse` launcher auto-detects macOS Intel, macOS Apple Silicon, and
-Linux x64/arm64:
+Package distributable binaries with Cargo. Cross-compile per target with the
+matching Rust toolchain (or `cargo-zigbuild` for Linux targets):
 
 ```bash
-bun run package
-bun run package:macos
-bun run package:linux
-bun run package:darwin-universal
+cargo build --release
+cargo build --release --target x86_64-apple-darwin
+cargo build --release --target aarch64-apple-darwin
+cargo build --release --target x86_64-unknown-linux-gnu
+cargo build --release --target aarch64-unknown-linux-gnu
 ```
 
 ## Documentation
@@ -93,18 +93,15 @@ bun run package:darwin-universal
 ## Development
 
 ```bash
-bun run test
-bun run build
-bun run compile
-bun run package
-bun run install:local
-bun run check
+cargo test
+cargo build --release
+cargo clippy
 ```
 
 Real Figma API tests are opt-in:
 
 ```bash
-FIGMA_TOKEN=<token> bun run test:integration
+FIGMA_INTEGRATION_TESTS=1 FIGMA_TOKEN=<token> cargo test -- --ignored
 ```
 
 ## License

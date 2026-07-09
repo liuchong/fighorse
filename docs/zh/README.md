@@ -4,7 +4,7 @@
 
 Figma 数据的瑞士军刀，专门打磨成 AI 最容易消化的形状。
 
-`fighorse` 是一个 Bun-first 的 ClojureScript CLI 和 MCP Server。它不生成代码，而是把 Figma REST API 数据整理成 AI 编程工具和开发者都能稳定消费的上下文：完整公开 REST API、结构树、精简 JSON、截图 URL、设计 token、图片/控件导出、manifest、自发现信息和本地经验。
+`fighorse` 是一个 Rust CLI 和 MCP 服务器。它不生成代码，而是把 Figma REST API 数据整理成 AI 编程工具和开发者都能稳定消费的上下文：完整公开 REST API、结构树、精简 JSON、截图 URL、设计 token、图片/控件导出、manifest、自发现信息和本地经验。
 
 核心理念是 **CLI 为核，MCP 为壳**。CLI 保持白盒、可脚本化、可调试；MCP 让 Cursor、Codex、Kimi、Claude、opencode 等 AI 工具直接调用同一套能力。
 
@@ -13,8 +13,8 @@ Figma 数据的瑞士军刀，专门打磨成 AI 最容易消化的形状。
 默认路径是仅 CLI 模式。不会启动常驻 MCP 服务，也不会绑定任何端口。
 
 ```bash
-bun install
-bun run install:local
+cargo build --release
+./target/release/fighorse install --default --apply --source ./target/release/fighorse
 ```
 
 ```bash
@@ -50,13 +50,15 @@ fighorse asset download <file_key> --dir ./assets/fighorse --manifest
 fighorse install --default --mode service --clients cursor,codex,kimi --apply
 ```
 
-打包可分发的二进制文件。默认包是多平台捆绑包，其 `fighorse` 启动器会自动检测 macOS Intel、macOS Apple Silicon 和 Linux x64/arm64：
+使用 Cargo 打包可分发的二进制文件。使用匹配的 Rust 工具链按目标平台交叉编译
+（Linux 目标可使用 `cargo-zigbuild`）：
 
 ```bash
-bun run package
-bun run package:macos
-bun run package:linux
-bun run package:darwin-universal
+cargo build --release
+cargo build --release --target x86_64-apple-darwin
+cargo build --release --target aarch64-apple-darwin
+cargo build --release --target x86_64-unknown-linux-gnu
+cargo build --release --target aarch64-unknown-linux-gnu
 ```
 
 ## 文档
@@ -91,18 +93,15 @@ bun run package:darwin-universal
 ## 开发
 
 ```bash
-bun run test
-bun run build
-bun run compile
-bun run package
-bun run install:local
-bun run check
+cargo test
+cargo build --release
+cargo clippy
 ```
 
 真实的 Figma API 测试是可选的：
 
 ```bash
-FIGMA_TOKEN=<token> bun run test:integration
+FIGMA_INTEGRATION_TESTS=1 FIGMA_TOKEN=<token> cargo test -- --ignored
 ```
 
 ## 协议

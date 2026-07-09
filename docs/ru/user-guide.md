@@ -9,57 +9,52 @@
 Самый быстрый путь — см. [Быстрый старт](quickstart.md). Режим установки по умолчанию — только CLI, без запуска MCP-сервисных процессов.
 
 ```bash
-bun install
-bun run install:local
-./dist/fighorse --help
+cargo build --release
+./target/release/fighorse --help
 ```
 
 Установка скомпилированного бинарника и опциональных интеграций AI-клиентов:
 
 ```bash
-./dist/fighorse install status
-./dist/fighorse install auth --apply
-./dist/fighorse install --default --apply
+./target/release/fighorse install status
+./target/release/fighorse install auth --apply
+./target/release/fighorse install --default --apply --source ./target/release/fighorse
 ```
 
 Установка MCP-сервиса и интеграций AI-клиентов только при необходимости:
 
 ```bash
-./dist/fighorse install client --client cursor --apply
-./dist/fighorse install client --client codex --apply
-./dist/fighorse install client --client kimi --apply
-./dist/fighorse install service --service launchd --apply
-./dist/fighorse install --default --mode service --clients cursor,codex,kimi --apply
+./target/release/fighorse install client --client cursor --apply
+./target/release/fighorse install client --client codex --apply
+./target/release/fighorse install client --client kimi --apply
+./target/release/fighorse install service --service launchd --apply
+./target/release/fighorse install --default --mode service --clients cursor,codex,kimi --apply
 ```
 
 Команды установки по умолчанию генерируют файлы для ревью. Добавляйте `--apply` только когда хотите, чтобы fighorse модифицировал пользовательскую конфигурацию клиента, расположения skill/rule, ссылки на бинарники или сервис-менеджеры.
 
 ## Упаковка бинарников
 
-Команда package по умолчанию собирает многоплатформенный бандл. Его топ-левел
-лаунчер `fighorse` определяет `uname -s` и `uname -m`, затем запускает подходящий
-нативный бинарник для macOS Intel, macOS Apple Silicon, Linux x64 или Linux arm64:
+Соберите release-бинарник с помощью Cargo, затем кросс-компилируйте под каждую
+цель с соответствующим Rust-тулчейном (устанавливайте цели через
+`rustup target add` или используйте `cargo-zigbuild` для Linux-целей):
 
 ```bash
-bun run package
-tar -tzf dist/fighorse-multi-platform.tar.gz
+cargo build --release
 ```
 
-Также можно собирать архивы под конкретные платформы:
+Сборки под конкретные платформы:
 
 ```bash
-bun run package:macos
-bun run package:darwin-x64
-bun run package:darwin-arm64
-bun run package:linux-x64
-bun run package:linux-arm64
-bun run package:all
+cargo build --release --target x86_64-apple-darwin
+cargo build --release --target aarch64-apple-darwin
+cargo build --release --target x86_64-unknown-linux-gnu
+cargo build --release --target aarch64-unknown-linux-gnu
 ```
 
-`package:macos` создает два архива для архитектур macOS плюс macOS-бандл,
-автоопределяющий Intel против Apple Silicon. Если вам конкретно нужен один
-Mach-O файл, содержащий оба slice macOS, запустите `bun run package:darwin-universal`
-на macOS с доступным `lipo`.
+Каждая цель создает автономный нативный бинарник `fighorse` в
+`target/<triple>/release/`. Упакуйте тот, что соответствует хосту, или поставляйте
+все четыре для многоплатформенного релиза.
 
 ## Аутентификация
 

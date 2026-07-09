@@ -9,57 +9,52 @@ Use the CLI when you want reproducible commands, scripts, CI, or quick inspectio
 For the fastest path, see [Quickstart](quickstart.md). The default install mode is CLI-only and does not start MCP service processes.
 
 ```bash
-bun install
-bun run install:local
-./dist/fighorse --help
+cargo build --release
+./target/release/fighorse --help
 ```
 
 Install the compiled binary and optional AI client integrations:
 
 ```bash
-./dist/fighorse install status
-./dist/fighorse install auth --apply
-./dist/fighorse install --default --apply
+./target/release/fighorse install status
+./target/release/fighorse install auth --apply
+./target/release/fighorse install --default --apply --source ./target/release/fighorse
 ```
 
 Install MCP service and AI client integrations only when needed:
 
 ```bash
-./dist/fighorse install client --client cursor --apply
-./dist/fighorse install client --client codex --apply
-./dist/fighorse install client --client kimi --apply
-./dist/fighorse install service --service launchd --apply
-./dist/fighorse install --default --mode service --clients cursor,codex,kimi --apply
+./target/release/fighorse install client --client cursor --apply
+./target/release/fighorse install client --client codex --apply
+./target/release/fighorse install client --client kimi --apply
+./target/release/fighorse install service --service launchd --apply
+./target/release/fighorse install --default --mode service --clients cursor,codex,kimi --apply
 ```
 
 Install commands generate reviewable files by default. Add `--apply` only when you want fighorse to mutate user-level client config, skill/rule locations, binary links, or service managers.
 
 ## Package Binaries
 
-The default package command builds a multi-platform bundle. Its top-level
-`fighorse` launcher detects `uname -s` and `uname -m`, then runs the matching
-native binary for macOS Intel, macOS Apple Silicon, Linux x64, or Linux arm64:
+Build a release binary with Cargo, then cross-compile per target with the
+matching Rust toolchain (install targets via `rustup target add`, or use
+`cargo-zigbuild` for the Linux targets):
 
 ```bash
-bun run package
-tar -tzf dist/fighorse-multi-platform.tar.gz
+cargo build --release
 ```
 
-You can also build per-platform archives:
+Per-platform builds:
 
 ```bash
-bun run package:macos
-bun run package:darwin-x64
-bun run package:darwin-arm64
-bun run package:linux-x64
-bun run package:linux-arm64
-bun run package:all
+cargo build --release --target x86_64-apple-darwin
+cargo build --release --target aarch64-apple-darwin
+cargo build --release --target x86_64-unknown-linux-gnu
+cargo build --release --target aarch64-unknown-linux-gnu
 ```
 
-`package:macos` creates the two macOS architecture archives plus a macOS bundle
-that auto-detects Intel vs Apple Silicon. If you specifically need a single
-Mach-O file that contains both macOS slices, run `bun run package:darwin-universal`
-on macOS with `lipo` available.
+Each target produces a standalone native `fighorse` binary under
+`target/<triple>/release/`. Package the one matching the host, or ship all four
+for a multi-platform release.
 
 ## Authentication
 

@@ -9,52 +9,51 @@
 最快的路径见[快速开始](quickstart.md)。默认安装模式是仅 CLI，不启动 MCP 服务进程。
 
 ```bash
-bun install
-bun run install:local
-./dist/fighorse --help
+cargo build --release
+./target/release/fighorse --help
 ```
 
 安装编译后的二进制文件和可选的 AI 客户端集成：
 
 ```bash
-./dist/fighorse install status
-./dist/fighorse install auth --apply
-./dist/fighorse install --default --apply
+./target/release/fighorse install status
+./target/release/fighorse install auth --apply
+./target/release/fighorse install --default --apply --source ./target/release/fighorse
 ```
 
 仅在需要时安装 MCP 服务和 AI 客户端集成：
 
 ```bash
-./dist/fighorse install client --client cursor --apply
-./dist/fighorse install client --client codex --apply
-./dist/fighorse install client --client kimi --apply
-./dist/fighorse install service --service launchd --apply
-./dist/fighorse install --default --mode service --clients cursor,codex,kimi --apply
+./target/release/fighorse install client --client cursor --apply
+./target/release/fighorse install client --client codex --apply
+./target/release/fighorse install client --client kimi --apply
+./target/release/fighorse install service --service launchd --apply
+./target/release/fighorse install --default --mode service --clients cursor,codex,kimi --apply
 ```
 
 安装命令默认生成可审查的文件。只有当你希望 fighorse 修改用户级客户端配置、skill/rule 位置、二进制链接或服务管理器时，才添加 `--apply`。
 
 ## 打包二进制文件
 
-默认的打包命令构建多平台捆绑包。其顶层 `fighorse` 启动器检测 `uname -s` 和 `uname -m`，然后运行匹配的原生二进制文件，支持 macOS Intel、macOS Apple Silicon、Linux x64 或 Linux arm64：
+使用 Cargo 构建 release 二进制文件，然后使用匹配的 Rust 工具链按目标平台交叉编译
+（通过 `rustup target add` 安装目标，或对 Linux 目标使用
+`cargo-zigbuild`）：
 
 ```bash
-bun run package
-tar -tzf dist/fighorse-multi-platform.tar.gz
+cargo build --release
 ```
 
-你也可以构建按平台划分的归档：
+按平台构建：
 
 ```bash
-bun run package:macos
-bun run package:darwin-x64
-bun run package:darwin-arm64
-bun run package:linux-x64
-bun run package:linux-arm64
-bun run package:all
+cargo build --release --target x86_64-apple-darwin
+cargo build --release --target aarch64-apple-darwin
+cargo build --release --target x86_64-unknown-linux-gnu
+cargo build --release --target aarch64-unknown-linux-gnu
 ```
 
-`package:macos` 创建两个 macOS 架构归档加上一个自动检测 Intel 与 Apple Silicon 的 macOS 捆绑包。如果你特别需要一个包含两个 macOS slice 的单个 Mach-O 文件，在 macOS 上运行 `bun run package:darwin-universal`，需要 `lipo` 可用。
+每个目标都会在 `target/<triple>/release/` 下生成一个独立的原生 `fighorse`
+二进制文件。打包与宿主机匹配的那个，或者一次性发布全部四个以实现多平台发布。
 
 ## 认证
 
