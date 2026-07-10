@@ -6,7 +6,7 @@
 
 use serde_json::{json, Value};
 
-pub const OPENAPI_VERSION: &str = "0.38.0";
+pub const OPENAPI_VERSION: &str = "0.41.0";
 
 /// A single covered Figma REST operation.
 #[derive(Debug, Clone)]
@@ -77,6 +77,7 @@ pub fn official_operations() -> Vec<Operation> {
         op("Files", "GET", "/v1/files/{file_key}/meta", "getFileMeta", false, None),
         op("Projects", "GET", "/v1/teams/{team_id}/projects", "getTeamProjects", false, None),
         op("Projects", "GET", "/v1/projects/{project_id}/files", "getProjectFiles", false, None),
+        op("Projects", "GET", "/v1/projects/{project_id}/meta", "getProjectMeta", false, None),
         op("Files", "GET", "/v1/files/{file_key}/versions", "getFileVersions", false, None),
         op("Comments", "GET", "/v1/files/{file_key}/comments", "getComments", false, None),
         op("Comments", "POST", "/v1/files/{file_key}/comments", "postComment", false, None),
@@ -104,6 +105,7 @@ pub fn official_operations() -> Vec<Operation> {
         op("Activity Logs", "GET", "/v1/activity_logs", "getActivityLogs", false, None),
         op("Developer Logs", "POST", "/v1/developer_logs", "getDeveloperLogs", false, Some("readonly")),
         op("Payments", "GET", "/v1/payments", "getPayments", false, None),
+        op("AI Usage", "GET", "/v1/ai_usage/daily", "getAiUsageDaily", false, None),
         op("Variables", "GET", "/v1/files/{file_key}/variables/local", "getLocalVariables", false, None),
         op("Variables", "GET", "/v1/files/{file_key}/variables/published", "getPublishedVariables", false, None),
         op("Variables", "POST", "/v1/files/{file_key}/variables", "postVariables", false, None),
@@ -320,15 +322,15 @@ mod tests {
 
     #[test]
     fn registry_is_complete() {
-        assert_eq!(OPENAPI_VERSION, "0.38.0");
+        assert_eq!(OPENAPI_VERSION, "0.41.0");
         let ops = official_operations();
-        assert_eq!(ops.len(), 48);
+        assert_eq!(ops.len(), 50);
         let distinct: std::collections::HashSet<_> =
             ops.iter().map(|o| o.operation_id).collect();
-        assert_eq!(distinct.len(), 48);
+        assert_eq!(distinct.len(), 50);
 
         let report = coverage_report();
-        assert_eq!(report["summary"]["covered_count"], 48);
+        assert_eq!(report["summary"]["covered_count"], 50);
         assert_eq!(report["summary"]["write_count"], 11);
     }
 

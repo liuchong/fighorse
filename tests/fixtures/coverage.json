@@ -2,16 +2,21 @@
   "kind": "fighorse.api-coverage.v1",
   "source": {
     "name": "Figma REST OpenAPI",
-    "version": "0.38.0",
+    "version": "0.41.0",
     "url": "https://github.com/figma/rest-api-spec/blob/main/openapi/openapi.yaml"
   },
   "summary": {
-    "openapi_version": "0.38.0",
-    "operation_count": 48,
-    "covered_count": 48,
+    "openapi_version": "0.41.0",
+    "operation_count": 50,
+    "covered_count": 50,
     "write_count": 11,
     "deprecated_count": 1,
     "by_tag": {
+      "AI Usage": {
+        "total": 1,
+        "write": 0,
+        "deprecated": 0
+      },
       "Activity Logs": {
         "total": 1,
         "write": 0,
@@ -63,7 +68,7 @@
         "deprecated": 0
       },
       "Projects": {
-        "total": 2,
+        "total": 3,
         "write": 0,
         "deprecated": 0
       },
@@ -170,6 +175,17 @@
       "status": "covered",
       "deprecated": false,
       "mcp_tool": "figma_get_project_files",
+      "tag": "Projects"
+    },
+    {
+      "path": "/v1/projects/{project_id}/meta",
+      "method": "GET",
+      "cli_command": "fighorse figma api getProjectMeta --params '{...}'",
+      "policy": "readonly",
+      "operation_id": "getProjectMeta",
+      "status": "covered",
+      "deprecated": false,
+      "mcp_tool": "figma_get_project_meta",
       "tag": "Projects"
     },
     {
@@ -468,6 +484,17 @@
       "deprecated": false,
       "mcp_tool": "figma_get_payments",
       "tag": "Payments"
+    },
+    {
+      "path": "/v1/ai_usage/daily",
+      "method": "GET",
+      "cli_command": "fighorse figma api getAiUsageDaily --params '{...}'",
+      "policy": "readonly",
+      "operation_id": "getAiUsageDaily",
+      "status": "covered",
+      "deprecated": false,
+      "mcp_tool": "figma_get_ai_usage_daily",
+      "tag": "AI Usage"
     },
     {
       "path": "/v1/files/{file_key}/variables/local",

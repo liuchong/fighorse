@@ -168,6 +168,12 @@ pub mod projects {
         let path = format!("/v1/projects/{}/files", http::path_segment(project_id));
         http::get(&path, Some(token), &[("branch_data", opt(branch_data))]).await
     }
+
+    /// GET /v1/projects/{project_id}/meta - project metadata.
+    pub async fn get_project_meta(token: &str, project_id: &str) -> Result<Value> {
+        let path = format!("/v1/projects/{}/meta", http::path_segment(project_id));
+        http::get(&path, Some(token), &[]).await
+    }
 }
 
 pub mod users {
@@ -663,6 +669,38 @@ pub mod developer_logs {
             "cursor": opt(cursor),
         });
         http::post("/v1/developer_logs", Some(token), &[], Some(&body)).await
+    }
+}
+
+pub mod ai_usage {
+    //! Figma AI Usage API - daily AI usage analytics for an organization.
+    use super::opt;
+    use crate::error::Result;
+    use crate::http;
+    use serde_json::Value;
+
+    /// GET /v1/ai_usage/daily - daily AI usage rows for an organization.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn get_ai_usage_daily(
+        token: &str,
+        start_date: Option<&str>,
+        end_date: Option<&str>,
+        user_email: Option<&str>,
+        limit: Option<&str>,
+        cursor: Option<&str>,
+    ) -> Result<Value> {
+        http::get(
+            "/v1/ai_usage/daily",
+            Some(token),
+            &[
+                ("start_date", opt(start_date)),
+                ("end_date", opt(end_date)),
+                ("user_email", opt(user_email)),
+                ("limit", opt(limit)),
+                ("cursor", opt(cursor)),
+            ],
+        )
+        .await
     }
 }
 

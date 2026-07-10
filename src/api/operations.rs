@@ -5,8 +5,8 @@
 
 use super::coverage;
 use super::{
-    activity_logs, analytics, comments, components, dev_resources, developer_logs, files, oembed,
-    payments, projects, styles, users, variables, webhooks,
+    activity_logs, ai_usage, analytics, comments, components, dev_resources, developer_logs,
+    files, oembed, payments, projects, styles, users, variables, webhooks,
 };
 use crate::error::{Error, Result};
 use serde_json::Value;
@@ -133,6 +133,9 @@ pub async fn call_operation(
                 p!("branch_data").as_deref(),
             )
             .await
+        }
+        "getProjectMeta" => {
+            projects::get_project_meta(token, &p!("project_id").unwrap_or_default()).await
         }
         "getFileVersions" => {
             files::get_file_versions(
@@ -314,6 +317,17 @@ pub async fn call_operation(
                 p!("community_file_id").as_deref(),
                 p!("plugin_id").as_deref(),
                 p!("widget_id").as_deref(),
+            )
+            .await
+        }
+        "getAiUsageDaily" => {
+            ai_usage::get_ai_usage_daily(
+                token,
+                p!("start_date").as_deref(),
+                p!("end_date").as_deref(),
+                p!("user_email").as_deref(),
+                p!("limit").as_deref(),
+                p!("cursor").as_deref(),
             )
             .await
         }
