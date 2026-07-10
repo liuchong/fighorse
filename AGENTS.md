@@ -9,6 +9,9 @@ This repository is a Rust CLI and MCP server for turning Figma REST API data int
 - Preserve user changes in the working tree. Do not reset, checkout, or remove unrelated edits.
 - MCP Figma write mode and local file write mode are separate. Local asset export requires `FIGHORSE_MCP_LOCAL_WRITE=allow` and must stay under approved export roots.
 - Installed MCP clients should reuse the local HTTP service at `http://127.0.0.1:9449/mcp`; do not default to spawning multiple long-lived stdio servers. The MCP server uses a singleton lock unless `FIGHORSE_MCP_ALLOW_MULTIPLE=1` is explicitly set for development.
+- The shared endpoint uses official Rust `rmcp` 2.2 Streamable HTTP with independent stateful sessions, Host/Origin validation, JSON or event-stream response negotiation, and graceful shutdown. Legacy `/sse` and `/messages` endpoints are not served; `--transport sse` must fail with HTTP `/mcp` migration guidance.
+- The canonical service install command is `fighorse install --default --mode service --clients cursor,codex,kimi,claude --apply`; Claude can be installed alone with `fighorse install client --client claude --apply`. Service and `/health` plus `initialize`/`tools/list` readiness precede client writes.
+- Canonical AI instruction targets are `~/.agents/skills/fighorse/SKILL.md` for Cursor/Kimi/Codex, `~/.claude/skills/fighorse/SKILL.md` for Claude, and `~/.cursor/rules/fighorse.mdc` for Cursor.
 
 ## Commands
 
@@ -35,7 +38,7 @@ Run the compiled CLI:
 Run the MCP server:
 
 ```bash
-./target/release/fighorse mcp serve --transport sse --port 9449
+./target/release/fighorse mcp serve --transport http --port 9449
 ./target/release/fighorse mcp serve --transport stdio  # explicit compatibility mode only
 ```
 
@@ -58,11 +61,12 @@ Run the MCP server:
 - Long-running services must be idle-efficient, release locks on SIGINT/SIGTERM/stdin close, and avoid leaving orphaned MCP processes.
 - One-shot CLI commands must not use the MCP singleton lock; they should bound network work with timeouts and exit cleanly after output is written.
 - `install all` defaults to CLI-only setup. Long-running MCP service setup must be explicit with `install all --mode service` or `install service`; do not configure, kickstart, or bind the MCP service in CLI-only workflows.
-- Streamable HTTP `/mcp` must support repeated client handshakes: the handler dispatches one stateless JSON-RPC message per request, so Codex-style repeated initialize handshakes stay valid.
+- Streamable HTTP `/mcp` uses the official `rmcp` handler and must support independent repeated client initialization and protocol-version headers.
+- Installation writes a managed manifest and backups, verifies `desired_absent` removals as absent, and rolls back only unchanged managed files plus service state.
 - Keep README, discovery output, generated skills, MCP schemas, and actual CLI behavior consistent when changing workflows or defaults.
 
 ## AI Tool Notes
 
 - Cursor should read `.cursor/rules/fighorse.mdc`, which points back to this file.
-- Codex, Kimi CLI, opencode, and similar agents should treat this file as the repository operating contract.
+- Codex, Kimi CLI, Claude Code, opencode, and similar agents should treat this file as the repository operating contract.
 - If tool-specific memory is needed later, duplicate only the short Cargo-only command policy and link back here.

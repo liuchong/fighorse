@@ -10,7 +10,8 @@
 fighorse install client --client cursor --apply
 fighorse install client --client codex --apply
 fighorse install client --client kimi --apply
-fighorse install skill --clients cursor,codex,kimi --apply
+fighorse install client --client claude --apply
+fighorse install skill --clients cursor,codex,kimi,claude --apply
 ```
 
 Для генерации конфигов без применения:
@@ -19,6 +20,7 @@ fighorse install skill --clients cursor,codex,kimi --apply
 fighorse mcp config --client cursor --transport http
 fighorse mcp config --client codex --transport http
 fighorse mcp config --client kimi --transport http
+fighorse mcp config --client claude --transport http
 fighorse mcp config --client opencode --transport http
 ```
 
@@ -47,10 +49,15 @@ fighorse mcp config --client opencode --transport http
 Рекомендуемый локальный сервис:
 
 ```bash
-fighorse install --default --mode service --clients cursor,codex,kimi --apply
+fighorse install --default --mode service --clients cursor,codex,kimi,claude --apply
+fighorse install verify
 ```
 
-Подключайтесь к `http://127.0.0.1:9449/mcp`, когда клиент поддерживает Streamable HTTP. Устаревший SSE-эндпоинт остается доступным на `http://127.0.0.1:9449/sse`, а stdio остается явным режимом совместимости. Установленные клиенты должны предпочитать общий локальный сервис, чтобы в системе был только один долгоживущий `fighorse` MCP-процесс.
+Подключайтесь к `http://127.0.0.1:9449/mcp` через official Rust `rmcp` 2.2 Streamable HTTP. Сервис хранит независимые stateful sessions, проверяет Host/Origin, согласует JSON или event-stream response и выполняет graceful shutdown. Legacy `/sse` и `/messages` отсутствуют; `--transport sse` завершается ошибкой с переходом на HTTP. `text/event-stream` от `/mcp` — standard response, не legacy transport.
+
+Инсталлятор активирует service, ожидает `/health`, выполняет `initialize`/`tools/list`, затем пишет clients и skills. Manifest, backup и `desired_absent` находятся в `~/.fighorse/install/manifest.json` и `~/.fighorse/install/backups/`; rollback восстанавливает неизменённые managed files и прежний service state.
+
+Canonical-цели: `~/.agents/skills/fighorse/SKILL.md` для Cursor/Kimi/Codex, `~/.claude/skills/fighorse/SKILL.md` для Claude и `~/.cursor/rules/fighorse.mdc` для Cursor.
 
 ## Обязательный стартовый поток
 
@@ -232,7 +239,6 @@ fighorse install --default --mode service --clients cursor --apply
 {
   "mcpServers": {
     "fighorse": {
-      "transport": "http",
       "url": "http://127.0.0.1:9449/mcp"
     }
   }
@@ -272,7 +278,7 @@ fighorse install status
 curl http://127.0.0.1:9449/health
 ```
 
-Типичная проблема: Codex может инициализировать свежую Streamable HTTP-сессию каждый раз при запуске. `/mcp` должен принимать повторяющиеся `initialize`-запросы и возвращать MCP JSON/SSE, а не `text/plain`. Перезапустите fighorse-сервис после обновления.
+Типичная проблема: Codex может создавать новую Streamable HTTP session при запуске. `/mcp` должен создавать независимую stateful session и возвращать standard JSON или event-stream response.
 
 ### Kimi
 
@@ -287,6 +293,8 @@ fighorse install --default --mode service --clients kimi --apply
 ```bash
 kimi mcp add --transport http fighorse http://127.0.0.1:9449/mcp
 ```
+
+Ожидаемый payload: `{"transport":"http","url":"http://127.0.0.1:9449/mcp"}`.
 
 Проверка:
 
@@ -311,7 +319,7 @@ fighorse mcp config --client claude --transport http
 {
   "mcpServers": {
     "fighorse": {
-      "transport": "http",
+      "type": "http",
       "url": "http://127.0.0.1:9449/mcp"
     }
   }
@@ -392,7 +400,7 @@ fighorse mcp config --client generic --transport http
   "args": ["mcp", "serve", "--transport", "stdio"],
   "env": {
     "FIGHORSE_MCP_MODE": "readonly",
-    "FIGHORSE_MCP_LOCAL_WRITE": "allow"
+    "FIGHORSE_MCP_LOCAL_WRITE": "deny"
   }
 }
 ```

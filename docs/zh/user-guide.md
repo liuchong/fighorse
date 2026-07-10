@@ -27,8 +27,9 @@ cargo build --release
 ./target/release/fighorse install client --client cursor --apply
 ./target/release/fighorse install client --client codex --apply
 ./target/release/fighorse install client --client kimi --apply
+./target/release/fighorse install client --client claude --apply
 ./target/release/fighorse install service --service launchd --apply
-./target/release/fighorse install --default --mode service --clients cursor,codex,kimi --apply
+./target/release/fighorse install --default --mode service --clients cursor,codex,kimi,claude --apply
 ```
 
 安装命令默认生成可审查的文件。只有当你希望 fighorse 修改用户级客户端配置、skill/rule 位置、二进制链接或服务管理器时，才添加 `--apply`。
@@ -174,39 +175,41 @@ fighorse asset download <file_key> --dir ./assets/fighorse --manifest
 
 ## MCP 服务器
 
-对于已安装的客户端，优先使用共享的本地 HTTP 服务，这样 Cursor、Codex、Kimi 和其他客户端可以复用一个 `fighorse` 进程，而不是各自生成 stdio 子进程：
+对于已安装的客户端，优先使用共享的本地 HTTP 服务，这样 Cursor、Codex、Kimi、Claude 和其他客户端可以复用一个 `fighorse` 进程，而不是各自生成 stdio 子进程。四种原生 HTTP payload 是：
 
-```json
-{
-  "mcpServers": {
-    "fighorse": {
-      "transport": "http",
-      "url": "http://127.0.0.1:9449/mcp"
-    }
-  }
-}
+```text
+Cursor: {"url":"http://127.0.0.1:9449/mcp"}
+Kimi:   {"transport":"http","url":"http://127.0.0.1:9449/mcp"}
+Claude: {"type":"http","url":"http://127.0.0.1:9449/mcp"}
+Codex:  [mcp_servers.fighorse]
+        url = "http://127.0.0.1:9449/mcp"
 ```
 
 尽可能通过显式的服务路径安装和启动本地服务：
 
 ```bash
-fighorse install --default --mode service --clients cursor,codex,kimi --apply
+fighorse install --default --mode service --clients cursor,codex,kimi,claude --apply
+fighorse install verify
+fighorse install rollback
 ```
 
-对于开发，你也可以直接运行 `fighorse mcp serve --transport sse --host 127.0.0.1 --port 9449`。
+对于开发，你也可以直接运行 `fighorse mcp serve --transport http --host 127.0.0.1 --port 9449`。
 
 HTTP 端点：
 
 ```text
 http://127.0.0.1:9449/mcp
-http://127.0.0.1:9449/sse
 http://127.0.0.1:9449/manifest
 http://127.0.0.1:9449/health
 ```
 
-该服务默认绑定到 `127.0.0.1`，并在 `~/.fighorse/runtime` 中使用单例锁。只有当你打算将服务暴露到本地主机之外时，才显式使用 `--host`。只有在客户端无法连接本地 HTTP 端点时才使用 stdio。
+该服务默认绑定到 `127.0.0.1`，并在 `~/.fighorse/runtime` 中使用单例锁。它使用 official Rust `rmcp` 2.2 `StreamableHttpService` 与 `LocalSessionManager`：各 session 为独立 stateful session，分发前验证 Host 和 Origin，SIGINT/SIGTERM 触发 graceful shutdown。只有在客户端无法连接本地 HTTP 端点时才使用标准 MCP stdio。
 
-维护者实现说明：Codex 等 Streamable HTTP 客户端每次启动时都可能初始化一个新的 MCP 连接。因此 `/mcp` 端点必须容忍重复的握手。在无状态模式下，每个请求创建和关闭一个新的传输/服务器。复用一个已经初始化的 `StreamableHTTPServerTransport` 可能导致第一次握手通过，后续握手失败，返回 `500 text/plain` 而非 MCP JSON/SSE 响应。
+Streamable HTTP 按协议协商返回 JSON 或 `text/event-stream`；这个 event-stream response 属于标准 `/mcp` 响应，不是退役的 legacy SSE transport。`/sse`、`/messages` 不存在，`--transport sse` 明确失败并引导改用 `--transport http`。
+
+服务安装事务顺序是 `preflight -> backup -> binary -> service -> health_ready -> clients -> skills -> verified`。安装器等待 `/health` 并完成 `initialize`、`tools/list` 后才写客户端配置。`~/.fighorse/install/manifest.json` 保存 hash、backup、写入顺序和 `desired_absent: true` 删除项；`~/.fighorse/install/backups/` 保存先前内容。rollback 逆序恢复仍未被用户修改的托管文件和原服务状态；自定义 legacy skill 原地保留并生成确定性的冲突备份。
+
+Canonical 三目标为 `~/.agents/skills/fighorse/SKILL.md`（Cursor/Kimi/Codex）、`~/.claude/skills/fighorse/SKILL.md`（Claude）、`~/.cursor/rules/fighorse.mdc`（Cursor）。新服务和显式 stdio 配置使用 `FIGHORSE_MCP_LOCAL_WRITE=deny`，迁移仅保留已有的显式 allow。
 
 正常的 CLI 命令如 `fighorse file get`、`fighorse design package` 和 `fighorse image export` 都是一次性进程。它们每次允许启动，不启动 MCP 服务，不绑定端口，不占用 MCP 单例锁，输出写入后应退出。Figma HTTP 调用和图片下载使用默认 `120000` 毫秒的 `FIGHORSE_HTTP_TIMEOUT_MS`，`SIGINT`/`SIGTERM` 在退出前中止正在进行的请求。`fighorse install --default --apply` 默认仅设置 CLI；只有当你明确希望 fighorse 配置或启动长驻 MCP 服务时，才使用 `fighorse install --default --mode service --apply` 或 `fighorse install service --apply`。
 
@@ -215,13 +218,13 @@ http://127.0.0.1:9449/health
 Figma 写入工具默认隐藏，除非启用：
 
 ```bash
-FIGHORSE_MCP_MODE=write fighorse mcp serve --transport sse
+FIGHORSE_MCP_MODE=write fighorse mcp serve --transport http
 ```
 
 本地文件导出单独控制：
 
 ```bash
-FIGHORSE_MCP_LOCAL_WRITE=allow fighorse mcp serve --transport sse
+FIGHORSE_MCP_LOCAL_WRITE=allow fighorse mcp serve --transport http
 ```
 
 即使启用了本地写入，导出路径也会经过验证，必须保持在 `./.fighorse/exports`、`./assets/fighorse` 或 `~/.fighorse/exports` 之下。
@@ -281,7 +284,7 @@ fighorse image export <file_key> --ids "$IDS" --dir ./.fighorse/exports --manife
 
 - 第一次运行不清楚：运行 `fighorse quickstart "<figma-frame-url>"` 并按照 `next_steps` 操作。
 - `doctor.auth.has_token` 为 false：运行 `fighorse auth login --token <FIGMA_TOKEN>` 或 `fighorse install auth --apply`。
-- `doctor.checks` 报告 MCP 服务未运行：对于仅 CLI 工作可以忽略，或者为 AI 客户端运行 `fighorse install --default --mode service --clients cursor,codex,kimi --apply`。
+- `doctor.checks` 报告 MCP 服务未运行：对于仅 CLI 工作可以忽略，或者为 AI 客户端运行 `fighorse install --default --mode service --clients cursor,codex,kimi,claude --apply`。
 - Codex/Cursor 报告 `text/plain` 或重复的 initialize 失败：升级后重启 fighorse 服务；`/mcp` 必须支持重复的 Streamable HTTP 握手。
 - `smoke.ok` 为 false 但文件元数据存在：按照 `diagnostics.warnings` 操作；通常选定的目标太宽泛或缺少平台/资产格式。
 - MCP 导出工具报告本地写入禁用：在 MCP 服务器环境中设置 `FIGHORSE_MCP_LOCAL_WRITE=allow`。

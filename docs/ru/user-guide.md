@@ -27,8 +27,9 @@ cargo build --release
 ./target/release/fighorse install client --client cursor --apply
 ./target/release/fighorse install client --client codex --apply
 ./target/release/fighorse install client --client kimi --apply
+./target/release/fighorse install client --client claude --apply
 ./target/release/fighorse install service --service launchd --apply
-./target/release/fighorse install --default --mode service --clients cursor,codex,kimi --apply
+./target/release/fighorse install --default --mode service --clients cursor,codex,kimi,claude --apply
 ```
 
 Команды установки по умолчанию генерируют файлы для ревью. Добавляйте `--apply` только когда хотите, чтобы fighorse модифицировал пользовательскую конфигурацию клиента, расположения skill/rule, ссылки на бинарники или сервис-менеджеры.
@@ -175,39 +176,41 @@ fighorse asset download <file_key> --dir ./assets/fighorse --manifest
 
 ## MCP-сервер
 
-Для установленных клиентов предпочитайте общий локальный HTTP-сервис, чтобы Cursor, Codex, Kimi и другие клиенты переиспользовали один процесс `fighorse` вместо порождения stdio-подпроцессов:
+Для установленных клиентов предпочитайте общий локальный HTTP-сервис, чтобы Cursor, Codex, Kimi, Claude и другие клиенты переиспользовали один процесс `fighorse`. Нативные HTTP payload:
 
-```json
-{
-  "mcpServers": {
-    "fighorse": {
-      "transport": "http",
-      "url": "http://127.0.0.1:9449/mcp"
-    }
-  }
-}
+```text
+Cursor: {"url":"http://127.0.0.1:9449/mcp"}
+Kimi:   {"transport":"http","url":"http://127.0.0.1:9449/mcp"}
+Claude: {"type":"http","url":"http://127.0.0.1:9449/mcp"}
+Codex:  [mcp_servers.fighorse]
+        url = "http://127.0.0.1:9449/mcp"
 ```
 
 Установите и запустите локальный сервис через явный путь сервиса, когда возможно:
 
 ```bash
-fighorse install --default --mode service --clients cursor,codex,kimi --apply
+fighorse install --default --mode service --clients cursor,codex,kimi,claude --apply
+fighorse install verify
+fighorse install rollback
 ```
 
-Для разработки можно также запускать напрямую через `fighorse mcp serve --transport sse --host 127.0.0.1 --port 9449`.
+Для разработки можно также запускать напрямую через `fighorse mcp serve --transport http --host 127.0.0.1 --port 9449`.
 
 HTTP-эндпоинты:
 
 ```text
 http://127.0.0.1:9449/mcp
-http://127.0.0.1:9449/sse
 http://127.0.0.1:9449/manifest
 http://127.0.0.1:9449/health
 ```
 
-Сервис по умолчанию привязывается к `127.0.0.1` и использует singleton-лок в `~/.fighorse/runtime`. Используйте `--host` явно только когда намерены выставить сервис за пределы localhost. Используйте stdio только для клиентов, которые не могут подключиться к локальному HTTP-эндпоинту.
+Сервис привязывается к `127.0.0.1` и использует singleton-лок. Это official Rust `rmcp` 2.2 `StreamableHttpService` с `LocalSessionManager`: независимые stateful sessions, проверка Host/Origin и graceful shutdown. Standard MCP stdio используется только как явный compatibility mode.
 
-Примечание для мейнтейнеров: Streamable HTTP-клиенты, такие как Codex, могут инициализировать свежее MCP-соединение каждый раз при запуске. Поэтому эндпоинт `/mcp` должен терпеть повторяющиеся рукопожатия. В stateless-режиме создавайте и закрывайте свежий транспорт/сервер на каждый запрос. Переиспользование уже инициализированного `StreamableHTTPServerTransport` может привести к тому, что первое рукопожатие пройдет, а последующие провалятся с `500 text/plain` вместо MCP JSON/SSE-ответа.
+Streamable HTTP возвращает JSON или `text/event-stream` по negotiation. Этот event-stream response на `/mcp` не является legacy SSE transport. `/sse` и `/messages` отсутствуют; `--transport sse` завершается ошибкой и предлагает `--transport http`.
+
+Транзакция установки: `preflight -> backup -> binary -> service -> health_ready -> clients -> skills -> verified`. Клиенты записываются только после `/health`, `initialize` и `tools/list`. Manifest хранит hash, backup, порядок и `desired_absent: true`; rollback идёт в обратном порядке и восстанавливает состояние сервиса. Custom legacy skills сохраняются на месте с deterministic conflict backup.
+
+Canonical-цели: `~/.agents/skills/fighorse/SKILL.md` для Cursor/Kimi/Codex, `~/.claude/skills/fighorse/SKILL.md` для Claude и `~/.cursor/rules/fighorse.mdc` для Cursor. Fresh service/stdio используют `FIGHORSE_MCP_LOCAL_WRITE=deny`; существующий явный allow сохраняется при migration.
 
 Обычные CLI-команды, такие как `fighorse file get`, `fighorse design package` и `fighorse image export`, являются одноразовыми процессами. Им разрешается запускаться каждый раз, они не запускают MCP-сервис, не привязывают порты, не берут MCP singleton-лок и должны выходить после записи вывода. Figma HTTP-вызовы и загрузки изображений используют `FIGHORSE_HTTP_TIMEOUT_MS` с дефолтом `120000`, а `SIGINT`/`SIGTERM` прерывают выполняющиеся запросы перед выходом. `fighorse install --default --apply` по умолчанию настраивает только CLI; используйте `fighorse install --default --mode service --apply` или `fighorse install service --apply` только когда явно хотите, чтобы fighorse настроил или запустил долгоживущий MCP-сервис.
 
@@ -216,13 +219,13 @@ http://127.0.0.1:9449/health
 Инструменты записи Figma скрыты, если не включены:
 
 ```bash
-FIGHORSE_MCP_MODE=write fighorse mcp serve --transport sse
+FIGHORSE_MCP_MODE=write fighorse mcp serve --transport http
 ```
 
 Локальный экспорт файлов контролируется отдельно:
 
 ```bash
-FIGHORSE_MCP_LOCAL_WRITE=allow fighorse mcp serve --transport sse
+FIGHORSE_MCP_LOCAL_WRITE=allow fighorse mcp serve --transport http
 ```
 
 Даже при включенной локальной записи пути экспорта валидируются и должны оставаться в пределах `./.fighorse/exports`, `./assets/fighorse` или `~/.fighorse/exports`.
@@ -282,7 +285,7 @@ fighorse image export <file_key> --ids "$IDS" --dir ./.fighorse/exports --manife
 
 - Первый запуск неясен: запустите `fighorse quickstart "<figma-frame-url>"` и следуйте `next_steps`.
 - `doctor.auth.has_token` равен false: запустите `fighorse auth login --token <FIGMA_TOKEN>` или `fighorse install auth --apply`.
-- `doctor.checks` сообщает, что MCP-сервис не запущен: игнорируйте для CLI-only работы или запустите `fighorse install --default --mode service --clients cursor,codex,kimi --apply` для AI-клиентов.
+- `doctor.checks` сообщает, что MCP-сервис не запущен: игнорируйте для CLI-only работы или запустите `fighorse install --default --mode service --clients cursor,codex,kimi,claude --apply` для AI-клиентов.
 - Codex/Cursor сообщает `text/plain` или повторяющиеся initialize-ошибки: перезапустите fighorse-сервис после обновления; `/mcp` должен поддерживать повторяющиеся Streamable HTTP-рукопожатия.
 - `smoke.ok` равен false, но метаданные файла существуют: следуйте `diagnostics.warnings`; часто выбранная цель слишком широка или отсутствует платформа/формат ассетов.
 - MCP-инструмент экспорта сообщает, что локальная запись отключена: установите `FIGHORSE_MCP_LOCAL_WRITE=allow` в окружении MCP-сервера.

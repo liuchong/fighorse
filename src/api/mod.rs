@@ -24,27 +24,28 @@ pub mod files {
     use crate::http;
     use serde_json::Value;
 
-    pub async fn get_file(
-        token: &str,
-        file_key: &str,
-        version: Option<&str>,
-        ids: Option<&str>,
-        depth: Option<&str>,
-        geometry: Option<&str>,
-        plugin_data: Option<&str>,
-        branch_data: Option<&str>,
-    ) -> Result<Value> {
+    #[derive(Debug, Clone, Copy, Default)]
+    pub struct GetFileParams<'a> {
+        pub version: Option<&'a str>,
+        pub ids: Option<&'a str>,
+        pub depth: Option<&'a str>,
+        pub geometry: Option<&'a str>,
+        pub plugin_data: Option<&'a str>,
+        pub branch_data: Option<&'a str>,
+    }
+
+    pub async fn get_file(token: &str, file_key: &str, params: GetFileParams<'_>) -> Result<Value> {
         let path = format!("/v1/files/{}", http::path_segment(file_key));
         http::get(
             &path,
             Some(token),
             &[
-                ("version", opt(version)),
-                ("ids", opt(ids)),
-                ("depth", opt(depth)),
-                ("geometry", opt(geometry)),
-                ("plugin_data", opt(plugin_data)),
-                ("branch_data", opt(branch_data)),
+                ("version", opt(params.version)),
+                ("ids", opt(params.ids)),
+                ("depth", opt(params.depth)),
+                ("geometry", opt(params.geometry)),
+                ("plugin_data", opt(params.plugin_data)),
+                ("branch_data", opt(params.branch_data)),
             ],
         )
         .await
@@ -296,11 +297,7 @@ pub mod comments {
     use crate::http;
     use serde_json::{json, Value};
 
-    pub async fn get_comments(
-        token: &str,
-        file_key: &str,
-        as_md: Option<&str>,
-    ) -> Result<Value> {
+    pub async fn get_comments(token: &str, file_key: &str, as_md: Option<&str>) -> Result<Value> {
         let path = format!("/v1/files/{}/comments", http::path_segment(file_key));
         http::get(&path, Some(token), &[("as_md", opt(as_md))]).await
     }
@@ -536,7 +533,16 @@ pub mod analytics {
         end_date: Option<&str>,
         order_direction: Option<&str>,
     ) -> Result<Value> {
-        usage_actions(token, file_key, "component/usages", cursor, start_date, end_date, order_direction).await
+        usage_actions(
+            token,
+            file_key,
+            "component/usages",
+            cursor,
+            start_date,
+            end_date,
+            order_direction,
+        )
+        .await
     }
 
     pub async fn component_actions(
@@ -547,7 +553,16 @@ pub mod analytics {
         end_date: Option<&str>,
         order_direction: Option<&str>,
     ) -> Result<Value> {
-        usage_actions(token, file_key, "component/actions", cursor, start_date, end_date, order_direction).await
+        usage_actions(
+            token,
+            file_key,
+            "component/actions",
+            cursor,
+            start_date,
+            end_date,
+            order_direction,
+        )
+        .await
     }
 
     pub async fn style_usages(
@@ -558,7 +573,16 @@ pub mod analytics {
         end_date: Option<&str>,
         order_direction: Option<&str>,
     ) -> Result<Value> {
-        usage_actions(token, file_key, "style/usages", cursor, start_date, end_date, order_direction).await
+        usage_actions(
+            token,
+            file_key,
+            "style/usages",
+            cursor,
+            start_date,
+            end_date,
+            order_direction,
+        )
+        .await
     }
 
     pub async fn style_actions(
@@ -594,7 +618,16 @@ pub mod analytics {
         end_date: Option<&str>,
         order_direction: Option<&str>,
     ) -> Result<Value> {
-        usage_actions(token, file_key, "variable/usages", cursor, start_date, end_date, order_direction).await
+        usage_actions(
+            token,
+            file_key,
+            "variable/usages",
+            cursor,
+            start_date,
+            end_date,
+            order_direction,
+        )
+        .await
     }
 
     pub async fn variable_actions(
@@ -605,7 +638,16 @@ pub mod analytics {
         end_date: Option<&str>,
         order_direction: Option<&str>,
     ) -> Result<Value> {
-        usage_actions(token, file_key, "variable/actions", cursor, start_date, end_date, order_direction).await
+        usage_actions(
+            token,
+            file_key,
+            "variable/actions",
+            cursor,
+            start_date,
+            end_date,
+            order_direction,
+        )
+        .await
     }
 }
 

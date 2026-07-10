@@ -1,6 +1,4 @@
 //! MCP resources and prompts for AI clients that support them.
-//!
-//! MCP resources and prompts for AI clients that support them.
 
 use crate::api::coverage;
 use crate::discovery;
@@ -20,9 +18,11 @@ pub fn read_resource(uri: &str) -> Result<Value> {
         "fighorse://capabilities" => Some(discovery::manifest()),
         "fighorse://coverage" => Some(coverage::coverage_report()),
         "fighorse://workflow/design-replication" => Some(discovery::workflow()),
-        "fighorse://experience/summary" => {
-            Some(experience::guidance(&Filters::default(), 8, &ScopeOpts::default()))
-        }
+        "fighorse://experience/summary" => Some(experience::guidance(
+            &Filters::default(),
+            8,
+            &ScopeOpts::default(),
+        )),
         _ => None,
     };
     match payload {

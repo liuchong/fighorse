@@ -1,6 +1,4 @@
 //! Shared MCP tool safety policy.
-//!
-//! Shared MCP tool safety policy.
 
 use crate::config;
 use crate::mcp::registry;

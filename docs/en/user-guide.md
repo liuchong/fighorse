@@ -27,8 +27,9 @@ Install MCP service and AI client integrations only when needed:
 ./target/release/fighorse install client --client cursor --apply
 ./target/release/fighorse install client --client codex --apply
 ./target/release/fighorse install client --client kimi --apply
+./target/release/fighorse install client --client claude --apply
 ./target/release/fighorse install service --service launchd --apply
-./target/release/fighorse install --default --mode service --clients cursor,codex,kimi --apply
+./target/release/fighorse install --default --mode service --clients cursor,codex,kimi,claude --apply
 ```
 
 Install commands generate reviewable files by default. Add `--apply` only when you want fighorse to mutate user-level client config, skill/rule locations, binary links, or service managers.
@@ -175,39 +176,49 @@ Export commands write safe filenames and can create `manifest.json`. Use the man
 
 ## MCP Server
 
-For installed clients, prefer the shared local HTTP service so Cursor, Codex, Kimi, and other clients reuse one `fighorse` process instead of each spawning a stdio subprocess:
+For installed clients, prefer the shared local HTTP service so Cursor, Codex, Kimi, Claude, and other clients reuse one `fighorse` process instead of each spawning a stdio subprocess.
 
-```json
-{
-  "mcpServers": {
-    "fighorse": {
-      "transport": "http",
-      "url": "http://127.0.0.1:9449/mcp"
-    }
-  }
-}
+Client-native HTTP payloads are:
+
+```text
+Cursor: {"url":"http://127.0.0.1:9449/mcp"}
+Kimi:   {"transport":"http","url":"http://127.0.0.1:9449/mcp"}
+Claude: {"type":"http","url":"http://127.0.0.1:9449/mcp"}
+Codex:  [mcp_servers.fighorse]
+        url = "http://127.0.0.1:9449/mcp"
 ```
 
 Install and start the local service through the explicit service path when possible:
 
 ```bash
-fighorse install --default --mode service --clients cursor,codex,kimi --apply
+fighorse install --default --mode service --clients cursor,codex,kimi,claude --apply
+fighorse install verify
+fighorse install rollback
 ```
 
-For development, you can also run it directly with `fighorse mcp serve --transport sse --host 127.0.0.1 --port 9449`.
+For development, you can also run it directly with `fighorse mcp serve --transport http --host 127.0.0.1 --port 9449`.
 
 HTTP endpoints:
 
 ```text
 http://127.0.0.1:9449/mcp
-http://127.0.0.1:9449/sse
 http://127.0.0.1:9449/manifest
 http://127.0.0.1:9449/health
 ```
 
-The service binds to `127.0.0.1` by default and uses a singleton lock in `~/.fighorse/runtime`. Use `--host` explicitly only when you intend to expose the service beyond localhost. Use stdio only for a client that cannot connect to the local HTTP endpoint.
+The service binds to `127.0.0.1` by default and uses a singleton lock in `~/.fighorse/runtime`. It is the official Rust `rmcp` 2.2 `StreamableHttpService` with `LocalSessionManager`: sessions are stateful and independent, Host and Origin are validated, and SIGINT/SIGTERM triggers graceful shutdown. Use `--host` explicitly only when you intend to expose the service beyond localhost. Use standard MCP stdio only for a client that cannot connect to the local HTTP endpoint.
 
-Implementation note for maintainers: Streamable HTTP clients such as Codex may initialize a fresh MCP connection every time they start. The `/mcp` endpoint must therefore tolerate repeated handshakes. In stateless mode, create and close a fresh transport/server per request. Reusing one already-initialized `StreamableHTTPServerTransport` can make the first handshake pass and later handshakes fail with `500 text/plain` instead of an MCP JSON/SSE response.
+Streamable HTTP may return a JSON or `text/event-stream` response according to protocol negotiation. That event stream is part of the standard `/mcp` response and is not the retired legacy SSE transport. The legacy `/sse` and `/messages` endpoints are absent; `--transport sse` fails with migration guidance to `--transport http`.
+
+Service installation is ordered and transactional: write binary/service files, activate the service, wait for `/health`, complete `initialize` plus `tools/list`, then write client configs and canonical skills. `~/.fighorse/install/manifest.json` records content hashes, backup paths, write order, and managed removals as `desired_absent: true`. Backups live under `~/.fighorse/install/backups/`. Verification requires desired-absent paths to remain absent; rollback restores unchanged managed files in reverse order and restores prior service state. Customized legacy skills remain in place and receive deterministic conflict backups.
+
+Canonical instruction targets are:
+
+- Cursor, Kimi, Codex: `~/.agents/skills/fighorse/SKILL.md`
+- Claude: `~/.claude/skills/fighorse/SKILL.md`
+- Cursor rule: `~/.cursor/rules/fighorse.mdc`
+
+Fresh service and explicit stdio configs use `FIGHORSE_MCP_LOCAL_WRITE=deny`. Migration preserves an existing explicit `allow`; it does not grant local writes to a fresh install.
 
 Normal CLI commands such as `fighorse file get`, `fighorse design package`, and `fighorse image export` are one-shot processes. They are allowed to start each time, do not start the MCP service, do not bind ports, do not take the MCP singleton lock, and should exit after output is written. Figma HTTP calls and image downloads use `FIGHORSE_HTTP_TIMEOUT_MS` with a default of `120000`, and `SIGINT`/`SIGTERM` abort in-flight requests before exiting. `fighorse install --default --apply` defaults to CLI-only setup; use `fighorse install --default --mode service --apply` or `fighorse install service --apply` only when you explicitly want fighorse to configure or kickstart a long-running MCP service.
 
@@ -216,13 +227,13 @@ Normal CLI commands such as `fighorse file get`, `fighorse design package`, and 
 Figma write tools are hidden unless enabled:
 
 ```bash
-FIGHORSE_MCP_MODE=write fighorse mcp serve --transport sse
+FIGHORSE_MCP_MODE=write fighorse mcp serve --transport http
 ```
 
 Local file export is controlled separately:
 
 ```bash
-FIGHORSE_MCP_LOCAL_WRITE=allow fighorse mcp serve --transport sse
+FIGHORSE_MCP_LOCAL_WRITE=allow fighorse mcp serve --transport http
 ```
 
 Even with local write enabled, export paths are validated and must stay under `./.fighorse/exports`, `./assets/fighorse`, or `~/.fighorse/exports`.
@@ -282,7 +293,7 @@ fighorse image export <file_key> --ids "$IDS" --dir ./.fighorse/exports --manife
 
 - First run is unclear: run `fighorse quickstart "<figma-frame-url>"` and follow `next_steps`.
 - `doctor.auth.has_token` is false: run `fighorse auth login --token <FIGMA_TOKEN>` or `fighorse install auth --apply`.
-- `doctor.checks` reports MCP service not running: ignore it for CLI-only work, or run `fighorse install --default --mode service --clients cursor,codex,kimi --apply` for AI clients.
+- `doctor.checks` reports MCP service not running: ignore it for CLI-only work, or run `fighorse install --default --mode service --clients cursor,codex,kimi,claude --apply` for AI clients.
 - Codex/Cursor reports `text/plain` or repeated initialize failures: restart the fighorse service after upgrading; `/mcp` must support repeated Streamable HTTP handshakes.
 - `smoke.ok` is false but file metadata exists: follow `diagnostics.warnings`; often the selected target is too broad or platform/asset format is missing.
 - MCP export tool reports local-write disabled: set `FIGHORSE_MCP_LOCAL_WRITE=allow` in the MCP server environment.

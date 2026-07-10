@@ -21,7 +21,9 @@ pub fn response_to_node(data: &Value) -> Value {
             "children": docs,
         });
     }
-    data.get("document").cloned().unwrap_or_else(|| data.clone())
+    data.get("document")
+        .cloned()
+        .unwrap_or_else(|| data.clone())
 }
 
 /// Lightweight summary of a node.
@@ -34,8 +36,14 @@ pub fn node_summary(node: &Value) -> Value {
 
     let mut map = serde_json::Map::new();
     map.insert("id".into(), node.get("id").cloned().unwrap_or(Value::Null));
-    map.insert("name".into(), node.get("name").cloned().unwrap_or(Value::Null));
-    map.insert("type".into(), node.get("type").cloned().unwrap_or(Value::Null));
+    map.insert(
+        "name".into(),
+        node.get("name").cloned().unwrap_or(Value::Null),
+    );
+    map.insert(
+        "type".into(),
+        node.get("type").cloned().unwrap_or(Value::Null),
+    );
     map.insert("children_count".into(), json!(children_count));
 
     if let Some(bbox) = node.get("absoluteBoundingBox") {

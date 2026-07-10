@@ -101,8 +101,14 @@ pub fn diff_trees(old_tree: &Value, new_tree: &Value) -> Value {
             let mut child_diff = diff_trees(old_child, new_child);
             if let Some(obj) = child_diff.as_object_mut() {
                 obj.insert("id".into(), Value::String(id.clone()));
-                obj.insert("name".into(), new_child.get("name").cloned().unwrap_or(Value::Null));
-                obj.insert("type".into(), new_child.get("type").cloned().unwrap_or(Value::Null));
+                obj.insert(
+                    "name".into(),
+                    new_child.get("name").cloned().unwrap_or(Value::Null),
+                );
+                obj.insert(
+                    "type".into(),
+                    new_child.get("type").cloned().unwrap_or(Value::Null),
+                );
             }
             child_diffs.push(child_diff);
         }
@@ -143,9 +149,24 @@ mod tests {
     #[test]
     fn reports_added_removed_unchanged() {
         let result = diff_nodes(&old_tree(), &new_tree());
-        let added: Vec<&str> = result["added"].as_array().unwrap().iter().map(|n| n["id"].as_str().unwrap()).collect();
-        let removed: Vec<&str> = result["removed"].as_array().unwrap().iter().map(|n| n["id"].as_str().unwrap()).collect();
-        let unchanged: Vec<&str> = result["unchanged"].as_array().unwrap().iter().map(|n| n.as_str().unwrap()).collect();
+        let added: Vec<&str> = result["added"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|n| n["id"].as_str().unwrap())
+            .collect();
+        let removed: Vec<&str> = result["removed"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|n| n["id"].as_str().unwrap())
+            .collect();
+        let unchanged: Vec<&str> = result["unchanged"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|n| n.as_str().unwrap())
+            .collect();
         assert_eq!(added, vec!["4"]);
         assert_eq!(removed, vec!["3"]);
         assert_eq!(unchanged, vec!["Header"]);

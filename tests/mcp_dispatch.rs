@@ -46,8 +46,8 @@ async fn mcp_dispatch_end_to_end() {
     // Policy: a write tool is rejected in readonly.
     let write_attempt = dispatch(&json!({"jsonrpc":"2.0","id":3,"method":"tools/call",
         "params":{"name":"post_comment","arguments":{"file_key":"abc","message":"hi"}}}))
-        .await
-        .unwrap();
+    .await
+    .unwrap();
     assert_eq!(write_attempt["result"]["isError"], true);
     assert!(write_attempt["result"]["content"][0]["text"]
         .as_str()
@@ -57,16 +57,16 @@ async fn mcp_dispatch_end_to_end() {
     // resources/read coverage.
     let cov = dispatch(&json!({"jsonrpc":"2.0","id":4,"method":"resources/read",
         "params":{"uri":"fighorse://coverage"}}))
-        .await
-        .unwrap();
+    .await
+    .unwrap();
     let text = cov["result"]["contents"][0]["text"].as_str().unwrap();
     assert!(text.contains("fighorse.api-coverage.v1"));
 
     // A Figma-backed tool call: get_file_tree hits the mock.
     let tree = dispatch(&json!({"jsonrpc":"2.0","id":5,"method":"tools/call",
         "params":{"name":"get_file_tree","arguments":{"file_key":"abc"}}}))
-        .await
-        .unwrap();
+    .await
+    .unwrap();
     let tree_text = tree["result"]["content"][0]["text"].as_str().unwrap();
     assert!(tree_text.contains("\"type\": \"DOCUMENT\""));
 

@@ -1,15 +1,17 @@
 //! Self-description payloads for AI tools and MCP clients.
 //!
-//! Runtime detection reports the running fighorse binary rather than the
-//! native Rust binary: the `runtime` check reports the running fighorse binary.
+//! Runtime checks and onboarding payloads describe the compiled fighorse binary.
 
 use crate::api::coverage as api_coverage;
 use crate::config;
+use crate::error::{Error, Result};
 use crate::experience;
 use crate::guidance;
 use crate::url as figma_url;
 use serde_json::{json, Value};
+use std::net::{SocketAddr, TcpStream};
 use std::path::PathBuf;
+use std::time::Duration;
 
 pub const VERSION: &str = "0.1.0";
 
@@ -60,6 +62,11 @@ fn home_exists() -> bool {
 }
 
 fn mcp_lock_file() -> PathBuf {
+    if let Ok(path) = std::env::var("FIGHORSE_MCP_LOCK_FILE") {
+        if !path.is_empty() {
+            return PathBuf::from(path);
+        }
+    }
     config::fighorse_home().join("runtime").join("mcp.lock")
 }
 
@@ -99,18 +106,43 @@ pub fn mcp_service_status() -> Value {
         .as_ref()
         .and_then(|l| l.get("pid"))
         .and_then(|v| v.as_i64());
-    let running = active_pid(pid);
+    let owner_active = active_pid(pid);
+    let transport = lock
+        .as_ref()
+        .and_then(|value| value.get("transport"))
+        .and_then(|value| value.as_str());
+    let port = lock
+        .as_ref()
+        .and_then(|value| value.get("port"))
+        .and_then(|value| value.as_u64())
+        .filter(|port| *port <= u16::MAX as u64)
+        .map(|port| port as u16)
+        .unwrap_or(9449);
+    let address = SocketAddr::from(([127, 0, 0, 1], port));
+    let listener_reachable = owner_active
+        && transport == Some("http")
+        && TcpStream::connect_timeout(&address, Duration::from_millis(75)).is_ok();
+    let ready = listener_reachable;
+    let endpoint = format!("http://127.0.0.1:{port}/mcp");
+    let health = format!("http://127.0.0.1:{port}/health");
     json!({
-        "endpoint": "http://127.0.0.1:9449/mcp",
-        "health": "http://127.0.0.1:9449/health",
+        "endpoint": endpoint,
+        "health": health,
         "lock_file": lock_file.to_string_lossy(),
         "lock_present": lock.is_some(),
         "pid": pid,
-        "running": running,
-        "next_step": if running {
+        "transport": transport,
+        "port": port,
+        "owner_active": owner_active,
+        "running": owner_active,
+        "listener_reachable": listener_reachable,
+        "ready": ready,
+        "required_for_cli": false,
+        "readiness_scope": "ready means the configured local HTTP listener accepted a TCP connection; run `fighorse install verify` for a full MCP initialize and tools/list handshake.",
+        "next_step": if ready {
             "Ask the client to call discover_fighorse, or run fighorse doctor --format json."
         } else {
-            "For MCP clients, run fighorse install --default --mode service --clients cursor,codex,kimi --apply."
+            "CLI commands remain usable without the service. For MCP clients, run fighorse install --default --mode service --clients cursor,codex,kimi,claude --apply, then fighorse install verify."
         }
     })
 }
@@ -139,8 +171,9 @@ pub fn setup_guidance() -> Value {
             "Run fighorse design package \"<figma-frame-url>\" --platform <target-platform> --asset-format <asset-format>."
         ],
         "optional_mcp_service": {
-            "when": "Only when an AI client such as Cursor, Codex, or Kimi should call fighorse directly.",
-            "command": "fighorse install --default --mode service --clients cursor,codex,kimi --apply",
+            "when": "Only when an AI client such as Cursor, Codex, Kimi, or Claude should call fighorse directly.",
+            "clients": ["Cursor", "Codex", "Kimi", "Claude"],
+            "command": "fighorse install --default --mode service --clients cursor,codex,kimi,claude --apply",
             "endpoint": "http://127.0.0.1:9449/mcp"
         },
         "ai_client_behavior": {
@@ -267,7 +300,7 @@ pub fn quickstart(figma_url: Option<&str>) -> Value {
     if let Some(dc) = &design_command {
         next_steps.push(dc.clone());
     }
-    next_steps.push("Optional MCP service: fighorse install --default --mode service --clients cursor,codex,kimi --apply".to_string());
+    next_steps.push("Optional MCP service: fighorse install --default --mode service --clients cursor,codex,kimi,claude --apply".to_string());
 
     json!({
         "kind": "fighorse.quickstart.v1",
@@ -280,12 +313,12 @@ pub fn quickstart(figma_url: Option<&str>) -> Value {
             "home_exists": home_exists(),
             "binary": binary,
             "default_mode": "cli",
-            "service_mode": "explicit: fighorse install --default --mode service --clients cursor,codex,kimi --apply"
+            "service_mode": "explicit: fighorse install --default --mode service --clients cursor,codex,kimi,claude --apply"
         },
         "mcp": mcp_service_status(),
         "setup": setup_guidance(),
         "figma_url": parsed.as_ref().map(|p| p.to_json()),
-        "proxy": {"configured": cfg.proxy.is_some(), "value": cfg.proxy},
+        "proxy": {"configured": cfg.proxy.is_some()},
         "next_steps": next_steps,
     })
 }
@@ -302,7 +335,8 @@ pub fn quickstart_markdown(report: &Value) -> String {
                     let ok = c["ok"].as_bool().unwrap_or(false);
                     let id = c["id"].as_str().unwrap_or("");
                     let message = c["message"].as_str().unwrap_or("");
-                    let mut line = format!("- {} `{id}`: {message}", if ok { "OK" } else { "TODO" });
+                    let mut line =
+                        format!("- {} `{id}`: {message}", if ok { "OK" } else { "TODO" });
                     if !ok {
                         if let Some(nc) = c.get("next_command").and_then(|v| v.as_str()) {
                             line.push_str(&format!("\n  Next: `{nc}`"));
@@ -330,7 +364,7 @@ pub fn quickstart_markdown(report: &Value) -> String {
 2. Copy a specific Figma frame, group, or component link. Avoid whole-canvas links for implementation.\n\
 3. Run quickstart again with the selected link:\n   `fighorse quickstart \"<figma-frame-url>\"`\n\
 4. Build an AI-ready design package:\n   `fighorse design package \"<figma-frame-url>\" --platform <target> --asset-format <format>`\n\
-5. Optional MCP service for Cursor/Codex/Kimi:\n   `fighorse install --default --mode service --clients cursor,codex,kimi --apply`\n\n\
+5. Optional MCP service for Cursor/Codex/Kimi/Claude:\n   `fighorse install --default --mode service --clients cursor,codex,kimi,claude --apply`\n\n\
 ## AI Client Setup Rule\n\n\
 First run `fighorse quickstart --format json` or MCP `check_fighorse_ready`. If `auth.has_token=false`, do not call Figma API tools yet. Tell the user: fighorse needs a Figma Personal Access Token; run `fighorse auth login --token <FIGMA_TOKEN>` or set `FIGMA_TOKEN`, then retry.\n\n\
 ## Checks\n\n{}\n\n## Next Steps\n\n{}\n",
@@ -347,9 +381,14 @@ pub fn doctor() -> Value {
     let local_write = config::mcp_local_write_enabled();
     let mcp_service = mcp_service_status();
     let stale_lock = mcp_service["lock_present"].as_bool().unwrap_or(false)
-        && !mcp_service["running"].as_bool().unwrap_or(false);
-    let env_token_present = std::env::var("FIGMA_TOKEN").map(|v| !v.is_empty()).unwrap_or(false)
-        || std::env::var("FIGMA_API_KEY").map(|v| !v.is_empty()).unwrap_or(false);
+        && !mcp_service["owner_active"].as_bool().unwrap_or(false);
+    let service_ready = mcp_service["ready"].as_bool().unwrap_or(false);
+    let env_token_present = std::env::var("FIGMA_TOKEN")
+        .map(|v| !v.is_empty())
+        .unwrap_or(false)
+        || std::env::var("FIGMA_API_KEY")
+            .map(|v| !v.is_empty())
+            .unwrap_or(false);
     let opts = experience::ScopeOpts::default();
 
     json!({
@@ -385,12 +424,12 @@ pub fn doctor() -> Value {
             {"id": "token", "ok": has_token,
              "message": if has_token { "Figma token is configured." } else { "Figma token is missing; Figma API calls will fail." },
              "next_step": "Run fighorse auth login --token <FIGMA_TOKEN> or set FIGMA_TOKEN for one command."},
-            {"id": "mcp_service", "ok": mcp_service["running"].as_bool().unwrap_or(false),
-             "message": if mcp_service["running"].as_bool().unwrap_or(false) { "Local MCP service appears to have an active singleton owner." } else { "Local MCP service is not running. This is fine for CLI-only mode." },
-             "next_step": "For AI clients, run fighorse install --default --mode service --clients cursor,codex,kimi --apply."},
-            {"id": "mcp_repeated_handshake", "ok": true,
-             "message": "The /mcp endpoint is expected to create a fresh stateless transport/server per request, so Codex-style repeated initialize handshakes stay valid.",
-             "next_step": "If a client reports text/plain during initialize, restart the installed fighorse service and verify /mcp implementation notes in AGENTS.md."},
+            {"id": "mcp_service", "ok": service_ready,
+             "message": if service_ready { "Local MCP HTTP listener is reachable." } else if mcp_service["owner_active"].as_bool().unwrap_or(false) { "An MCP lock owner is active, but the local HTTP listener is not ready." } else { "Local MCP service is not ready. This is fine for CLI-only mode." },
+             "next_step": "For AI clients, run fighorse install --default --mode service --clients cursor,codex,kimi,claude --apply, then fighorse install verify."},
+            {"id": "mcp_protocol", "ok": false,
+             "message": "This synchronous doctor report does not claim an MCP protocol handshake. Use `fighorse install verify` to run initialize and tools/list against /mcp.",
+             "next_step": "Run fighorse install verify for protocol-level readiness."},
             {"id": "local_write", "ok": local_write,
              "message": if local_write { "MCP local file export is enabled." } else { "MCP local file export is disabled by default." },
              "next_step": "Set FIGHORSE_MCP_LOCAL_WRITE=allow only when the client may write under ./.fighorse/exports, ./assets/fighorse, or ~/.fighorse/exports."},
@@ -404,46 +443,50 @@ pub fn doctor() -> Value {
             "broad_canvas_target": "If diagnostics mention CANVAS, page, or user-flow target, copy a link to a specific frame, component, or group.",
             "token_missing": "Run fighorse auth login --token <FIGMA_TOKEN>. AI clients should surface this exact command when auth.has_token is false.",
             "export_path_rejected": "Use ./.fighorse/exports, ./assets/fighorse, or ~/.fighorse/exports. MCP also requires FIGHORSE_MCP_LOCAL_WRITE=allow.",
-            "mcp_unexpected_content_type": "Codex/Cursor should target http://127.0.0.1:9449/mcp. The handler must return MCP JSON/SSE for every initialize request, including repeats.",
+            "mcp_unexpected_content_type": "Codex/Cursor/Kimi/Claude should target http://127.0.0.1:9449/mcp. The official rmcp handler must return a standard Streamable HTTP JSON or event-stream response for every independent initialize request.",
             "quickstart": "Run fighorse quickstart \"<figma-frame-url>\" for the shortest public onboarding path."
         },
-        "proxy": {"configured": cfg.proxy.is_some(), "value": cfg.proxy},
+        "proxy": {"configured": cfg.proxy.is_some()},
         "recommended_next_step": if has_token { "Call list_experiences, then get_design_package with a Figma URL." } else { "Set FIGMA_TOKEN or run fighorse auth login --token <FIGMA_TOKEN>." }
     })
 }
 
 /// Build MCP client configuration.
-pub fn mcp_config(client: &str, transport: &str, port: i64, command: &str) -> Value {
+pub fn mcp_config(client: &str, transport: &str, port: i64, command: &str) -> Result<Value> {
     let stdio = json!({
         "command": command,
         "args": ["mcp", "serve", "--transport", "stdio"],
-        "env": {"FIGMA_TOKEN": "<FIGMA_TOKEN>", "FIGHORSE_HOME": "~/.fighorse", "FIGHORSE_MCP_MODE": "readonly", "FIGHORSE_MCP_LOCAL_WRITE": "allow"}
-    });
-    let sse = json!({
-        "command": command,
-        "args": ["mcp", "serve", "--transport", "sse", "--host", "127.0.0.1", "--port", port.to_string()],
-        "url": format!("http://127.0.0.1:{port}/sse"),
-        "env": {"FIGMA_TOKEN": "<FIGMA_TOKEN>", "FIGHORSE_HOME": "~/.fighorse", "FIGHORSE_MCP_MODE": "readonly", "FIGHORSE_MCP_LOCAL_WRITE": "allow"}
+        "env": {"FIGMA_TOKEN": "<FIGMA_TOKEN>", "FIGHORSE_HOME": "~/.fighorse", "FIGHORSE_MCP_MODE": "readonly", "FIGHORSE_MCP_LOCAL_WRITE": "deny"}
     });
     let http = json!({"transport": "http", "url": format!("http://127.0.0.1:{port}/mcp")});
 
     let config = match transport {
         "http" => http.clone(),
-        "sse" => sse.clone(),
-        _ => stdio.clone(),
+        "stdio" => stdio.clone(),
+        "sse" => {
+            return Err(Error::Usage(
+                "Legacy SSE transport is retired. Use --transport http and the /mcp endpoint."
+                    .into(),
+            ));
+        }
+        other => {
+            return Err(Error::Usage(format!(
+                "Unknown MCP client transport: {other}. Expected http or explicit stdio."
+            )));
+        }
     };
     let cursor_inner = match transport {
         "http" => json!({"url": http["url"]}),
-        "sse" => json!({"url": sse["url"]}),
-        _ => stdio.clone(),
+        "stdio" => stdio.clone(),
+        _ => unreachable!("transport validated above"),
     };
     let generic_inner = match transport {
         "http" => http.clone(),
-        "sse" => sse.clone(),
-        _ => stdio.clone(),
+        "stdio" => stdio.clone(),
+        _ => unreachable!("transport validated above"),
     };
 
-    json!({
+    Ok(json!({
         "kind": "fighorse.mcp-config.v1",
         "client": client,
         "transport": transport,
@@ -451,9 +494,20 @@ pub fn mcp_config(client: &str, transport: &str, port: i64, command: &str) -> Va
         "config": config,
         "examples": {
             "cursor": {"mcpServers": {"fighorse": cursor_inner}},
+            "kimi": {"mcpServers": {"fighorse": if transport == "http" { json!({"transport": "http", "url": http["url"]}) } else { stdio.clone() }}},
+            "claude": {"mcpServers": {"fighorse": if transport == "http" { json!({"type": "http", "url": http["url"]}) } else {
+                let mut value = stdio.clone();
+                value.as_object_mut().expect("stdio payload is an object").insert("type".into(), json!("stdio"));
+                value
+            }}},
+            "codex": if transport == "http" {
+                json!({"toml": format!("[mcp_servers.fighorse]\nurl = \"{}\"\nenabled = true\nstartup_timeout_sec = 60", http["url"].as_str().unwrap_or_default())})
+            } else {
+                json!({"command": command, "args": ["mcp", "serve", "--transport", "stdio"]})
+            },
             "generic": {"fighorse": generic_inner}
         }
-    })
+    }))
 }
 
 /// The full discovery manifest.
@@ -539,11 +593,19 @@ pub fn manifest() -> Value {
         ],
         "mcp": {
             "transports": {
-                "http": {"url": "http://127.0.0.1:9449/mcp", "requires": "Run the installed local service once; clients should reuse it instead of spawning stdio processes."},
-                "stdio": {"command": "fighorse", "args": ["mcp", "serve", "--transport", "stdio"], "env": {"FIGHORSE_MCP_MODE": "readonly", "FIGHORSE_MCP_LOCAL_WRITE": "allow"}},
-                "sse": {"command": "fighorse", "args": ["mcp", "serve", "--transport", "sse", "--host", "127.0.0.1", "--port", "9449"], "url": "http://127.0.0.1:9449/sse", "env": {"FIGHORSE_MCP_MODE": "readonly", "FIGHORSE_MCP_LOCAL_WRITE": "allow"}}
+                "http": {
+                    "url": "http://127.0.0.1:9449/mcp",
+                    "implementation": "official Rust rmcp 2.2 StreamableHttpService with LocalSessionManager",
+                    "sessions": "stateful, independent sessions negotiated with mcp-session-id",
+                    "response": "JSON or event-stream response according to standard Streamable HTTP negotiation",
+                    "security": "Host and Origin values are validated before MCP dispatch",
+                    "shutdown": "SIGINT/SIGTERM triggers graceful shutdown and session cancellation",
+                    "requires": "Run the installed local service once; clients should reuse it instead of spawning stdio processes."
+                },
+                "stdio": {"command": "fighorse", "args": ["mcp", "serve", "--transport", "stdio"], "env": {"FIGHORSE_MCP_MODE": "readonly", "FIGHORSE_MCP_LOCAL_WRITE": "deny"}},
+                "legacy_sse": {"status": "retired", "migration": "Legacy SSE is not served. Use --transport http and http://127.0.0.1:9449/mcp."}
             },
-            "local_write": {"env": "FIGHORSE_MCP_LOCAL_WRITE=allow", "allowed_roots": ["./.fighorse/exports", "./assets/fighorse", "~/.fighorse/exports"], "default": "deny unless enabled by install-generated MCP configs"},
+            "local_write": {"env": "FIGHORSE_MCP_LOCAL_WRITE=allow", "allowed_roots": ["./.fighorse/exports", "./assets/fighorse", "~/.fighorse/exports"], "default": "deny unless explicitly enabled"},
             "default_mode": "readonly",
             "write_mode": "Set FIGHORSE_MCP_MODE=write only when the AI client is allowed to mutate Figma resources.",
             "self_discovery_tools": ["discover_fighorse", "check_fighorse_ready", "parse_figma_url", "get_replicate_workflow", "get_experience_schema", "list_experiences"],
@@ -578,13 +640,35 @@ pub fn manifest() -> Value {
                 "fighorse install client --client codex --apply",
                 "fighorse install client --client kimi --apply",
                 "fighorse install client --client claude",
+                "fighorse install client --client claude --apply",
                 "fighorse install client --client opencode",
                 "fighorse install service --service launchd --apply",
-                "fighorse install skill --clients cursor,codex,kimi --apply",
+                "fighorse install skill --clients cursor,codex,kimi,claude --apply",
                 "fighorse install --default --apply",
                 "fighorse install --path ~/.local/bin --apply",
-                "fighorse install --default --mode service --clients cursor,codex,kimi --apply"
-            ]
+                "fighorse install --default --mode service --clients cursor,codex,kimi,claude --apply"
+            ],
+            "service_install_order": [
+                "install binary and service definition",
+                "activate service",
+                "poll /health",
+                "complete initialize and tools/list on /mcp",
+                "write client configurations",
+                "write canonical skills and Cursor rule",
+                "verify manifest"
+            ],
+            "transaction": {
+                "manifest": "~/.fighorse/install/manifest.json",
+                "backups": "~/.fighorse/install/backups/",
+                "verify": "fighorse install verify",
+                "rollback": "fighorse install rollback",
+                "managed_removals": "desired_absent=true is verified as absent and restored from its managed backup on rollback"
+            },
+            "skill_targets": {
+                "cursor_kimi_codex": "~/.agents/skills/fighorse/SKILL.md",
+                "claude": "~/.claude/skills/fighorse/SKILL.md",
+                "cursor_rule": "~/.cursor/rules/fighorse.mdc"
+            }
         },
         "auth": {
             "required_for_figma_api": true,
@@ -654,7 +738,10 @@ pub fn manifest_markdown(m: &Value) -> String {
     let name = m.get("name").and_then(|v| v.as_str()).unwrap_or("");
     let version = m.get("version").and_then(|v| v.as_str()).unwrap_or("");
     let purpose = m.get("purpose").and_then(|v| v.as_str()).unwrap_or("");
-    let primary = m.get("primary_use_case").and_then(|v| v.as_str()).unwrap_or("");
+    let primary = m
+        .get("primary_use_case")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
 
     let workflow_lines: Vec<String> = m
         .get("recommended_workflow")

@@ -1,0 +1,836 @@
+//! Managed-file transaction, manifest, verification, and MCP readiness checks.
+
+use super::model::{InstallCheck, InstallReport};
+use super::service::{self, ServiceCommandRunner, ServiceState};
+use crate::error::{Error, Result};
+use reqwest::header::{ACCEPT, CONTENT_TYPE};
+use serde::{Deserialize, Serialize};
+use serde_json::{json, Value};
+use sha2::{Digest, Sha256};
+use std::collections::BTreeMap;
+use std::fs::OpenOptions;
+use std::path::{Path, PathBuf};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ManagedFileKind {
+    #[default]
+    Regular,
+    Symlink,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ManagedFile {
+    pub path: PathBuf,
+    pub hash: String,
+    pub backup: Option<PathBuf>,
+    pub existed_before: bool,
+    #[serde(default)]
+    pub desired_absent: bool,
+    #[serde(default)]
+    pub order: u64,
+    #[serde(default)]
+    pub kind: ManagedFileKind,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub previous_kind: Option<ManagedFileKind>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub previous_mode: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub previous_symlink_target: Option<PathBuf>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct InstallManifest {
+    pub schema_version: u32,
+    pub managed_files: Vec<ManagedFile>,
+    pub last_verification: Option<Vec<InstallCheck>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub endpoint: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub service: Option<ServiceState>,
+}
+
+pub struct InstallTransaction {
+    home: PathBuf,
+    previous: BTreeMap<PathBuf, ManagedFile>,
+    changed: BTreeMap<PathBuf, ManagedFile>,
+    next_order: u64,
+    endpoint: Option<String>,
+    service: Option<ServiceState>,
+}
+
+struct PathSnapshot {
+    kind: ManagedFileKind,
+    content: Vec<u8>,
+    mode: Option<u32>,
+    symlink_target: Option<PathBuf>,
+}
+
+impl InstallTransaction {
+    pub fn new(home: impl Into<PathBuf>) -> Result<Self> {
+        let home = home.into();
+        let prior_manifest = if manifest_path(&home).exists() {
+            Some(load_manifest(&home)?)
+        } else {
+            None
+        };
+        let previous: BTreeMap<_, _> = prior_manifest
+            .as_ref()
+            .map(|manifest| {
+                manifest
+                    .managed_files
+                    .iter()
+                    .cloned()
+                    .map(|file| (file.path.clone(), file))
+                    .collect()
+            })
+            .unwrap_or_default();
+        let next_order = previous
+            .values()
+            .map(|file| file.order)
+            .max()
+            .unwrap_or_default()
+            + 1;
+        Ok(Self {
+            home,
+            previous,
+            changed: BTreeMap::new(),
+            next_order,
+            endpoint: prior_manifest
+                .as_ref()
+                .and_then(|manifest| manifest.endpoint.clone()),
+            service: prior_manifest.and_then(|manifest| manifest.service),
+        })
+    }
+
+    pub fn set_endpoint(&mut self, endpoint: Option<String>) {
+        self.endpoint = endpoint;
+    }
+
+    pub fn set_service(&mut self, service: Option<ServiceState>) {
+        self.service = service;
+    }
+
+    pub fn endpoint(&self) -> Option<&str> {
+        self.endpoint.as_deref()
+    }
+
+    pub fn service(&self) -> Option<&ServiceState> {
+        self.service.as_ref()
+    }
+
+    pub fn write_managed(&mut self, path: &Path, content: &[u8]) -> Result<()> {
+        let mode = snapshot_path(path)?.and_then(|snapshot| snapshot.mode);
+        self.write_managed_with_mode(path, content, mode.unwrap_or(0o644))
+    }
+
+    pub fn write_managed_with_mode(
+        &mut self,
+        path: &Path,
+        content: &[u8],
+        mode: u32,
+    ) -> Result<()> {
+        let snapshot = snapshot_path(path)?;
+        if snapshot
+            .as_ref()
+            .is_some_and(|snapshot| snapshot.kind == ManagedFileKind::Symlink)
+        {
+            return Err(Error::Other(format!(
+                "refusing to follow or overwrite symbolic link: {}",
+                path.display()
+            )));
+        }
+        let desired_hash = content_hash(content);
+        let current = snapshot
+            .as_ref()
+            .map(|snapshot| snapshot.content.as_slice());
+        if current.is_some_and(|bytes| content_hash(bytes) == desired_hash) {
+            let managed = match self.previous.get(path).cloned() {
+                Some(managed) if !managed.desired_absent => managed,
+                Some(mut managed) => {
+                    managed.hash = desired_hash.clone();
+                    managed.backup = current
+                        .map(|bytes| self.backup_file(path, bytes))
+                        .transpose()?;
+                    managed.existed_before = true;
+                    managed.desired_absent = false;
+                    managed.kind = ManagedFileKind::Regular;
+                    apply_snapshot_metadata(&mut managed, snapshot.as_ref());
+                    managed
+                }
+                None => {
+                    let backup = current
+                        .map(|bytes| self.backup_file(path, bytes))
+                        .transpose()?;
+                    let order = self.take_order();
+                    let mut managed = ManagedFile {
+                        path: path.to_path_buf(),
+                        hash: desired_hash,
+                        backup,
+                        existed_before: true,
+                        desired_absent: false,
+                        order,
+                        kind: ManagedFileKind::Regular,
+                        previous_kind: None,
+                        previous_mode: None,
+                        previous_symlink_target: None,
+                    };
+                    apply_snapshot_metadata(&mut managed, snapshot.as_ref());
+                    managed
+                }
+            };
+            self.changed.insert(path.to_path_buf(), managed);
+            return Ok(());
+        }
+
+        let previous_managed = self.previous.get(path);
+        let backup = match current {
+            Some(bytes)
+                if previous_managed.is_some_and(|managed| managed.hash == content_hash(bytes)) =>
+            {
+                previous_managed.and_then(|managed| managed.backup.clone())
+            }
+            Some(bytes) => Some(self.backup_file(path, bytes)?),
+            None => previous_managed.and_then(|managed| managed.backup.clone()),
+        };
+        let existed_before =
+            current.is_some() || previous_managed.is_some_and(|managed| managed.existed_before);
+        let order = previous_managed
+            .map(|managed| managed.order)
+            .unwrap_or_else(|| self.take_order());
+
+        atomic_write_mode(path, content, mode)?;
+        let mut managed = ManagedFile {
+            path: path.to_path_buf(),
+            hash: desired_hash,
+            backup,
+            existed_before,
+            desired_absent: false,
+            order,
+            kind: ManagedFileKind::Regular,
+            previous_kind: None,
+            previous_mode: None,
+            previous_symlink_target: None,
+        };
+        apply_snapshot_metadata(&mut managed, snapshot.as_ref());
+        self.changed.insert(path.to_path_buf(), managed);
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    pub fn write_managed_symlink(&mut self, path: &Path, target: &Path) -> Result<()> {
+        let snapshot = snapshot_path(path)?;
+        let target_hash = content_hash(target.as_os_str().as_encoded_bytes());
+        if snapshot.as_ref().is_some_and(|snapshot| {
+            snapshot.kind == ManagedFileKind::Symlink
+                && snapshot.symlink_target.as_deref() == Some(target)
+        }) {
+            let mut managed = self.previous.get(path).cloned().unwrap_or(ManagedFile {
+                path: path.to_path_buf(),
+                hash: target_hash,
+                backup: None,
+                existed_before: true,
+                desired_absent: false,
+                order: self.take_order(),
+                kind: ManagedFileKind::Symlink,
+                previous_kind: None,
+                previous_mode: None,
+                previous_symlink_target: None,
+            });
+            managed.kind = ManagedFileKind::Symlink;
+            managed.desired_absent = false;
+            apply_snapshot_metadata(&mut managed, snapshot.as_ref());
+            self.changed.insert(path.to_path_buf(), managed);
+            return Ok(());
+        }
+        let backup = snapshot
+            .as_ref()
+            .filter(|snapshot| snapshot.kind == ManagedFileKind::Regular)
+            .map(|snapshot| self.backup_file(path, &snapshot.content))
+            .transpose()?;
+        let existed_before = snapshot.is_some()
+            || self
+                .previous
+                .get(path)
+                .is_some_and(|managed| managed.existed_before);
+        let order = self
+            .previous
+            .get(path)
+            .map(|managed| managed.order)
+            .unwrap_or_else(|| self.take_order());
+        atomic_symlink(path, target)?;
+        let mut managed = ManagedFile {
+            path: path.to_path_buf(),
+            hash: target_hash,
+            backup,
+            existed_before,
+            desired_absent: false,
+            order,
+            kind: ManagedFileKind::Symlink,
+            previous_kind: None,
+            previous_mode: None,
+            previous_symlink_target: None,
+        };
+        apply_snapshot_metadata(&mut managed, snapshot.as_ref());
+        self.changed.insert(path.to_path_buf(), managed);
+        Ok(())
+    }
+
+    /// Remove a managed path while retaining enough state to restore it.
+    /// Returns the rollback backup only when a file was removed by this call.
+    pub fn remove_managed(&mut self, path: &Path) -> Result<Option<PathBuf>> {
+        let snapshot = match snapshot_path(path)? {
+            Some(snapshot) => snapshot,
+            None => {
+                if let Some(previous) = self.previous.get(path).filter(|file| !file.desired_absent)
+                {
+                    let mut managed = previous.clone();
+                    managed.hash.clear();
+                    managed.backup = None;
+                    managed.existed_before = false;
+                    managed.desired_absent = true;
+                    self.changed.insert(path.to_path_buf(), managed);
+                }
+                return Ok(None);
+            }
+        };
+        let backup = if snapshot.kind == ManagedFileKind::Regular {
+            Some(self.backup_file(path, &snapshot.content)?)
+        } else {
+            None
+        };
+        let order = self
+            .previous
+            .get(path)
+            .map(|managed| managed.order)
+            .unwrap_or_else(|| self.take_order());
+        std::fs::remove_file(path)?;
+        let mut managed = ManagedFile {
+            path: path.to_path_buf(),
+            hash: snapshot_hash(&snapshot),
+            backup: backup.clone(),
+            existed_before: true,
+            desired_absent: true,
+            order,
+            kind: snapshot.kind,
+            previous_kind: None,
+            previous_mode: None,
+            previous_symlink_target: None,
+        };
+        apply_snapshot_metadata(&mut managed, Some(&snapshot));
+        self.changed.insert(path.to_path_buf(), managed);
+        Ok(backup)
+    }
+
+    /// Create an idempotent safety copy for an unmanaged conflict.
+    pub fn backup_conflict(&self, path: &Path) -> Result<PathBuf> {
+        let bytes = std::fs::read(path)?;
+        let name = format!(
+            "conflict-{}-{}-{}.bak",
+            path.file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or("managed"),
+            &content_hash(path.to_string_lossy().as_bytes())[..12],
+            &content_hash(&bytes)[..12],
+        );
+        let backup = self.home.join("install").join("backups").join(name);
+        if !backup.exists() {
+            atomic_write_mode(&backup, &bytes, 0o600)?;
+        }
+        Ok(backup)
+    }
+
+    pub fn commit(&self, last_verification: Option<Vec<InstallCheck>>) -> Result<InstallManifest> {
+        let mut files = self.previous.clone();
+        files.extend(self.changed.clone());
+        let manifest = InstallManifest {
+            schema_version: 3,
+            managed_files: files.into_values().collect(),
+            last_verification,
+            endpoint: self.endpoint.clone(),
+            service: self.service.clone(),
+        };
+        let bytes = serde_json::to_vec_pretty(&manifest)?;
+        secure_dir(&self.home.join("install"))?;
+        secure_dir(&self.home.join("install").join("backups"))?;
+        atomic_write_mode(&manifest_path(&self.home), &bytes, 0o600)?;
+        Ok(manifest)
+    }
+
+    /// Restore writes performed by this in-memory transaction. This is used
+    /// when a later install stage fails before the manifest can be committed.
+    pub fn rollback_pending(&self) -> Vec<InstallCheck> {
+        rollback_files(self.changed.values())
+    }
+
+    pub fn rollback_pending_with_service(
+        &self,
+        runner: &mut dyn ServiceCommandRunner,
+        service_touched: bool,
+    ) -> Vec<InstallCheck> {
+        let mut checks = self.rollback_pending();
+        if service_touched {
+            match self.service.as_ref() {
+                Some(state) => checks.extend(service::rollback_service(runner, state)),
+                None => checks.push(InstallCheck::new(
+                    "service_rollback",
+                    false,
+                    "service was touched without captured prior state",
+                )),
+            }
+        }
+        checks
+    }
+
+    fn backup_file(&self, path: &Path, bytes: &[u8]) -> Result<PathBuf> {
+        let stamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos();
+        let name = format!(
+            "{stamp}-{}-{}.bak",
+            path.file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or("managed"),
+            &content_hash(path.to_string_lossy().as_bytes())[..12]
+        );
+        let backup = self.home.join("install").join("backups").join(name);
+        secure_dir(&self.home.join("install"))?;
+        secure_dir(&self.home.join("install").join("backups"))?;
+        atomic_write_mode(&backup, bytes, 0o600)?;
+        Ok(backup)
+    }
+
+    fn take_order(&mut self) -> u64 {
+        let order = self.next_order;
+        self.next_order += 1;
+        order
+    }
+}
+
+pub fn manifest_path(home: &Path) -> PathBuf {
+    home.join("install").join("manifest.json")
+}
+
+pub fn load_manifest(home: &Path) -> Result<InstallManifest> {
+    let text = std::fs::read_to_string(manifest_path(home))?;
+    Ok(serde_json::from_str(&text)?)
+}
+
+pub fn verify_manifest(home: &Path) -> Result<Vec<InstallCheck>> {
+    let manifest = load_manifest(home)?;
+    Ok(manifest
+        .managed_files
+        .iter()
+        .map(|managed| match snapshot_path(&managed.path) {
+            Ok(None) if managed.desired_absent => InstallCheck::new(
+                format!("managed:{}", managed.path.display()),
+                true,
+                "managed path is absent as expected",
+            ),
+            Ok(Some(_)) if managed.desired_absent => InstallCheck::new(
+                format!("managed:{}", managed.path.display()),
+                false,
+                "managed path should be absent",
+            ),
+            Ok(Some(snapshot)) => InstallCheck::new(
+                format!("managed:{}", managed.path.display()),
+                snapshot_matches(&snapshot, managed),
+                if snapshot_matches(&snapshot, managed) {
+                    "managed content matches manifest"
+                } else {
+                    "managed content or file type differs from manifest"
+                },
+            ),
+            Ok(None) => InstallCheck::new(
+                format!("managed:{}", managed.path.display()),
+                false,
+                "managed path is absent",
+            ),
+            Err(error) => InstallCheck::new(
+                format!("managed:{}", managed.path.display()),
+                false,
+                error.to_string(),
+            ),
+        })
+        .collect())
+}
+
+pub fn rollback(home: &Path) -> Result<InstallReport> {
+    let mut runner = service::ProcessCommandRunner;
+    rollback_with_runner(home, &mut runner)
+}
+
+pub fn rollback_with_runner(
+    home: &Path,
+    runner: &mut dyn ServiceCommandRunner,
+) -> Result<InstallReport> {
+    let manifest = load_manifest(home)?;
+    let mut rollback = rollback_files(manifest.managed_files.iter());
+    if let Some(state) = manifest.service.as_ref() {
+        rollback.extend(service::rollback_service(runner, state));
+    }
+    Ok(InstallReport {
+        ok: rollback.iter().all(|item| item.ok),
+        rollback,
+        ..InstallReport::default()
+    })
+}
+
+fn rollback_files<'a>(files: impl IntoIterator<Item = &'a ManagedFile>) -> Vec<InstallCheck> {
+    let mut files: Vec<_> = files.into_iter().collect();
+    files.sort_by_key(|file| std::cmp::Reverse(file.order));
+    files.into_iter().map(restore_managed_file).collect()
+}
+
+fn restore_managed_file(managed: &ManagedFile) -> InstallCheck {
+    let name = format!("rollback:{}", managed.path.display());
+    if managed.desired_absent {
+        return match snapshot_path(&managed.path) {
+            Ok(Some(_)) => InstallCheck::new(
+                name,
+                false,
+                "skipped because the removed managed file was recreated",
+            ),
+            Ok(None) if managed.existed_before => match restore_previous(managed) {
+                Ok(()) => InstallCheck::new(name, true, "restored removed managed file"),
+                Err(error) => InstallCheck::new(name, false, error.to_string()),
+            },
+            Ok(None) => InstallCheck::new(name, true, "managed path remains absent"),
+            Err(error) => InstallCheck::new(name, false, error.to_string()),
+        };
+    }
+    let current = match snapshot_path(&managed.path) {
+        Ok(Some(snapshot)) if snapshot_matches(&snapshot, managed) => Some(snapshot),
+        Ok(Some(_)) => {
+            return InstallCheck::new(
+                name,
+                false,
+                "skipped because the managed file has user changes",
+            );
+        }
+        Ok(None) => None,
+        Err(error) => return InstallCheck::new(name, false, error.to_string()),
+    };
+
+    if current.is_none() && managed.existed_before {
+        return InstallCheck::new(name, false, "managed file was removed after installation");
+    }
+    match (managed.existed_before, current.is_some()) {
+        (true, true) => match restore_previous(managed) {
+            Ok(()) => InstallCheck::new(name, true, "restored managed backup"),
+            Err(error) => InstallCheck::new(name, false, error.to_string()),
+        },
+        (false, true) => match std::fs::remove_file(&managed.path) {
+            Ok(()) => InstallCheck::new(name, true, "removed installer-created file"),
+            Err(error) => InstallCheck::new(name, false, error.to_string()),
+        },
+        (_, false) => InstallCheck::new(name, true, "already absent"),
+    }
+}
+
+/// Poll `/health`, then complete a real MCP initialize and tools/list
+/// handshake. This is intentionally async so production callers never create
+/// a nested runtime.
+pub async fn wait_for_mcp_ready(
+    endpoint: &str,
+    attempts: usize,
+    delay: Duration,
+) -> Result<Vec<InstallCheck>> {
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(3))
+        .build()?;
+    let base = endpoint
+        .strip_suffix("/mcp")
+        .ok_or_else(|| Error::Usage("MCP endpoint must end with /mcp.".into()))?;
+    let health_url = format!("{base}/health");
+
+    let mut healthy = false;
+    for _ in 0..attempts.max(1) {
+        if client
+            .get(&health_url)
+            .send()
+            .await
+            .is_ok_and(|response| response.status().is_success())
+        {
+            healthy = true;
+            break;
+        }
+        tokio::time::sleep(delay).await;
+    }
+    if !healthy {
+        return Err(Error::Other(format!(
+            "Installed MCP service did not become healthy at {health_url}"
+        )));
+    }
+
+    let initialize = json!({
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "initialize",
+        "params": {
+            "protocolVersion": "2025-06-18",
+            "capabilities": {},
+            "clientInfo": {"name": "fighorse-installer", "version": env!("CARGO_PKG_VERSION")}
+        }
+    });
+    let initialized = mcp_post(&client, endpoint, &initialize, None).await?;
+    let session = initialized.0;
+    if initialized.1["result"]["serverInfo"]["name"] != "fighorse" {
+        return Err(Error::Other(
+            "MCP initialize response did not identify fighorse.".into(),
+        ));
+    }
+
+    let notification = json!({"jsonrpc":"2.0","method":"notifications/initialized","params":{}});
+    let _ = mcp_post(&client, endpoint, &notification, session.as_deref()).await?;
+    let list = json!({"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}});
+    let listed = mcp_post(&client, endpoint, &list, session.as_deref()).await?;
+    if listed.1["result"]["tools"]
+        .as_array()
+        .is_none_or(|tools| tools.is_empty())
+    {
+        return Err(Error::Other(
+            "MCP tools/list returned no fighorse tools.".into(),
+        ));
+    }
+    Ok(vec![
+        InstallCheck::new("service_health", true, health_url),
+        InstallCheck::new("mcp_initialize", true, "fighorse"),
+        InstallCheck::new("mcp_tools_list", true, "tools available"),
+    ])
+}
+
+async fn mcp_post(
+    client: &reqwest::Client,
+    endpoint: &str,
+    message: &Value,
+    session: Option<&str>,
+) -> Result<(Option<String>, Value)> {
+    let mut request = client
+        .post(endpoint)
+        .header(CONTENT_TYPE, "application/json")
+        .header(ACCEPT, "application/json, text/event-stream")
+        .json(message);
+    if let Some(session) = session {
+        request = request.header("mcp-session-id", session);
+    }
+    let response = request.send().await?;
+    if !response.status().is_success() {
+        return Err(Error::Other(format!(
+            "MCP request failed with status {}",
+            response.status()
+        )));
+    }
+    let session = response
+        .headers()
+        .get("mcp-session-id")
+        .and_then(|value| value.to_str().ok())
+        .map(str::to_owned);
+    let is_sse = response
+        .headers()
+        .get(CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .is_some_and(|value| value.starts_with("text/event-stream"));
+    let text = response.text().await?;
+    let body = if is_sse {
+        let data = text
+            .lines()
+            .find_map(|line| line.strip_prefix("data:").map(str::trim))
+            .filter(|line| !line.is_empty())
+            .ok_or_else(|| Error::Other("MCP SSE response contained no data event.".into()))?;
+        serde_json::from_str(data)?
+    } else if text.trim().is_empty() {
+        Value::Null
+    } else {
+        serde_json::from_str(&text)?
+    };
+    Ok((session, body))
+}
+
+fn content_hash(bytes: &[u8]) -> String {
+    Sha256::digest(bytes)
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
+}
+
+fn snapshot_path(path: &Path) -> std::io::Result<Option<PathSnapshot>> {
+    let metadata = match std::fs::symlink_metadata(path) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(error),
+    };
+    let mode = file_mode(&metadata);
+    if metadata.file_type().is_symlink() {
+        let target = std::fs::read_link(path)?;
+        return Ok(Some(PathSnapshot {
+            kind: ManagedFileKind::Symlink,
+            content: Vec::new(),
+            mode,
+            symlink_target: Some(target),
+        }));
+    }
+    if !metadata.file_type().is_file() {
+        return Err(std::io::Error::other(format!(
+            "managed path is not a regular file or symbolic link: {}",
+            path.display()
+        )));
+    }
+    Ok(Some(PathSnapshot {
+        kind: ManagedFileKind::Regular,
+        content: std::fs::read(path)?,
+        mode,
+        symlink_target: None,
+    }))
+}
+
+fn snapshot_hash(snapshot: &PathSnapshot) -> String {
+    match snapshot.kind {
+        ManagedFileKind::Regular => content_hash(&snapshot.content),
+        ManagedFileKind::Symlink => content_hash(
+            snapshot
+                .symlink_target
+                .as_ref()
+                .map(|target| target.as_os_str().as_encoded_bytes())
+                .unwrap_or_default(),
+        ),
+    }
+}
+
+fn snapshot_matches(snapshot: &PathSnapshot, managed: &ManagedFile) -> bool {
+    snapshot.kind == managed.kind && snapshot_hash(snapshot) == managed.hash
+}
+
+fn apply_snapshot_metadata(managed: &mut ManagedFile, snapshot: Option<&PathSnapshot>) {
+    managed.previous_kind = snapshot.map(|snapshot| snapshot.kind);
+    managed.previous_mode = snapshot.and_then(|snapshot| snapshot.mode);
+    managed.previous_symlink_target = snapshot.and_then(|snapshot| snapshot.symlink_target.clone());
+}
+
+fn restore_previous(managed: &ManagedFile) -> std::io::Result<()> {
+    match managed.previous_kind.unwrap_or(ManagedFileKind::Regular) {
+        ManagedFileKind::Regular => {
+            let backup = managed.backup.as_ref().ok_or_else(|| {
+                std::io::Error::other("managed backup is missing for pre-existing file")
+            })?;
+            let bytes = std::fs::read(backup)?;
+            atomic_write_io(
+                &managed.path,
+                &bytes,
+                managed.previous_mode.unwrap_or(0o600),
+            )
+        }
+        ManagedFileKind::Symlink => {
+            let target = managed.previous_symlink_target.as_ref().ok_or_else(|| {
+                std::io::Error::other("managed symlink target is missing from manifest")
+            })?;
+            atomic_symlink(&managed.path, target)
+        }
+    }
+}
+
+#[cfg(unix)]
+fn file_mode(metadata: &std::fs::Metadata) -> Option<u32> {
+    use std::os::unix::fs::PermissionsExt;
+    Some(metadata.permissions().mode() & 0o777)
+}
+
+#[cfg(not(unix))]
+fn file_mode(_metadata: &std::fs::Metadata) -> Option<u32> {
+    None
+}
+
+fn secure_dir(path: &Path) -> std::io::Result<()> {
+    std::fs::create_dir_all(path)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o700))?;
+    }
+    Ok(())
+}
+
+fn atomic_write_mode(path: &Path, content: &[u8], mode: u32) -> Result<()> {
+    atomic_write_io(path, content, mode)?;
+    Ok(())
+}
+
+fn atomic_write_io(path: &Path, content: &[u8], mode: u32) -> std::io::Result<()> {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    if std::fs::symlink_metadata(path).is_ok_and(|metadata| metadata.file_type().is_symlink()) {
+        return Err(std::io::Error::other(format!(
+            "refusing to overwrite symbolic link: {}",
+            path.display()
+        )));
+    }
+    let temporary = path.with_extension(format!(
+        "{}.tmp-{}-{}",
+        path.extension()
+            .and_then(|extension| extension.to_str())
+            .unwrap_or(""),
+        std::process::id(),
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos()
+    ));
+    let mut options = OpenOptions::new();
+    options.create_new(true).write(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    let result = (|| {
+        use std::io::Write;
+        let mut file = options.open(&temporary)?;
+        file.write_all(content)?;
+        file.sync_all()?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            file.set_permissions(std::fs::Permissions::from_mode(mode))?;
+        }
+        std::fs::rename(&temporary, path)
+    })();
+    if result.is_err() {
+        let _ = std::fs::remove_file(&temporary);
+    }
+    result
+}
+
+#[cfg(unix)]
+fn atomic_symlink(path: &Path, target: &Path) -> std::io::Result<()> {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let temporary = path.with_extension(format!(
+        "{}.tmp-link-{}-{}",
+        path.extension()
+            .and_then(|extension| extension.to_str())
+            .unwrap_or(""),
+        std::process::id(),
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos()
+    ));
+    std::os::unix::fs::symlink(target, &temporary)?;
+    let result = std::fs::rename(&temporary, path);
+    if result.is_err() {
+        let _ = std::fs::remove_file(&temporary);
+    }
+    result
+}
+
+#[cfg(not(unix))]
+fn atomic_symlink(_path: &Path, _target: &Path) -> std::io::Result<()> {
+    Err(std::io::Error::new(
+        std::io::ErrorKind::Unsupported,
+        "symbolic links are not supported by this installer build",
+    ))
+}

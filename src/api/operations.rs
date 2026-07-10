@@ -5,8 +5,8 @@
 
 use super::coverage;
 use super::{
-    activity_logs, ai_usage, analytics, comments, components, dev_resources, developer_logs,
-    files, oembed, payments, projects, styles, users, variables, webhooks,
+    activity_logs, ai_usage, analytics, comments, components, dev_resources, developer_logs, files,
+    oembed, payments, projects, styles, users, variables, webhooks,
 };
 use crate::error::{Error, Result};
 use serde_json::Value;
@@ -18,7 +18,9 @@ pub fn operation(operation_id: &str) -> Option<coverage::Operation> {
 
 /// True when the operation is a write operation.
 pub fn write_operation(operation_id: &str) -> bool {
-    operation(operation_id).map(|o| o.is_write()).unwrap_or(false)
+    operation(operation_id)
+        .map(|o| o.is_write())
+        .unwrap_or(false)
 }
 
 fn snake_to_kebab(k: &str) -> String {
@@ -60,6 +62,29 @@ fn dev_resources_body(body: &Value) -> Value {
         .unwrap_or_else(|| Value::Array(vec![]))
 }
 
+fn validate_path_params(operation: &coverage::Operation, params: &Value) -> Result<()> {
+    let mut rest = operation.path;
+    while let Some(open) = rest.find('{') {
+        let after_open = &rest[open + 1..];
+        let Some(close) = after_open.find('}') else {
+            return Err(Error::Other(format!(
+                "Invalid path template for {}: {}",
+                operation.operation_id, operation.path
+            )));
+        };
+        let key = &after_open[..close];
+        let present = param_owned(params, key).is_some_and(|value| !value.trim().is_empty());
+        if !present {
+            return Err(Error::Usage(format!(
+                "Operation {} requires path parameter `{key}` for {}",
+                operation.operation_id, operation.path
+            )));
+        }
+        rest = &after_open[close + 1..];
+    }
+    Ok(())
+}
+
 /// Call a covered Figma REST operation by operationId.
 pub async fn call_operation(
     token: &str,
@@ -67,6 +92,10 @@ pub async fn call_operation(
     params: &Value,
     body: &Value,
 ) -> Result<Value> {
+    let operation = operation(operation_id)
+        .ok_or_else(|| Error::Usage(format!("Unknown Figma operationId: {operation_id}")))?;
+    validate_path_params(&operation, params)?;
+
     // Owned strings kept alive for the duration of the call.
     macro_rules! p {
         ($k:expr) => {
@@ -79,12 +108,14 @@ pub async fn call_operation(
             files::get_file(
                 token,
                 &p!("file_key").unwrap_or_default(),
-                p!("version").as_deref(),
-                p!("ids").as_deref(),
-                p!("depth").as_deref(),
-                p!("geometry").as_deref(),
-                p!("plugin_data").as_deref(),
-                p!("branch_data").as_deref(),
+                files::GetFileParams {
+                    version: p!("version").as_deref(),
+                    ids: p!("ids").as_deref(),
+                    depth: p!("depth").as_deref(),
+                    geometry: p!("geometry").as_deref(),
+                    plugin_data: p!("plugin_data").as_deref(),
+                    branch_data: p!("branch_data").as_deref(),
+                },
             )
             .await
         }
@@ -117,12 +148,8 @@ pub async fn call_operation(
             )
             .await
         }
-        "getImageFills" => {
-            files::get_image_fills(token, &p!("file_key").unwrap_or_default()).await
-        }
-        "getFileMeta" => {
-            files::get_file_meta(token, &p!("file_key").unwrap_or_default()).await
-        }
+        "getImageFills" => files::get_image_fills(token, &p!("file_key").unwrap_or_default()).await,
+        "getFileMeta" => files::get_file_meta(token, &p!("file_key").unwrap_or_default()).await,
         "getTeamProjects" => {
             projects::get_team_projects(token, &p!("team_id").unwrap_or_default()).await
         }
@@ -219,9 +246,7 @@ pub async fn call_operation(
         "getFileComponents" => {
             components::get_file_components(token, &p!("file_key").unwrap_or_default()).await
         }
-        "getComponent" => {
-            components::get_component(token, &p!("key").unwrap_or_default()).await
-        }
+        "getComponent" => components::get_component(token, &p!("key").unwrap_or_default()).await,
         "getTeamComponentSets" => {
             components::get_team_component_sets(
                 token,
@@ -262,9 +287,7 @@ pub async fn call_operation(
             .await
         }
         "postWebhook" => webhooks::create_webhook(token, body).await,
-        "getWebhook" => {
-            webhooks::get_webhook(token, &p!("webhook_id").unwrap_or_default()).await
-        }
+        "getWebhook" => webhooks::get_webhook(token, &p!("webhook_id").unwrap_or_default()).await,
         "putWebhook" => {
             webhooks::update_webhook(token, &p!("webhook_id").unwrap_or_default(), body).await
         }
@@ -436,7 +459,9 @@ pub async fn call_operation(
             )
             .await
         }
-        other => Err(Error::Other(format!("Unknown Figma operationId: {other}"))),
+        other => Err(Error::Other(format!(
+            "Covered Figma operationId has no dispatcher implementation: {other}"
+        ))),
     }
 }
 

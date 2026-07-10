@@ -79,7 +79,14 @@ This is the main context source for AI implementation. It includes compact struc
 Only use service mode when an AI client should call fighorse directly:
 
 ```bash
-fighorse install --default --mode service --clients cursor,codex,kimi --apply
+fighorse install --default --mode service --clients cursor,codex,kimi,claude --apply
+fighorse install verify
+```
+
+For Claude only:
+
+```bash
+fighorse install client --client claude --apply
 ```
 
 Installed clients should use:
@@ -95,7 +102,15 @@ Installed clients should use:
 }
 ```
 
-The service is localhost-only by default, guarded by a singleton lock, and uses a Streamable HTTP endpoint that supports repeated client handshakes.
+The service is localhost-only by default, guarded by a singleton lock, and uses the official Rust `rmcp` 2.2 Streamable HTTP service. Each client gets an independent stateful session. Host and Origin are validated before dispatch, responses are standard JSON or event-stream responses, and SIGINT/SIGTERM performs graceful shutdown.
+
+The native HTTP entry is `{"url":"http://127.0.0.1:9449/mcp"}` for Cursor, `{"transport":"http","url":"http://127.0.0.1:9449/mcp"}` for Kimi, `{"type":"http","url":"http://127.0.0.1:9449/mcp"}` for Claude, and `[mcp_servers.fighorse]` with the same URL for Codex.
+
+Installation applies service files first, waits for `/health`, completes `initialize` and `tools/list`, and only then writes client configs and skills. `~/.fighorse/install/manifest.json` records managed files and `desired_absent` removals; backups are under `~/.fighorse/install/backups/`. Use `fighorse install rollback` only while managed files still match the manifest.
+
+Canonical instruction targets are `~/.agents/skills/fighorse/SKILL.md` for Cursor/Kimi/Codex, `~/.claude/skills/fighorse/SKILL.md` for Claude, and `~/.cursor/rules/fighorse.mdc` for Cursor.
+
+Legacy `/sse` and `/messages` endpoints are not served. `--transport sse` fails and directs the user to `--transport http`; a `text/event-stream` response from `/mcp` is standard Streamable HTTP response negotiation, not the retired legacy transport. Fresh service and stdio configs deny local writes.
 
 ## 7. What To Ask Your AI Agent
 
@@ -109,6 +124,6 @@ Use fighorse to inspect this Figma frame. First call discover_fighorse, then lis
 
 - Token missing: run `fighorse auth login --token <FIGMA_TOKEN>`.
 - Link is too broad: copy a link to a selected frame or component.
-- MCP service not running: use `fighorse install --default --mode service --clients cursor,codex,kimi --apply`.
-- Codex reports unexpected content type: verify `curl http://127.0.0.1:9449/health`; the `/mcp` endpoint must return MCP JSON/SSE, not `text/plain`.
+- MCP service not running: use `fighorse install --default --mode service --clients cursor,codex,kimi,claude --apply`.
+- Codex reports unexpected content type: run `fighorse install verify`; `/mcp` must return a standard MCP JSON or event-stream response, not a product manifest.
 - Local export rejected: use `./.fighorse/exports`, `./assets/fighorse`, or `~/.fighorse/exports`.

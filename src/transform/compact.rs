@@ -117,14 +117,21 @@ fn clean_fills(fills: &Value) -> Option<Value> {
         let mut base = select_keys(fill, &["type", "opacity"]);
         match fill.get("type").and_then(|v| v.as_str()) {
             Some("SOLID") => {
-                let color = select_keys(fill.get("color").unwrap_or(&Value::Null), &["r", "g", "b", "a"]);
+                let color = select_keys(
+                    fill.get("color").unwrap_or(&Value::Null),
+                    &["r", "g", "b", "a"],
+                );
                 base.insert("color".into(), Value::Object(color));
             }
-            Some("GRADIENT_LINEAR") | Some("GRADIENT_RADIAL") | Some("GRADIENT_ANGULAR")
+            Some("GRADIENT_LINEAR")
+            | Some("GRADIENT_RADIAL")
+            | Some("GRADIENT_ANGULAR")
             | Some("GRADIENT_DIAMOND") => {
                 base.insert(
                     "gradientHandlePositions".into(),
-                    fill.get("gradientHandlePositions").cloned().unwrap_or(Value::Null),
+                    fill.get("gradientHandlePositions")
+                        .cloned()
+                        .unwrap_or(Value::Null),
                 );
                 base.insert(
                     "gradientStops".into(),
@@ -160,7 +167,10 @@ fn clean_strokes(strokes: &Value) -> Option<Value> {
         }
         let mut base = select_keys(stroke, &["type", "strokeWeight", "strokeAlign"]);
         if stroke.get("type").and_then(|v| v.as_str()) == Some("SOLID") {
-            let color = select_keys(stroke.get("color").unwrap_or(&Value::Null), &["r", "g", "b", "a"]);
+            let color = select_keys(
+                stroke.get("color").unwrap_or(&Value::Null),
+                &["r", "g", "b", "a"],
+            );
             base.insert("color".into(), Value::Object(color));
         }
         out.push(Value::Object(base));
@@ -242,7 +252,12 @@ fn visuals_extractor(node: &Value) -> Option<Map<String, Value>> {
         let cleaned: Vec<Value> = effects
             .iter()
             .filter(|ef| is_visible_fill(ef))
-            .map(|ef| Value::Object(select_keys(ef, &["type", "color", "offset", "radius", "spread"])))
+            .map(|ef| {
+                Value::Object(select_keys(
+                    ef,
+                    &["type", "color", "offset", "radius", "spread"],
+                ))
+            })
             .collect();
         if !cleaned.is_empty() {
             visuals.insert("effects".into(), Value::Array(cleaned));
@@ -311,8 +326,14 @@ pub const TREE_EXTRACTORS: &[Extractor] = &[dimension_extractor, layout_extracto
 pub fn simplify_node_with(node: &Value, extractors: &[Extractor]) -> Value {
     let mut out = Map::new();
     out.insert("id".into(), node.get("id").cloned().unwrap_or(Value::Null));
-    out.insert("name".into(), node.get("name").cloned().unwrap_or(Value::Null));
-    out.insert("type".into(), node.get("type").cloned().unwrap_or(Value::Null));
+    out.insert(
+        "name".into(),
+        node.get("name").cloned().unwrap_or(Value::Null),
+    );
+    out.insert(
+        "type".into(),
+        node.get("type").cloned().unwrap_or(Value::Null),
+    );
 
     for extractor in extractors {
         if let Some(data) = extractor(node) {
@@ -556,8 +577,7 @@ mod tests {
     fn estimate_tokens_positive_and_monotonic() {
         assert!(estimate_tokens(&json!({"a": 1, "b": 2})) > 0);
         assert!(
-            estimate_tokens(&json!({"a": 1, "b": 2, "c": 3}))
-                > estimate_tokens(&json!({"a": 1}))
+            estimate_tokens(&json!({"a": 1, "b": 2, "c": 3})) > estimate_tokens(&json!({"a": 1}))
         );
     }
 
@@ -638,7 +658,9 @@ mod tests {
     fn truncate_score_priority() {
         let mut decor_children = Vec::new();
         for i in 0..10 {
-            decor_children.push(json!({"id": format!("d{i}"), "name": format!("Tiny {i}"), "type": "VECTOR"}));
+            decor_children.push(
+                json!({"id": format!("d{i}"), "name": format!("Tiny {i}"), "type": "VECTOR"}),
+            );
         }
         let tree = json!({
             "id": "0", "name": "Root", "type": "FRAME",
@@ -654,9 +676,15 @@ mod tests {
         let decor_truncated = result["children"][0].get("truncated") == Some(&Value::Bool(true))
             || result["children"][0]["children"]
                 .as_array()
-                .map(|a| a.iter().any(|c| c.get("truncated") == Some(&Value::Bool(true))))
+                .map(|a| {
+                    a.iter()
+                        .any(|c| c.get("truncated") == Some(&Value::Bool(true)))
+                })
                 .unwrap_or(false);
         assert!(decor_truncated);
-        assert_ne!(result["children"][1].get("truncated"), Some(&Value::Bool(true)));
+        assert_ne!(
+            result["children"][1].get("truncated"),
+            Some(&Value::Bool(true))
+        );
     }
 }

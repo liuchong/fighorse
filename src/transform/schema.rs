@@ -42,16 +42,14 @@ fn infer_property_type(prop: &Value) -> String {
         Some("BOOLEAN") => "boolean".to_string(),
         Some("TEXT") => "string".to_string(),
         Some("INSTANCE_SWAP") => "string".to_string(),
-        Some("VARIANT") => {
-            match prop.get("variantOptions").and_then(|v| v.as_array()) {
-                Some(options) if !options.is_empty() => options
-                    .iter()
-                    .map(|o| format!("\"{}\"", o.as_str().unwrap_or("")))
-                    .collect::<Vec<_>>()
-                    .join(" | "),
-                _ => "string".to_string(),
-            }
-        }
+        Some("VARIANT") => match prop.get("variantOptions").and_then(|v| v.as_array()) {
+            Some(options) if !options.is_empty() => options
+                .iter()
+                .map(|o| format!("\"{}\"", o.as_str().unwrap_or("")))
+                .collect::<Vec<_>>()
+                .join(" | "),
+            _ => "string".to_string(),
+        },
         _ => "string".to_string(),
     }
 }
@@ -97,12 +95,18 @@ pub fn infer_component_schema(tree: &Value, component_id: &str) -> Option<Value>
 
 /// Render an inferred schema as a TypeScript interface.
 pub fn schema_to_typescript(schema: &Value) -> String {
-    let interface = schema.get("interface").and_then(|v| v.as_str()).unwrap_or("Props");
+    let interface = schema
+        .get("interface")
+        .and_then(|v| v.as_str())
+        .unwrap_or("Props");
     let mut lines = vec![format!("export interface {interface} {{")];
     if let Some(props) = schema.get("props").and_then(|v| v.as_array()) {
         for prop in props {
             let name = prop.get("name").and_then(|v| v.as_str()).unwrap_or("");
-            let ty = prop.get("type").and_then(|v| v.as_str()).unwrap_or("string");
+            let ty = prop
+                .get("type")
+                .and_then(|v| v.as_str())
+                .unwrap_or("string");
             lines.push(format!("  \"{name}\"?: {ty};"));
         }
     }

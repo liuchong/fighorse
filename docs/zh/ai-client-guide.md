@@ -10,7 +10,8 @@
 fighorse install client --client cursor --apply
 fighorse install client --client codex --apply
 fighorse install client --client kimi --apply
-fighorse install skill --clients cursor,codex,kimi --apply
+fighorse install client --client claude --apply
+fighorse install skill --clients cursor,codex,kimi,claude --apply
 ```
 
 生成配置但不应用：
@@ -19,6 +20,7 @@ fighorse install skill --clients cursor,codex,kimi --apply
 fighorse mcp config --client cursor --transport http
 fighorse mcp config --client codex --transport http
 fighorse mcp config --client kimi --transport http
+fighorse mcp config --client claude --transport http
 fighorse mcp config --client opencode --transport http
 ```
 
@@ -47,10 +49,15 @@ fighorse mcp config --client opencode --transport http
 推荐的本地服务：
 
 ```bash
-fighorse install --default --mode service --clients cursor,codex,kimi --apply
+fighorse install --default --mode service --clients cursor,codex,kimi,claude --apply
+fighorse install verify
 ```
 
-当客户端支持 Streamable HTTP 时，连接到 `http://127.0.0.1:9449/mcp`。旧版 SSE 端点仍可在 `http://127.0.0.1:9449/sse` 使用，stdio 仍作为显式兼容模式。已安装的客户端应优先使用共享的本地服务，使系统只有一个长驻的 `fighorse` MCP 进程。
+通过 official Rust `rmcp` 2.2 Streamable HTTP 连接 `http://127.0.0.1:9449/mcp`。服务维护独立的 stateful session，校验 Host/Origin，协商 JSON 或 event-stream response，并 graceful shutdown。legacy `/sse`、`/messages` 不存在；`--transport sse` 会失败并引导 HTTP。`/mcp` 返回 `text/event-stream` 是标准协议响应，不是 legacy transport。
+
+安装器先激活 service，再等待 `/health` 并完成 `initialize`/`tools/list`，之后才写 clients 与 skills。manifest、backup 以及 `desired_absent` 删除项位于 `~/.fighorse/install/manifest.json` 和 `~/.fighorse/install/backups/`；`install rollback` 恢复未被用户修改的托管文件及先前服务状态。
+
+Canonical 三目标是 `~/.agents/skills/fighorse/SKILL.md`（Cursor/Kimi/Codex）、`~/.claude/skills/fighorse/SKILL.md`（Claude）、`~/.cursor/rules/fighorse.mdc`（Cursor）。
 
 ## 必需的启动流程
 
@@ -232,7 +239,6 @@ fighorse install --default --mode service --clients cursor --apply
 {
   "mcpServers": {
     "fighorse": {
-      "transport": "http",
       "url": "http://127.0.0.1:9449/mcp"
     }
   }
@@ -272,7 +278,7 @@ fighorse install status
 curl http://127.0.0.1:9449/health
 ```
 
-常见故障：Codex 每次启动时都可能初始化一个新的 Streamable HTTP 会话。`/mcp` 必须接受重复的 `initialize` 请求并返回 MCP JSON/SSE，而不是 `text/plain`。升级后重启 fighorse 服务。
+常见故障：Codex 每次启动时都可能初始化新的 Streamable HTTP session。`/mcp` 必须创建独立的 stateful session，并返回标准 JSON 或 event-stream response。
 
 ### Kimi
 
@@ -287,6 +293,8 @@ fighorse install --default --mode service --clients kimi --apply
 ```bash
 kimi mcp add --transport http fighorse http://127.0.0.1:9449/mcp
 ```
+
+预期 payload：`{"transport":"http","url":"http://127.0.0.1:9449/mcp"}`。
 
 验证：
 
@@ -311,7 +319,7 @@ fighorse mcp config --client claude --transport http
 {
   "mcpServers": {
     "fighorse": {
-      "transport": "http",
+      "type": "http",
       "url": "http://127.0.0.1:9449/mcp"
     }
   }
@@ -392,7 +400,7 @@ fighorse mcp config --client generic --transport http
   "args": ["mcp", "serve", "--transport", "stdio"],
   "env": {
     "FIGHORSE_MCP_MODE": "readonly",
-    "FIGHORSE_MCP_LOCAL_WRITE": "allow"
+    "FIGHORSE_MCP_LOCAL_WRITE": "deny"
   }
 }
 ```

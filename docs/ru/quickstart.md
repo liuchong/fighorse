@@ -79,7 +79,10 @@ fighorse design package "https://www.figma.com/design/<fileKey>/<name>?node-id=<
 Используйте режим сервиса только когда AI-клиент должен напрямую вызывать fighorse:
 
 ```bash
-fighorse install --default --mode service --clients cursor,codex,kimi --apply
+fighorse install --default --mode service --clients cursor,codex,kimi,claude --apply
+fighorse install verify
+# Только Claude:
+fighorse install client --client claude --apply
 ```
 
 Установленные клиенты должны использовать:
@@ -95,7 +98,13 @@ fighorse install --default --mode service --clients cursor,codex,kimi --apply
 }
 ```
 
-Сервис по умолчанию только для localhost, защищен singleton-локом и использует Streamable HTTP эндпоинт, поддерживающий повторяющиеся рукопожатия клиентов.
+Сервис по умолчанию доступен только на localhost и защищён singleton-локом. `/mcp` использует official Rust `rmcp` 2.2 Streamable HTTP: независимые stateful sessions, проверку Host и Origin, JSON или event-stream response и graceful shutdown.
+
+Нативные payload: Cursor `{"url":"http://127.0.0.1:9449/mcp"}`, Kimi `{"transport":"http","url":"http://127.0.0.1:9449/mcp"}`, Claude `{"type":"http","url":"http://127.0.0.1:9449/mcp"}`, Codex — `[mcp_servers.fighorse]`. Порядок установки: service → `/health` → `initialize`/`tools/list` → clients → skills. Manifest/backup обеспечивают `install verify` и `install rollback`; managed-удаления записываются как `desired_absent`.
+
+Canonical-цели: `~/.agents/skills/fighorse/SKILL.md` для Cursor/Kimi/Codex, `~/.claude/skills/fighorse/SKILL.md` для Claude и `~/.cursor/rules/fighorse.mdc` для Cursor.
+
+Legacy `/sse` и `/messages` не обслуживаются, а `--transport sse` завершается ошибкой с переходом на HTTP. `text/event-stream` от `/mcp` — стандартный Streamable HTTP response, а не legacy SSE transport. Новая установка запрещает local write.
 
 ## 7. Что спросить у вашего AI-агента
 
@@ -109,6 +118,6 @@ fighorse install --default --mode service --clients cursor,codex,kimi --apply
 
 - Отсутствует токен: запустите `fighorse auth login --token <FIGMA_TOKEN>`.
 - Слишком широкая ссылка: скопируйте ссылку на выделенный фрейм или компонент.
-- MCP-сервис не запущен: используйте `fighorse install --default --mode service --clients cursor,codex,kimi --apply`.
-- Codex сообщает о неожиданном типе контента: проверьте `curl http://127.0.0.1:9449/health`; эндпоинт `/mcp` должен возвращать MCP JSON/SSE, а не `text/plain`.
+- MCP-сервис не запущен: используйте `fighorse install --default --mode service --clients cursor,codex,kimi,claude --apply`.
+- Codex сообщает о неожиданном типе контента: запустите `fighorse install verify`; `/mcp` должен возвращать стандартный MCP JSON или event-stream response, а не product manifest.
 - Локальный экспорт отклонен: используйте `./.fighorse/exports`, `./assets/fighorse` или `~/.fighorse/exports`.

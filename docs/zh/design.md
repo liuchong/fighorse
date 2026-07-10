@@ -42,7 +42,7 @@ Figma REST API
 - 公共优先：用户可以在学习 MCP 之前通过 CLI 成功。
 - 可检查：开发者可以运行 AI 工具调用的相同命令。
 - 可脚本化：shell、CI 和自定义 agent 可以直接使用二进制文件。
-- 传输中立：stdio MCP、SSE MCP 和 CLI 共享行为。
+- 传输中立：共享 Streamable HTTP、显式标准 stdio MCP 和 CLI 共享业务行为。
 - 更易于测试：纯转换和 API 包装器与客户端配置保持分离。
 
 ## 分层架构
@@ -160,7 +160,7 @@ fighorse 分离三个安全域：
 
 这种分离很重要，因为下载本地截图或图片 fill 远不如修改 Figma 敏感，但仍需要路径验证。用户明确控制两个域。
 
-SSE MCP 默认本地主机（`127.0.0.1`）并支持受控 CORS。Stdio 解析强制执行消息大小限制，以避免本地拒绝服务行为。
+默认 MCP 适配器是 official Rust `rmcp` 2.2 `StreamableHttpService` 与 `LocalSessionManager`。它提供互相独立的 stateful session，在分发前校验 Host 和 Origin，按标准 Streamable HTTP 返回 JSON 或 event-stream response，并在 SIGINT/SIGTERM 时 graceful shutdown。`/mcp` 的 event stream 不是 legacy SSE transport；`/sse` 和 `/messages` 不再服务，`--transport sse` 明确失败。显式兼容模式使用标准 rmcp stdio，不存在私有 frame 协议。
 
 ## 安装设计
 
@@ -171,11 +171,17 @@ SSE MCP 默认本地主机（`127.0.0.1`）并支持受控 CORS。Stdio 解析�
 - `~/.fighorse/config.json` 中的认证存储。
 - Cursor、Codex、Kimi、Claude、opencode 和通用 agent 的 MCP 客户端片段。
 - AI 客户端的用户级 skill/rule。
-- SSE MCP 的 macOS launchd 和 Linux systemd 用户服务。
+- Streamable HTTP MCP 的 macOS launchd 和 Linux systemd 用户服务。
 
 当原生客户端命令可用时，安装器代码优先使用它们。否则它写入带有备份的标准用户配置文件。
 
-`fighorse install --default --apply` 默认仅 CLI，因为公共 CLI 不应让用户惊讶于后台服务或绑定端口。长驻 MCP 服务设置通过 `install --default --mode service` 或 `install service` 显式进行。已安装的客户端应共享 `http://127.0.0.1:9449/mcp` 的本地 HTTP 端点，受单例锁保护，兼容重复的 Streamable HTTP 握手。
+`fighorse install --default --apply` 默认仅 CLI，因为公共 CLI 不应让用户惊讶于后台服务或绑定端口。四客户端服务命令为 `fighorse install --default --mode service --clients cursor,codex,kimi,claude --apply`，Claude 单独命令为 `fighorse install client --client claude --apply`。
+
+原生 payload 分别是 Cursor `{"url":"http://127.0.0.1:9449/mcp"}`、Kimi `{"transport":"http","url":"http://127.0.0.1:9449/mcp"}`、Claude `{"type":"http","url":"http://127.0.0.1:9449/mcp"}`、Codex `[mcp_servers.fighorse]` 加同一 URL。
+
+事务顺序是 `preflight -> backup -> binary -> service -> health_ready -> clients -> skills -> verified`；`/health` 与真实 `initialize`/`tools/list` 成功前不写客户端。manifest 记录 hash、backup、顺序和 `desired_absent: true`，rollback 逆序恢复托管文件和服务状态；skill conflict 原地保留并生成确定性备份。
+
+Canonical 三目标是 `~/.agents/skills/fighorse/SKILL.md`（Cursor/Kimi/Codex）、`~/.claude/skills/fighorse/SKILL.md`（Claude）、`~/.cursor/rules/fighorse.mdc`（Cursor）。fresh install 的 service/stdio local write 为 deny，已有显式 allow 仅在迁移时保留。
 
 ## 生态系统定位
 
@@ -231,7 +237,7 @@ fighorse 不旨在成为通用代码生成器。代码应由 AI agent 使用目�
 
 该项目应保持无需真实 Figma 令牌即可验证：
 
-- 单元测试覆盖参数解析、精简、URL 解析、路径验证、OpenAPI 覆盖、操作调度、MCP 工具/资源路由、发现 manifest、安装输出、设计包诊断和 stdio 帧限制。
+- 单元与集成测试覆盖参数解析、精简、URL 解析、路径验证、OpenAPI 覆盖、操作调度、MCP 工具/资源路由、official HTTP/standard stdio、发现 manifest、安装事务、设计包诊断和文档一致性。
 - 接触真实 Figma API 的集成测试是可选的。
 - 文档和生成的安装工件必须反映当前 CLI 行为。
 

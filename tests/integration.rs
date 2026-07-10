@@ -78,12 +78,22 @@ async fn file_and_transforms_integration() {
 
     // 1) get_file_meta: structural fields present.
     let meta = files::get_file_meta(&token, &file_key).await.expect("meta");
-    assert!(meta["file"]["name"].as_str().unwrap_or("").len() > 0, "file has name");
+    assert!(
+        !meta["file"]["name"].as_str().unwrap_or("").is_empty(),
+        "file has name"
+    );
 
     // 2) get_file (single call): the document tree drives everything else.
-    let file = files::get_file(&token, &file_key, None, None, Some("3"), None, None, None)
-        .await
-        .expect("get_file");
+    let file = files::get_file(
+        &token,
+        &file_key,
+        files::GetFileParams {
+            depth: Some("3"),
+            ..Default::default()
+        },
+    )
+    .await
+    .expect("get_file");
     let doc = file.get("document").cloned().unwrap_or(Value::Null);
     assert_eq!(doc["type"], "DOCUMENT");
 
@@ -135,7 +145,9 @@ async fn design_package_integration() {
         platform: Some("web-react"),
         asset_format: Some("svg"),
     };
-    let pkg = get_design_package(&token, opts).await.expect("design package");
+    let pkg = get_design_package(&token, opts)
+        .await
+        .expect("design package");
 
     assert_eq!(pkg["kind"], "fighorse.design-package.v1");
     assert_eq!(pkg["implementation_target"]["platform"], "web-react");
@@ -143,7 +155,10 @@ async fn design_package_integration() {
     assert!(pkg.get("context").is_some(), "has context");
     assert!(pkg.get("tokens").is_some(), "has tokens");
     assert!(pkg.get("diagnostics").is_some(), "has diagnostics");
-    assert!(pkg.get("learned_experience").is_some(), "has learned_experience");
+    assert!(
+        pkg.get("learned_experience").is_some(),
+        "has learned_experience"
+    );
     assert!(pkg.get("next_tools").is_some(), "has next_tools");
 }
 
@@ -178,30 +193,52 @@ async fn mcp_and_export_integration() {
     .unwrap();
     let text = result["result"]["content"][0]["text"].as_str().unwrap();
     let parsed: Value = serde_json::from_str(text).unwrap();
-    assert!(parsed["file"]["name"].as_str().unwrap_or("").len() > 0);
+    assert!(!parsed["file"]["name"].as_str().unwrap_or("").is_empty());
 
     // 3) Image export to a temp dir under an approved root, then clean up.
-    let file = files::get_file(&token, &file_key, None, None, Some("2"), None, None, None)
-        .await
-        .expect("get_file for node discovery");
+    let file = files::get_file(
+        &token,
+        &file_key,
+        files::GetFileParams {
+            depth: Some("2"),
+            ..Default::default()
+        },
+    )
+    .await
+    .expect("get_file for node discovery");
     let doc = file.get("document").cloned().unwrap_or(Value::Null);
     let node_id = first_renderable_node(&doc).expect("renderable node");
 
     let tmp = std::env::temp_dir().join(format!("fighorse-int-{}", std::process::id()));
     let export_dir = tmp.join("exports");
     std::fs::create_dir_all(&export_dir).unwrap();
+    let export_dir_string = export_dir.to_string_lossy();
 
     let rows = fighorse::export::images::export_images(
-        &token, &file_key, &[node_id], "png", "2",
-        Some(&export_dir.to_string_lossy()), true, None,
+        &token,
+        &file_key,
+        &[node_id],
+        &fighorse::export::images::ExportOptions {
+            format: "png",
+            scale: "2",
+            dest_dir: Some(&export_dir_string),
+            manifest: true,
+            prefix: None,
+        },
     )
     .await
     .expect("export_images");
 
     assert!(!rows.is_empty(), "image exported");
     assert!(std::path::Path::new(&rows[0].1).exists(), "file downloaded");
-    assert!(std::fs::metadata(&rows[0].1).unwrap().len() > 0, "non-empty file");
-    assert!(export_dir.join("manifest.json").exists(), "manifest written");
+    assert!(
+        std::fs::metadata(&rows[0].1).unwrap().len() > 0,
+        "non-empty file"
+    );
+    assert!(
+        export_dir.join("manifest.json").exists(),
+        "manifest written"
+    );
 
     let _ = std::fs::remove_dir_all(&tmp);
     assert!(!tmp.exists(), "temp dir cleaned up");

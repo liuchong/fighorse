@@ -8,7 +8,11 @@ use crate::guidance;
 use serde_json::{json, Value};
 
 /// Build the project playbook payload.
-pub fn build(platform: Option<&str>, asset_format: Option<&str>, project_dir: Option<&str>) -> Value {
+pub fn build(
+    platform: Option<&str>,
+    asset_format: Option<&str>,
+    project_dir: Option<&str>,
+) -> Value {
     let filters = Filters {
         platform: platform.map(String::from),
         asset_format: asset_format.map(String::from),

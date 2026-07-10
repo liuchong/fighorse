@@ -13,6 +13,14 @@ use serde_json::{json, Map, Value};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+pub mod clients;
+pub mod model;
+pub mod service;
+pub mod skills;
+pub mod transaction;
+
+use clients::{ClientKind, ClientSpec};
+
 pub const SUPPORTED_CLIENTS: &[&str] = &[
     "cursor",
     "codex",
@@ -30,7 +38,8 @@ fn home_os() -> PathBuf {
 }
 
 fn fighorse_home(home: Option<&str>) -> PathBuf {
-    home.map(PathBuf::from).unwrap_or_else(config::fighorse_home)
+    home.map(PathBuf::from)
+        .unwrap_or_else(config::fighorse_home)
 }
 
 fn now_iso() -> String {
@@ -93,15 +102,6 @@ fn write_text_with_backup(file: &Path, content: &str) -> Result<PathBuf> {
 
 fn write_json_with_backup(file: &Path, data: &Value) -> Result<PathBuf> {
     write_text_with_backup(file, &serde_json::to_string_pretty(data)?)
-}
-
-fn mask_token(token: &str) -> Option<String> {
-    if token.trim().is_empty() {
-        None
-    } else {
-        let n = token.len().min(6);
-        Some(format!("{}...", &token[..n]))
-    }
 }
 
 fn normalize_client(client: &str) -> String {
@@ -272,11 +272,10 @@ fn install_path_to_target(p: Option<&str>, home: Option<&str>) -> PathBuf {
         None => default_binary_target(home),
         Some(p) => {
             let pb = PathBuf::from(&p);
-            if p.ends_with('/') {
-                pb.join("fighorse")
-            } else if pb.is_dir() {
-                pb.join("fighorse")
-            } else if pb.file_name().and_then(|f| f.to_str()) == Some("fighorse") {
+            if !p.ends_with('/')
+                && !pb.is_dir()
+                && pb.file_name().and_then(|f| f.to_str()) == Some("fighorse")
+            {
                 pb
             } else {
                 pb.join("fighorse")
@@ -313,18 +312,28 @@ fn mcp_stdio_config(command: &str, home: Option<&str>) -> Value {
         "args": ["mcp", "serve", "--transport", "stdio"],
         "env": {
             "FIGHORSE_MCP_MODE": "readonly",
-            "FIGHORSE_MCP_LOCAL_WRITE": "allow",
+            "FIGHORSE_MCP_LOCAL_WRITE": "deny",
             "FIGHORSE_HOME": fighorse_home(home).to_string_lossy()
         }
     })
 }
 
-fn mcp_server_config(transport: &str, port: i64, command: &str, home: Option<&str>) -> Value {
+fn mcp_server_config(
+    transport: &str,
+    port: i64,
+    command: &str,
+    home: Option<&str>,
+) -> Result<Value> {
     let command = command_path(command, home);
     match transport {
-        "http" => json!({"transport": "http", "url": format!("http://127.0.0.1:{port}/mcp")}),
-        "sse" => json!({"transport": "sse", "url": format!("http://127.0.0.1:{port}/sse")}),
-        _ => mcp_stdio_config(&command, home),
+        "http" => Ok(json!({"transport": "http", "url": format!("http://127.0.0.1:{port}/mcp")})),
+        "stdio" => Ok(mcp_stdio_config(&command, home)),
+        "sse" => Err(Error::Usage(
+            "Legacy SSE transport is retired. Use --transport http and the /mcp endpoint.".into(),
+        )),
+        other => Err(Error::Usage(format!(
+            "Unknown client transport: {other}. Expected http or explicit stdio."
+        ))),
     }
 }
 
@@ -335,7 +344,7 @@ fn codex_toml(server: &Value, command: &str, home: Option<&str>) -> String {
         )
     } else {
         format!(
-            "[mcp_servers.fighorse]\ncommand = \"{command}\"\nargs = [\"mcp\", \"serve\", \"--transport\", \"stdio\"]\nenabled = true\nstartup_timeout_sec = 60\n\n[mcp_servers.fighorse.env]\nFIGHORSE_MCP_MODE = \"readonly\"\nFIGHORSE_MCP_LOCAL_WRITE = \"allow\"\nFIGHORSE_HOME = \"{}\"\n",
+            "[mcp_servers.fighorse]\ncommand = \"{command}\"\nargs = [\"mcp\", \"serve\", \"--transport\", \"stdio\"]\nenabled = true\nstartup_timeout_sec = 60\n\n[mcp_servers.fighorse.env]\nFIGHORSE_MCP_MODE = \"readonly\"\nFIGHORSE_MCP_LOCAL_WRITE = \"deny\"\nFIGHORSE_HOME = \"{}\"\n",
             fighorse_home(home).to_string_lossy()
         )
     }
@@ -363,7 +372,10 @@ fn run_command(command: &str, args: &[&str], env: &[(&str, String)]) -> Value {
     }
     match cmd.output() {
         Ok(out) => {
-            let code = out.status.code().unwrap_or(if out.status.success() { 0 } else { 1 });
+            let code = out
+                .status
+                .code()
+                .unwrap_or(if out.status.success() { 0 } else { 1 });
             json!({
                 "command": command,
                 "args": args,
@@ -390,7 +402,9 @@ fn run_command(command: &str, args: &[&str], env: &[(&str, String)]) -> Value {
 
 fn copy_executable(source: &str, target: &Path) -> Result<PathBuf> {
     if source.trim().is_empty() {
-        return Err(Error::Other("--source is required when applying binary installation".into()));
+        return Err(Error::Other(
+            "--source is required when applying binary installation".into(),
+        ));
     }
     let src = PathBuf::from(source);
     if !src.exists() {
@@ -441,6 +455,34 @@ fn symlink_or_copy(target: &Path, link: &Path) -> Result<PathBuf> {
     Ok(link.to_path_buf())
 }
 
+fn requested_binary_links(link_dir: Option<&str>, link_dirs: Option<&str>) -> Vec<PathBuf> {
+    let mut requested: Vec<String> = split_list(link_dirs.unwrap_or(""));
+    if let Some(link_dir) = link_dir {
+        requested.push(link_dir.to_string());
+    }
+    let disabled = requested
+        .iter()
+        .any(|directory| directory.trim().eq_ignore_ascii_case("none"));
+    let explicit = requested.iter().any(|directory| {
+        !directory.trim().is_empty() && !directory.trim().eq_ignore_ascii_case("none")
+    });
+    let directories = if disabled {
+        Vec::new()
+    } else if explicit {
+        requested
+    } else {
+        path_preferred_link_dirs()
+    };
+    let mut seen = std::collections::HashSet::new();
+    directories
+        .into_iter()
+        .filter(|directory| !directory.trim().is_empty())
+        .filter_map(|directory| absolute_path(Some(&directory)))
+        .filter(|directory| seen.insert(directory.clone()))
+        .map(|directory| PathBuf::from(directory).join("fighorse"))
+        .collect()
+}
+
 /// Install the CLI binary and PATH links.
 pub fn install_binary(
     source: Option<&str>,
@@ -455,33 +497,11 @@ pub fn install_binary(
         .map(PathBuf::from)
         .unwrap_or_else(|| default_binary_target(home));
 
-    let mut requested: Vec<String> = split_list(link_dirs.unwrap_or(""));
-    if let Some(ld) = link_dir {
-        requested.push(ld.to_string());
-    }
-    let disable = requested.iter().any(|d| d.trim().to_lowercase() == "none");
-    let explicit = requested
+    let links = requested_binary_links(link_dir, link_dirs);
+    let all_dirs: Vec<String> = links
         .iter()
-        .any(|d| !d.trim().is_empty() && d.trim().to_lowercase() != "none");
-    let mut all_dirs = if disable {
-        vec![]
-    } else if explicit {
-        // Explicit --link-dir(s) replace the preferred defaults so callers can
-        // target writable dirs without also attempting /usr/local/bin.
-        requested.clone()
-    } else {
-        path_preferred_link_dirs()
-    };
-    let mut seen = std::collections::HashSet::new();
-    all_dirs = all_dirs
-        .into_iter()
-        .filter(|d| !d.trim().is_empty())
-        .filter_map(|d| absolute_path(Some(&d)))
-        .filter(|d| seen.insert(d.clone()))
-        .collect();
-    let links: Vec<PathBuf> = all_dirs
-        .iter()
-        .map(|d| PathBuf::from(d).join("fighorse"))
+        .filter_map(|link| link.parent())
+        .map(|directory| directory.to_string_lossy().into_owned())
         .collect();
 
     let applied = if apply {
@@ -579,7 +599,16 @@ pub fn install_home(home: Option<&str>) -> Result<Value> {
     let home = fighorse_home(home);
     let mut dirs = Vec::new();
     dirs.push(mkdirp(&home)?);
-    for sub in ["bin", "experience", "clients", "services", "skills", "logs", "runtime", "exports"] {
+    for sub in [
+        "bin",
+        "experience",
+        "clients",
+        "services",
+        "skills",
+        "logs",
+        "runtime",
+        "exports",
+    ] {
         dirs.push(mkdirp(&home.join(sub))?);
     }
     let readme = home.join("README.md");
@@ -596,11 +625,16 @@ pub fn install_home(home: Option<&str>) -> Result<Value> {
     }))
 }
 
-/// Persist a Figma token to the local config.
-pub fn install_auth(token: Option<&str>, home: Option<&str>, apply: bool) -> Result<Value> {
-    let home = fighorse_home(home);
+struct PreparedAuth {
+    config_file: PathBuf,
+    content: Option<Vec<u8>>,
+    report: Value,
+}
+
+fn prepare_auth(token: Option<&str>, home: &Path, apply: bool) -> Result<PreparedAuth> {
     let config_file = home.join("config.json");
-    let current_token = read_json_object(&config_file)
+    let mut current = read_json_object(&config_file);
+    let current_token = current
         .get("token")
         .and_then(|v| v.as_str())
         .map(String::from)
@@ -608,19 +642,25 @@ pub fn install_auth(token: Option<&str>, home: Option<&str>, apply: bool) -> Res
     let token = token.map(|t| t.trim().to_string());
 
     if !apply {
-        let has = current_token.as_deref().map(|t| !t.trim().is_empty()).unwrap_or(false);
-        return Ok(json!({
-            "kind": "fighorse.install-auth.v1",
-            "apply": false,
-            "config_path": config_file.to_string_lossy(),
-            "has_saved_token": has,
-            "token_mask": current_token.as_deref().and_then(mask_token),
-            "next_steps": [
-                "Run `fighorse install auth --apply --token <FIGMA_TOKEN>` to persist a Figma token.",
-                "You can also pipe the token on stdin to avoid exposing it in shell history.",
-                "MCP clients inherit this saved config through FIGHORSE_HOME."
-            ]
-        }));
+        let has = current_token
+            .as_deref()
+            .map(|t| !t.trim().is_empty())
+            .unwrap_or(false);
+        return Ok(PreparedAuth {
+            config_file: config_file.clone(),
+            content: None,
+            report: json!({
+                "kind": "fighorse.install-auth.v1",
+                "apply": false,
+                "config_path": config_file.to_string_lossy(),
+                "has_saved_token": has,
+                "next_steps": [
+                    "Run `fighorse install auth --apply --token <FIGMA_TOKEN>` to persist a Figma token.",
+                    "You can also pipe the token on stdin to avoid exposing it in shell history.",
+                    "MCP clients inherit this saved config through FIGHORSE_HOME."
+                ]
+            }),
+        });
     }
 
     let effective = match token {
@@ -629,33 +669,71 @@ pub fn install_auth(token: Option<&str>, home: Option<&str>, apply: bool) -> Res
     };
 
     match effective {
-        None => Ok(json!({
-            "kind": "fighorse.install-auth.v1",
-            "apply": true,
-            "ok": false,
-            "config_path": config_file.to_string_lossy(),
-            "has_saved_token": false,
-            "needs_token": true,
-            "next_steps": [
-                "Provide a Figma token with `--token`, pipe it on stdin, or run `fighorse auth login`.",
-                "Do not commit tokens; fighorse stores them only in the local user config."
-            ]
-        })),
-        Some(t) => {
-            mkdirp(&home)?;
-            write_json_with_backup(&config_file, &json!({"token": t}))?;
-            set_mode_600(&config_file);
-            Ok(json!({
+        None => Ok(PreparedAuth {
+            config_file: config_file.clone(),
+            content: None,
+            report: json!({
                 "kind": "fighorse.install-auth.v1",
                 "apply": true,
-                "ok": true,
+                "ok": false,
                 "config_path": config_file.to_string_lossy(),
-                "has_saved_token": true,
-                "token_mask": mask_token(&t),
-                "next_steps": ["Run `fighorse doctor` or `fighorse smoke <figma-url>` to verify Figma access."]
-            }))
+                "has_saved_token": false,
+                "needs_token": true,
+                "next_steps": [
+                    "Provide a Figma token with `--token`, pipe it on stdin, or run `fighorse auth login`.",
+                    "Do not commit tokens; fighorse stores them only in the local user config."
+                ]
+            }),
+        }),
+        Some(t) => {
+            current.insert("token".into(), Value::String(t));
+            Ok(PreparedAuth {
+                config_file: config_file.clone(),
+                content: Some(serde_json::to_vec_pretty(&Value::Object(current))?),
+                report: json!({
+                    "kind": "fighorse.install-auth.v1",
+                    "apply": true,
+                    "ok": true,
+                    "config_path": config_file.to_string_lossy(),
+                    "has_saved_token": true,
+                    "next_steps": ["Run `fighorse doctor` or `fighorse smoke <figma-url>` to verify Figma access."]
+                }),
+            })
         }
     }
+}
+
+/// Persist a Figma token to the local config.
+pub fn install_auth(token: Option<&str>, home: Option<&str>, apply: bool) -> Result<Value> {
+    let home = fighorse_home(home);
+    let prepared = prepare_auth(token, &home, apply)?;
+    if let Some(content) = prepared.content.as_deref() {
+        let mut transaction = transaction::InstallTransaction::new(&home)?;
+        transaction.write_managed_with_mode(&prepared.config_file, content, 0o600)?;
+        transaction.commit(None)?;
+    }
+    Ok(prepared.report)
+}
+
+/// Remove only the saved token while preserving all unknown configuration.
+pub fn logout_auth(home: Option<&str>) -> Result<Value> {
+    let home = fighorse_home(home);
+    let config_file = home.join("config.json");
+    let mut current = read_json_object(&config_file);
+    let removed = current.remove("token").is_some();
+    let mut transaction = transaction::InstallTransaction::new(&home)?;
+    if current.is_empty() {
+        transaction.remove_managed(&config_file)?;
+    } else {
+        let content = serde_json::to_vec_pretty(&Value::Object(current))?;
+        transaction.write_managed_with_mode(&config_file, &content, 0o600)?;
+    }
+    transaction.commit(None)?;
+    Ok(json!({
+        "kind": "fighorse.auth-logout.v2",
+        "removed_token": removed,
+        "config_path": config_file,
+    }))
 }
 
 /// Initialize project-scoped experience.
@@ -663,6 +741,17 @@ pub fn install_project(project_dir: Option<&str>) -> Result<Value> {
     let project_dir = project_dir
         .map(PathBuf::from)
         .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
+    let home = config::fighorse_home();
+    let mut transaction = transaction::InstallTransaction::new(&home)?;
+    let report = install_project_in_transaction(&mut transaction, &project_dir)?;
+    transaction.commit(None)?;
+    Ok(report)
+}
+
+fn install_project_in_transaction(
+    transaction: &mut transaction::InstallTransaction,
+    project_dir: &Path,
+) -> Result<Value> {
     let dir = project_dir.join(".fighorse");
     let config_file = dir.join("fighorse.json");
     let ignore_file = dir.join(".gitignore");
@@ -673,7 +762,7 @@ pub fn install_project(project_dir: Option<&str>) -> Result<Value> {
         .cloned()
         .unwrap_or(Value::Array(vec![]));
 
-    let config = json!({
+    let managed_config = json!({
         "kind": "fighorse.project.v1",
         "schema_version": 1,
         "experience": {
@@ -689,11 +778,29 @@ pub fn install_project(project_dir: Option<&str>) -> Result<Value> {
             "ask_when_missing": ["platform", "asset_format"]
         }
     });
-
-    mkdirp(&dir)?;
-    write_json(&config_file, &config)?;
-    write_text(&ignore_file, "experience*.jsonl\nexports/\nlogs/\nruntime/\n")?;
-    write_text(&readme_file, "# fighorse Project\n\nThis project is initialized for project-scoped fighorse experience.\n\n- Write path: `.fighorse/experience.jsonl`\n- Temporary exports: `.fighorse/exports`\n- Packaged assets: `assets/fighorse` or the app's normal resource directory\n- Reads merge project experience first and global experience second.\n- Keep `fighorse.json` in source control if the team wants consistent AI behavior.\n")?;
+    let mut config = read_json_object(&config_file);
+    for (key, value) in managed_config
+        .as_object()
+        .expect("managed project config is an object")
+    {
+        config.insert(key.clone(), value.clone());
+    }
+    let config_content = serde_json::to_vec_pretty(&Value::Object(config))?;
+    transaction.write_managed(&config_file, &config_content)?;
+    let ignore_content = merge_managed_block(
+        std::fs::read_to_string(&ignore_file).ok().as_deref(),
+        "# >>> fighorse managed >>>",
+        "# <<< fighorse managed <<<",
+        "experience*.jsonl\nexports/\nlogs/\nruntime/",
+    );
+    transaction.write_managed(&ignore_file, ignore_content.as_bytes())?;
+    let readme_content = merge_managed_block(
+        std::fs::read_to_string(&readme_file).ok().as_deref(),
+        "<!-- >>> fighorse managed >>>",
+        "<!-- <<< fighorse managed <<< -->",
+        "# fighorse Project\n\nThis project is initialized for project-scoped fighorse experience.\n\n- Write path: `.fighorse/experience.jsonl`\n- Temporary exports: `.fighorse/exports`\n- Packaged assets: `assets/fighorse` or the app's normal resource directory\n- Reads merge project experience first and global experience second.\n- Keep `fighorse.json` in source control if the team wants consistent AI behavior.",
+    );
+    transaction.write_managed(&readme_file, readme_content.as_bytes())?;
 
     let opts = ScopeOpts {
         scope: Some("project".to_string()),
@@ -708,65 +815,115 @@ pub fn install_project(project_dir: Option<&str>) -> Result<Value> {
     }))
 }
 
-fn client_skill_targets(client: &str) -> Vec<Value> {
-    let home = home_os();
-    let j = |parts: &[&str]| {
-        let mut p = home.clone();
-        for part in parts {
-            p = p.join(part);
+fn merge_managed_block(existing: Option<&str>, start: &str, end: &str, managed: &str) -> String {
+    let existing = existing.unwrap_or_default();
+    let retained = match (existing.find(start), existing.find(end)) {
+        (Some(begin), Some(finish)) if begin <= finish => {
+            let suffix = finish + end.len();
+            format!("{}{}", &existing[..begin], &existing[suffix..])
         }
-        p.to_string_lossy().into_owned()
+        _ => existing.to_string(),
     };
-    match normalize_client(client).as_str() {
-        "cursor" => vec![
-            json!({"kind": "skill", "dir": j(&[".cursor", "skills", "fighorse"])}),
-            json!({"kind": "rule", "file": j(&[".cursor", "rules", "fighorse.mdc"])}),
-        ],
-        "codex" => vec![json!({"kind": "skill", "dir": j(&[".codex", "skills", "fighorse"])})],
-        "kimi" => vec![json!({"kind": "skill", "dir": j(&[".kimi", "skills", "fighorse"])})],
-        "claude" => vec![json!({"kind": "skill", "dir": j(&[".claude", "skills", "fighorse"])})],
-        "opencode" => vec![json!({"kind": "skill", "dir": j(&[".config", "opencode", "skills", "fighorse"])})],
-        "generic" => vec![
-            json!({"kind": "skill", "dir": j(&[".config", "agents", "skills", "fighorse"])}),
-            json!({"kind": "skill", "dir": j(&[".agents", "skills", "fighorse"])}),
-        ],
-        _ => vec![],
+    let retained = retained.trim_end();
+    if retained.is_empty() {
+        format!("{start}\n{managed}\n{end}\n")
+    } else {
+        format!("{retained}\n\n{start}\n{managed}\n{end}\n")
     }
 }
 
-fn apply_skill_target(target: &Value) -> Result<Value> {
-    match target.get("kind").and_then(|v| v.as_str()) {
-        Some("rule") => {
-            let file = PathBuf::from(target.get("file").and_then(|v| v.as_str()).unwrap_or(""));
-            write_text_with_backup(&file, &cursor_rule())?;
-            Ok(json!({"kind": "rule", "file": file.to_string_lossy()}))
-        }
-        _ => {
-            let dir = PathBuf::from(target.get("dir").and_then(|v| v.as_str()).unwrap_or(""));
-            let files = write_skill_set(&dir)?;
-            Ok(json!({"kind": "skill", "dir": dir.to_string_lossy(), "files": files}))
-        }
-    }
+fn generated_skill_templates() -> skills::GeneratedSkillTemplates {
+    skills::GeneratedSkillTemplates::new(skill_markdown(), agents_markdown(), cursor_rule())
+        .with_edb26d2_templates()
 }
 
-fn apply_skills(clients: &[String]) -> Result<Vec<Value>> {
-    let mut targets = vec![json!({
-        "kind": "skill",
-        "dir": home_os().join(".config").join("agents").join("skills").join("fighorse").to_string_lossy()
-    })];
-    for c in clients {
-        targets.extend(client_skill_targets(c));
-    }
-    // distinct by serialized form.
-    let mut seen = std::collections::HashSet::new();
-    let mut out = Vec::new();
-    for t in targets {
-        let key = t.to_string();
-        if seen.insert(key) {
-            out.push(apply_skill_target(&t)?);
+fn canonical_skill_clients(selected: &[String]) -> Vec<ClientKind> {
+    let mut clients = Vec::new();
+    for client in selected {
+        let kind = match ClientKind::parse(client) {
+            Ok(kind) => Some(kind),
+            Err(_) if client == "generic" => Some(ClientKind::Codex),
+            Err(_) => None,
+        };
+        if let Some(kind) = kind {
+            if !clients.contains(&kind) {
+                clients.push(kind);
+            }
         }
     }
-    Ok(out)
+    clients
+}
+
+fn apply_skills_in_transaction(
+    transaction: &mut transaction::InstallTransaction,
+    package_dir: &Path,
+    user_home: &Path,
+    clients: &[ClientKind],
+) -> Result<(Vec<Value>, Vec<Value>, skills::SkillMigrationReport)> {
+    let packaged = [
+        (package_dir.join("SKILL.md"), skill_markdown()),
+        (package_dir.join("AGENTS.md"), agents_markdown()),
+        (package_dir.join("cursor-rule.mdc"), cursor_rule()),
+    ];
+    let mut files = Vec::new();
+    for (path, content) in packaged {
+        transaction.write_managed(&path, content.as_bytes())?;
+        files.push(Value::String(path.to_string_lossy().into_owned()));
+    }
+
+    let mut applied = Vec::new();
+    for target in skills::canonical_targets(user_home, clients) {
+        let content = match target.kind {
+            skills::SkillTargetKind::Skill => skill_markdown(),
+            skills::SkillTargetKind::CursorRule => cursor_rule(),
+        };
+        transaction.write_managed(&target.path, content.as_bytes())?;
+        applied.push(json!({
+            "kind": target.kind,
+            "file": target.path.to_string_lossy(),
+        }));
+    }
+    let migration = skills::migrate_legacy_for_clients(
+        transaction,
+        user_home,
+        clients,
+        &generated_skill_templates(),
+    )?;
+    Ok((files, applied, migration))
+}
+
+fn apply_skills_transactional(
+    package_dir: &Path,
+    home: Option<&str>,
+    selected: &[String],
+) -> Result<(Vec<Value>, Vec<Value>, skills::SkillMigrationReport)> {
+    let install_home = fighorse_home(home);
+    let mut transaction = transaction::InstallTransaction::new(&install_home)?;
+    let canonical_clients = canonical_skill_clients(selected);
+    match apply_skills_in_transaction(
+        &mut transaction,
+        package_dir,
+        &home_os(),
+        &canonical_clients,
+    ) {
+        Ok(result) => {
+            if let Err(error) = transaction.commit(None) {
+                let rollback = transaction.rollback_pending();
+                return Err(Error::Other(format!(
+                    "{error}; managed rollback: {}",
+                    serde_json::to_string(&rollback)?
+                )));
+            }
+            Ok(result)
+        }
+        Err(error) => {
+            let rollback = transaction.rollback_pending();
+            Err(Error::Other(format!(
+                "{error}; managed rollback: {}",
+                serde_json::to_string(&rollback)?
+            )))
+        }
+    }
 }
 
 /// Generate (and optionally apply) skill/agent files.
@@ -780,12 +937,12 @@ pub fn install_skill(
     let base = dir
         .map(PathBuf::from)
         .unwrap_or_else(|| fighorse_home(home).join("skills").join("fighorse"));
-    let files = write_skill_set(&base)?;
     let selected = coerce_clients(client, clients);
-    let applied = if apply {
-        Some(Value::Array(apply_skills(&selected)?))
+    let (files, applied, migration) = if apply {
+        let (files, applied, migration) = apply_skills_transactional(&base, home, &selected)?;
+        (files, Some(Value::Array(applied)), Some(migration))
     } else {
-        None
+        (write_skill_set(&base)?, None, None)
     };
     Ok(json!({
         "kind": "fighorse.install-skill.v1",
@@ -794,13 +951,14 @@ pub fn install_skill(
         "apply": apply,
         "clients": selected,
         "applied": applied,
+        "migration": migration,
         "ai_contract": guidance::ai_contract(),
         "usage": [
             "Attach SKILL.md as a skill where supported.",
             "Copy AGENTS.md into an AI coding project when a generic agent instruction file is preferred.",
             "Copy cursor-rule.mdc into .cursor/rules/fighorse.mdc for Cursor project rules.",
             "The generated instructions are intentionally generic across clients; client-specific files are only generated where install behavior is verified.",
-            "Use `--apply --clients cursor,codex,kimi` to install known user-level skills/rules."
+            "Use `--apply --clients cursor,codex,kimi,claude` to install the canonical shared skill, Claude skill, and Cursor rule."
         ]
     }))
 }
@@ -831,17 +989,17 @@ fn client_detection(client: &str) -> Value {
             "client": "cursor",
             "command": executable_path("cursor"),
             "mcp_config": j(&[".cursor", "mcp.json"]),
-            "skill_dir": j(&[".cursor", "skills", "fighorse"]),
+            "skill_dir": j(&[".agents", "skills", "fighorse"]),
             "rule_file": j(&[".cursor", "rules", "fighorse.mdc"]),
             "apply_supported": true,
             "apply_methods": ["cursor --add-mcp", "~/.cursor/mcp.json for Cursor Agent", "cursor agent mcp enable fighorse", "json-config-fallback"],
-            "skill_source": "Cursor create-skill documents personal skills at ~/.cursor/skills/<skill-name>; ~/.cursor/skills-cursor is internal."
+            "skill_source": "fighorse uses the shared ~/.agents/skills/fighorse canonical skill and a Cursor-specific rule."
         }),
         "codex" => json!({
             "client": "codex",
             "command": executable_path("codex"),
             "mcp_config": j(&[".codex", "config.toml"]),
-            "skill_dir": j(&[".codex", "skills", "fighorse"]),
+            "skill_dir": j(&[".agents", "skills", "fighorse"]),
             "apply_supported": true,
             "apply_methods": ["codex mcp add --url", "toml-managed-block-fallback"]
         }),
@@ -849,14 +1007,14 @@ fn client_detection(client: &str) -> Value {
             "client": "kimi",
             "command": executable_path("kimi").or_else(|| executable_path("kimi-cli")),
             "mcp_config": j(&[".kimi", "mcp.json"]),
-            "skill_dir": j(&[".kimi", "skills", "fighorse"]),
+            "skill_dir": j(&[".agents", "skills", "fighorse"]),
             "apply_supported": true,
             "apply_methods": ["kimi mcp add --transport http", "json-config-fallback"]
         }),
         "generic" => json!({
             "client": "generic",
             "mcp_config": j(&[".config", "agents", "mcp.json"]),
-            "skill_dir": j(&[".config", "agents", "skills", "fighorse"]),
+            "skill_dir": j(&[".agents", "skills", "fighorse"]),
             "apply_supported": true,
             "apply_methods": ["json-config"]
         }),
@@ -872,7 +1030,7 @@ fn client_detection(client: &str) -> Value {
             "client": "opencode",
             "command": executable_path("opencode"),
             "mcp_config": j(&[".config", "opencode", "opencode.json"]),
-            "skill_dir": j(&[".config", "opencode", "skills", "fighorse"]),
+            "skill_dir": Value::Null,
             "apply_supported": true,
             "apply_methods": ["opencode mcp add --url", "json-config-fallback"]
         }),
@@ -885,9 +1043,73 @@ fn client_detection(client: &str) -> Value {
     }
 }
 
+fn apply_canonical_client(spec: &ClientSpec, home: Option<&str>) -> Result<Value> {
+    let user_home = home_os();
+    let file = clients::config_path(&user_home, spec.kind);
+    let existing = std::fs::read_to_string(&file).ok();
+    let merged = spec.merge_config(existing.as_deref())?;
+    let install_home = fighorse_home(home);
+    let mut transaction = transaction::InstallTransaction::new(&install_home)?;
+    let outcome = (|| -> Result<(Vec<Value>, skills::SkillMigrationReport)> {
+        transaction.write_managed(&file, merged.as_bytes())?;
+        let mut skill_result = Vec::new();
+        for target in skills::canonical_targets(&user_home, &[spec.kind]) {
+            let content = match target.kind {
+                skills::SkillTargetKind::Skill => skill_markdown(),
+                skills::SkillTargetKind::CursorRule => cursor_rule(),
+            };
+            transaction.write_managed(&target.path, content.as_bytes())?;
+            skill_result.push(json!({
+                "kind": target.kind,
+                "file": target.path.to_string_lossy()
+            }));
+        }
+        let migration = skills::migrate_legacy_for_clients(
+            &mut transaction,
+            &user_home,
+            &[spec.kind],
+            &generated_skill_templates(),
+        )?;
+        Ok((skill_result, migration))
+    })();
+    let (skill_result, migration) = match outcome {
+        Ok(result) => {
+            if let Err(error) = transaction.commit(None) {
+                let rollback = transaction.rollback_pending();
+                return Err(Error::Other(format!(
+                    "{error}; managed rollback: {}",
+                    serde_json::to_string(&rollback)?
+                )));
+            }
+            result
+        }
+        Err(error) => {
+            let rollback = transaction.rollback_pending();
+            return Err(Error::Other(format!(
+                "{error}; managed rollback: {}",
+                serde_json::to_string(&rollback)?
+            )));
+        }
+    };
+    Ok(json!({
+        "client": spec.kind.as_str(),
+        "ok": true,
+        "mcp": {
+            "method": if spec.kind == ClientKind::Codex { "toml-config" } else { "json-config" },
+            "ok": true,
+            "file": file.to_string_lossy()
+        },
+        "skills": skill_result,
+        "migration": migration,
+    }))
+}
+
 fn apply_client(client: &str, server: &Value, command: &str, home: Option<&str>) -> Result<Value> {
     let client = normalize_client(client);
-    if !matches!(client.as_str(), "cursor" | "codex" | "kimi" | "claude" | "opencode" | "generic") {
+    if !matches!(
+        client.as_str(),
+        "cursor" | "codex" | "kimi" | "claude" | "opencode" | "generic"
+    ) {
         return Ok(json!({
             "client": client,
             "ok": false,
@@ -897,9 +1119,9 @@ fn apply_client(client: &str, server: &Value, command: &str, home: Option<&str>)
     }
     let config_result = match client.as_str() {
         "cursor" => {
-            // Cursor's mcp.json expects just {url} for HTTP/SSE and {command,args,env}
+            // Cursor's mcp.json expects just {url} for HTTP and {command,args,env}
             // for stdio - it does not use a `transport`/`type` field.
-            let payload = cursor_mcp_payload(server);
+            let payload = cursor_mcp_payload(server)?;
             merge_json_mcp_config(&home_os().join(".cursor").join("mcp.json"), &payload)?
         }
         "codex" => {
@@ -913,11 +1135,21 @@ fn apply_client(client: &str, server: &Value, command: &str, home: Option<&str>)
                     run_command(
                         &codex,
                         &[
-                            "mcp", "add", "--env",
+                            "mcp",
+                            "add",
+                            "--env",
                             &format!("FIGHORSE_HOME={}", fighorse_home(home).to_string_lossy()),
-                            "--env", "FIGHORSE_MCP_MODE=readonly",
-                            "--env", "FIGHORSE_MCP_LOCAL_WRITE=allow",
-                            "fighorse", "--", command, "mcp", "serve", "--transport", "stdio",
+                            "--env",
+                            "FIGHORSE_MCP_MODE=readonly",
+                            "--env",
+                            "FIGHORSE_MCP_LOCAL_WRITE=deny",
+                            "fighorse",
+                            "--",
+                            command,
+                            "mcp",
+                            "serve",
+                            "--transport",
+                            "stdio",
                         ],
                         &[],
                     )
@@ -942,16 +1174,41 @@ fn apply_client(client: &str, server: &Value, command: &str, home: Option<&str>)
             let config_file = home_os().join(".claude.json");
             if let Some(claude) = executable_path("claude") {
                 let add = if let Some(url) = server.get("url").and_then(|v| v.as_str()) {
-                    run_command(&claude, &["mcp", "add", "-s", "user", "--transport", "http", "fighorse", url], &[])
+                    run_command(
+                        &claude,
+                        &[
+                            "mcp",
+                            "add",
+                            "-s",
+                            "user",
+                            "--transport",
+                            "http",
+                            "fighorse",
+                            url,
+                        ],
+                        &[],
+                    )
                 } else {
                     run_command(
                         &claude,
                         &[
-                            "mcp", "add", "-s", "user",
-                            "-e", &format!("FIGHORSE_HOME={}", fighorse_home(home).to_string_lossy()),
-                            "-e", "FIGHORSE_MCP_MODE=readonly",
-                            "-e", "FIGHORSE_MCP_LOCAL_WRITE=allow",
-                            "fighorse", "--", command, "mcp", "serve", "--transport", "stdio",
+                            "mcp",
+                            "add",
+                            "-s",
+                            "user",
+                            "-e",
+                            &format!("FIGHORSE_HOME={}", fighorse_home(home).to_string_lossy()),
+                            "-e",
+                            "FIGHORSE_MCP_MODE=readonly",
+                            "-e",
+                            "FIGHORSE_MCP_LOCAL_WRITE=deny",
+                            "fighorse",
+                            "--",
+                            command,
+                            "mcp",
+                            "serve",
+                            "--transport",
+                            "stdio",
                         ],
                         &[],
                     )
@@ -969,7 +1226,10 @@ fn apply_client(client: &str, server: &Value, command: &str, home: Option<&str>)
         "opencode" => {
             // opencode: prefer `opencode mcp add --url` for remote, fall back
             // to merging into ~/.config/opencode/opencode.json (mcp section).
-            let config_file = home_os().join(".config").join("opencode").join("opencode.json");
+            let config_file = home_os()
+                .join(".config")
+                .join("opencode")
+                .join("opencode.json");
             if let Some(opencode) = executable_path("opencode") {
                 let add = if let Some(url) = server.get("url").and_then(|v| v.as_str()) {
                     run_command(&opencode, &["mcp", "add", "fighorse", "--url", url], &[])
@@ -978,11 +1238,21 @@ fn apply_client(client: &str, server: &Value, command: &str, home: Option<&str>)
                     run_command(
                         &opencode,
                         &[
-                            "mcp", "add", "fighorse",
-                            "--env", &format!("FIGHORSE_HOME={}", fighorse_home(home).to_string_lossy()),
-                            "--env", "FIGHORSE_MCP_MODE=readonly",
-                            "--env", "FIGHORSE_MCP_LOCAL_WRITE=allow",
-                            "--", command, "mcp", "serve", "--transport", "stdio",
+                            "mcp",
+                            "add",
+                            "fighorse",
+                            "--env",
+                            &format!("FIGHORSE_HOME={}", fighorse_home(home).to_string_lossy()),
+                            "--env",
+                            "FIGHORSE_MCP_MODE=readonly",
+                            "--env",
+                            "FIGHORSE_MCP_LOCAL_WRITE=deny",
+                            "--",
+                            command,
+                            "mcp",
+                            "serve",
+                            "--transport",
+                            "stdio",
                         ],
                         &[],
                     )
@@ -1003,42 +1273,67 @@ fn apply_client(client: &str, server: &Value, command: &str, home: Option<&str>)
         }
         _ => unreachable!(),
     };
-    let skill_result = apply_skills(&[client.clone()])?;
+    let package_dir = fighorse_home(home).join("skills").join("fighorse");
+    let (_, skill_result, migration) =
+        apply_skills_transactional(&package_dir, home, std::slice::from_ref(&client))?;
     Ok(json!({
         "client": client,
         "ok": config_result.get("ok").and_then(|v| v.as_bool()).unwrap_or(false),
         "mcp": config_result,
         "skills": skill_result,
+        "migration": migration,
     }))
 }
 
-/// Cursor's mcp.json shape: HTTP/SSE -> `{url}`, stdio -> `{command, args, env}`.
+fn payload_transport(server: &Value) -> Result<&str> {
+    match server.get("transport").and_then(Value::as_str) {
+        Some("http") => Ok("http"),
+        Some("sse") => Err(Error::Usage(
+            "Legacy SSE transport is retired. Use --transport http and the /mcp endpoint.".into(),
+        )),
+        Some(other) => Err(Error::Usage(format!(
+            "Unknown client transport: {other}. Expected http or explicit stdio."
+        ))),
+        None if server.get("command").is_some() => Ok("stdio"),
+        None => Err(Error::Usage(
+            "Client payload must use HTTP or explicit stdio.".into(),
+        )),
+    }
+}
+
+fn payload_url(server: &Value) -> Result<Value> {
+    server
+        .get("url")
+        .cloned()
+        .filter(|value| value.is_string())
+        .ok_or_else(|| Error::Usage("HTTP client payload requires a URL.".into()))
+}
+
+/// Cursor's mcp.json shape: HTTP -> `{url}`, stdio -> `{command, args, env}`.
 /// Cursor does not use a `transport`/`type` discriminator field.
-fn cursor_mcp_payload(server: &Value) -> Value {
-    let transport = server.get("transport").and_then(|v| v.as_str());
-    match transport {
-        Some("http" | "sse") => json!({"url": server.get("url").cloned().unwrap_or(Value::Null)}),
-        _ => {
+fn cursor_mcp_payload(server: &Value) -> Result<Value> {
+    match payload_transport(server)? {
+        "http" => Ok(json!({"url": payload_url(server)?})),
+        "stdio" => {
             let mut payload = serde_json::Map::new();
             for k in ["command", "args", "env"] {
                 if let Some(v) = server.get(k) {
                     payload.insert(k.to_string(), v.clone());
                 }
             }
-            Value::Object(payload)
+            Ok(Value::Object(payload))
         }
+        _ => unreachable!("payload transport is validated"),
     }
 }
 
 /// Transform a fighorse MCP server config into Claude Code's `mcpServers`
-/// shape: HTTP/SSE use `{"type": ..., "url": ...}`, stdio uses
+/// shape: HTTP uses `{"type": "http", "url": ...}`, stdio uses
 /// `{"type": "stdio", "command": ..., "args": ..., "env": ...}`.
-fn claude_mcp_payload(server: &Value) -> Value {
-    let transport = server.get("transport").and_then(|v| v.as_str());
-    match transport {
-        Some(t @ ("http" | "sse")) => json!({"type": t, "url": server.get("url").cloned().unwrap_or(Value::Null)}),
-        // stdio config has command/args/env, no transport field.
-        _ => {
+fn claude_mcp_payload(server: &Value) -> Result<Value> {
+    match payload_transport(server)? {
+        "http" => Ok(json!({"type": "http", "url": payload_url(server)?})),
+        "stdio" => {
             let mut payload = serde_json::Map::new();
             payload.insert("type".into(), json!("stdio"));
             if let Some(c) = server.get("command") {
@@ -1050,8 +1345,9 @@ fn claude_mcp_payload(server: &Value) -> Value {
             if let Some(e) = server.get("env") {
                 payload.insert("env".into(), e.clone());
             }
-            Value::Object(payload)
+            Ok(Value::Object(payload))
         }
+        _ => unreachable!("payload transport is validated"),
     }
 }
 
@@ -1062,24 +1358,23 @@ fn merge_claude_config(file: &Path, server: &Value) -> Result<Value> {
         .entry("mcpServers".to_string())
         .or_insert_with(|| Value::Object(Map::new()));
     if let Some(obj) = servers.as_object_mut() {
-        obj.insert("fighorse".to_string(), claude_mcp_payload(server));
+        obj.insert("fighorse".to_string(), claude_mcp_payload(server)?);
     }
     write_json_with_backup(file, &Value::Object(current))?;
     Ok(json!({"method": "json-config", "ok": true, "file": file.to_string_lossy()}))
 }
 
 /// Transform a fighorse MCP server config into opencode's `mcp` shape:
-/// HTTP/SSE -> `{"type": "remote", "url": ..., "enabled": true}`,
+/// HTTP -> `{"type": "remote", "url": ..., "enabled": true}`,
 /// stdio -> `{"type": "local", "command": ..., "args": ..., "env": ..., "enabled": true}`.
-fn opencode_mcp_payload(server: &Value) -> Value {
-    let transport = server.get("transport").and_then(|v| v.as_str());
-    match transport {
-        Some("http" | "sse") => json!({
+fn opencode_mcp_payload(server: &Value) -> Result<Value> {
+    match payload_transport(server)? {
+        "http" => Ok(json!({
             "type": "remote",
-            "url": server.get("url").cloned().unwrap_or(Value::Null),
+            "url": payload_url(server)?,
             "enabled": true
-        }),
-        _ => {
+        })),
+        "stdio" => {
             let mut payload = serde_json::Map::new();
             payload.insert("type".into(), json!("local"));
             payload.insert("enabled".into(), json!(true));
@@ -1092,8 +1387,9 @@ fn opencode_mcp_payload(server: &Value) -> Value {
             if let Some(e) = server.get("env") {
                 payload.insert("env".into(), e.clone());
             }
-            Value::Object(payload)
+            Ok(Value::Object(payload))
         }
+        _ => unreachable!("payload transport is validated"),
     }
 }
 
@@ -1104,20 +1400,26 @@ fn merge_opencode_config(file: &Path, server: &Value) -> Result<Value> {
         .entry("mcp".to_string())
         .or_insert_with(|| Value::Object(Map::new()));
     if let Some(obj) = servers.as_object_mut() {
-        obj.insert("fighorse".to_string(), opencode_mcp_payload(server));
+        obj.insert("fighorse".to_string(), opencode_mcp_payload(server)?);
     }
     write_json_with_backup(file, &Value::Object(current))?;
     Ok(json!({"method": "json-config", "ok": true, "file": file.to_string_lossy()}))
 }
 
-fn merge_codex_config(file: &Path, server: &Value, command: &str, home: Option<&str>) -> Result<Value> {
+fn merge_codex_config(
+    file: &Path,
+    server: &Value,
+    command: &str,
+    home: Option<&str>,
+) -> Result<Value> {
     let block = format!(
         "# BEGIN fighorse managed\n{}# END fighorse managed\n",
         codex_toml(server, command, home)
     );
     let current = std::fs::read_to_string(file).unwrap_or_default();
     let updated = if current.contains("# BEGIN fighorse managed") {
-        let re = regex::Regex::new(r"(?s)# BEGIN fighorse managed.*?# END fighorse managed\n?").unwrap();
+        let re =
+            regex::Regex::new(r"(?s)# BEGIN fighorse managed.*?# END fighorse managed\n?").unwrap();
         re.replace(&current, block.as_str()).into_owned()
     } else if current.contains("[mcp_servers.fighorse]") {
         current.clone()
@@ -1148,11 +1450,26 @@ pub fn install_client(
     apply: bool,
 ) -> Result<Value> {
     let client = normalize_client(client.unwrap_or("generic"));
+    if transport == "sse" {
+        return Err(Error::Usage(
+            "Legacy SSE transport is retired. Use --transport http and the /mcp endpoint.".into(),
+        ));
+    }
     let base = dir
         .map(PathBuf::from)
         .unwrap_or_else(|| fighorse_home(home).join("clients").join(&client));
     let command = command_path(command, home);
-    let server = mcp_server_config(transport, port, &command, home);
+    let endpoint = format!("http://127.0.0.1:{port}/mcp");
+    let canonical_spec = ClientKind::parse(&client)
+        .ok()
+        .map(|kind| {
+            ClientSpec::from_transport(kind, transport, &endpoint, &command, fighorse_home(home))
+        })
+        .transpose()?;
+    let server = match canonical_spec.as_ref() {
+        Some(spec) => spec.json_payload(),
+        None => mcp_server_config(transport, port, &command, home)?,
+    };
 
     let mcp_json = base.join("mcp.json");
     let manifest = base.join("fighorse-client.json");
@@ -1216,9 +1533,15 @@ Both fighorse and the official MCP can coexist in the same client. fighorse hand
     match client.as_str() {
         "codex" => {
             files.push(Value::String(
-                write_text(&base.join("codex-config.toml"), &codex_toml(&server, &command, home))?
-                    .to_string_lossy()
-                    .into_owned(),
+                write_text(
+                    &base.join("codex-config.toml"),
+                    &canonical_spec
+                        .as_ref()
+                        .expect("codex is a canonical client")
+                        .toml_payload(),
+                )?
+                .to_string_lossy()
+                .into_owned(),
             ));
         }
         "cursor" => {
@@ -1246,7 +1569,10 @@ Both fighorse and the official MCP can coexist in the same client. fighorse hand
     }
 
     let applied = if apply {
-        Some(apply_client(&client, &server, &command, home)?)
+        Some(match canonical_spec.as_ref() {
+            Some(spec) => apply_canonical_client(spec, home)?,
+            None => apply_client(&client, &server, &command, home)?,
+        })
     } else {
         None
     };
@@ -1281,18 +1607,6 @@ Both fighorse and the official MCP can coexist in the same client. fighorse hand
 
 // --- Service ---
 
-fn launchd_plist(command: &str, port: &str, home: &str) -> String {
-    format!(
-        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n<plist version=\"1.0\">\n<dict>\n  <key>Label</key><string>com.groupultra.fighorse.mcp</string>\n  <key>ProgramArguments</key>\n  <array><string>{command}</string><string>mcp</string><string>serve</string><string>--transport</string><string>sse</string><string>--host</string><string>127.0.0.1</string><string>--port</string><string>{port}</string></array>\n  <key>EnvironmentVariables</key>\n  <dict><key>FIGHORSE_HOME</key><string>{home}</string><key>FIGHORSE_MCP_MODE</key><string>readonly</string><key>FIGHORSE_MCP_LOCAL_WRITE</key><string>allow</string></dict>\n  <key>RunAtLoad</key><true/>\n  <key>KeepAlive</key><true/>\n  <key>StandardOutPath</key><string>{home}/logs/mcp.out.log</string>\n  <key>StandardErrorPath</key><string>{home}/logs/mcp.err.log</string>\n</dict>\n</plist>\n"
-    )
-}
-
-fn systemd_unit(command: &str, port: &str, home: &str) -> String {
-    format!(
-        "[Unit]\nDescription=fighorse MCP service\n\n[Service]\nEnvironment=FIGHORSE_HOME={home}\nEnvironment=FIGHORSE_MCP_MODE=readonly\nEnvironment=FIGHORSE_MCP_LOCAL_WRITE=allow\nExecStart={command} mcp serve --transport sse --host 127.0.0.1 --port {port}\nRestart=always\nWorkingDirectory={home}\n\n[Install]\nWantedBy=default.target\n"
-    )
-}
-
 /// Generate (and optionally apply) an auto-start MCP service.
 pub fn install_service(
     service: &str,
@@ -1313,8 +1627,6 @@ pub fn install_service(
     } else {
         service
     };
-    let port_str = port.to_string();
-
     if service == "none" {
         return Ok(json!({
             "kind": "fighorse.install-service.v1",
@@ -1335,10 +1647,18 @@ pub fn install_service(
         _ => dir.join("fighorse-mcp.service"),
     };
     mkdirp(&dir)?;
+    let target_service = service_target(service);
+    let preserve_allow = [file.as_path(), target_service.as_path()]
+        .iter()
+        .filter_map(|path| std::fs::read_to_string(path).ok())
+        .any(|text| {
+            text.contains("FIGHORSE_MCP_LOCAL_WRITE=allow")
+                || text.contains("<string>allow</string>")
+        });
     let content = if service == "launchd" {
-        launchd_plist(&command, &port_str, &home_str)
+        service::launchd_plist(&command, port, &home_str, preserve_allow)
     } else {
-        systemd_unit(&command, &port_str, &home_str)
+        service::systemd_unit(&command, port, &home_str, preserve_allow)
     };
     write_text(&file, &content)?;
 
@@ -1350,12 +1670,18 @@ pub fn install_service(
 
     let next_steps = if service == "launchd" {
         json!([
-            format!("launchctl bootstrap gui/$(id -u) {}", file.to_string_lossy()),
+            format!(
+                "launchctl bootstrap gui/$(id -u) {}",
+                file.to_string_lossy()
+            ),
             "launchctl kickstart -k gui/$(id -u)/com.groupultra.fighorse.mcp"
         ])
     } else {
         json!([
-            format!("mkdir -p ~/.config/systemd/user && cp {} ~/.config/systemd/user/", file.to_string_lossy()),
+            format!(
+                "mkdir -p ~/.config/systemd/user && cp {} ~/.config/systemd/user/",
+                file.to_string_lossy()
+            ),
             "systemctl --user daemon-reload",
             "systemctl --user enable --now fighorse-mcp.service"
         ])
@@ -1364,12 +1690,104 @@ pub fn install_service(
     Ok(json!({
         "kind": "fighorse.install-service.v1",
         "service": service,
-        "transport": "http+sse",
+        "transport": "http",
         "port": port,
         "file": file.to_string_lossy(),
         "apply": apply,
         "applied": applied,
         "next_steps": next_steps,
+    }))
+}
+
+pub async fn install_service_async(
+    service_name: &str,
+    port: i64,
+    command: &str,
+    home: Option<&str>,
+    apply: bool,
+) -> Result<Value> {
+    if !apply || service_name == "none" {
+        return install_service(service_name, port, command, home, false);
+    }
+    let home = fighorse_home(home);
+    let home_string = home.to_string_lossy().into_owned();
+    install_home(Some(&home_string))?;
+    let manager = service_manager(service_name);
+    let command = command_path(command, Some(&home_string));
+    let endpoint = format!("http://127.0.0.1:{port}/mcp");
+    let generated = home.join("services").join(if manager == "launchd" {
+        "com.groupultra.fighorse.mcp.plist"
+    } else {
+        "fighorse-mcp.service"
+    });
+    let target = service_target(manager);
+    let preserve_allow = [generated.as_path(), target.as_path()]
+        .iter()
+        .filter_map(|path| std::fs::read_to_string(path).ok())
+        .any(|text| {
+            text.contains("FIGHORSE_MCP_LOCAL_WRITE=allow")
+                || text.contains("<string>allow</string>")
+        });
+    let rendered = if manager == "launchd" {
+        service::launchd_plist(&command, port, &home_string, preserve_allow)
+    } else {
+        service::systemd_unit(&command, port, &home_string, preserve_allow)
+    };
+    let mut runner = service::ProcessCommandRunner;
+    let state = service::probe_service_state(&mut runner, manager, target.clone())?;
+    let mut transaction = transaction::InstallTransaction::new(&home)?;
+    transaction.set_endpoint(Some(endpoint.clone()));
+    transaction.set_service(Some(state));
+    let outcome: Result<(Value, Vec<model::InstallCheck>)> = async {
+        transaction.write_managed(&generated, rendered.as_bytes())?;
+        transaction.write_managed(&target, rendered.as_bytes())?;
+        let activated = service::activate_service(
+            &mut runner,
+            transaction
+                .service()
+                .expect("service state set before activation"),
+        )?;
+        let mut checks = service_result_to_checks(manager, &activated)?;
+        checks.extend(
+            transaction::wait_for_mcp_ready(&endpoint, 100, std::time::Duration::from_millis(100))
+                .await?,
+        );
+        Ok((activated, checks))
+    }
+    .await;
+    let (activated, mut checks) = match outcome {
+        Ok(outcome) => outcome,
+        Err(error) => {
+            let rollback = transaction.rollback_pending_with_service(&mut runner, true);
+            return Err(Error::Other(format!(
+                "{error}; rollback: {}",
+                serde_json::to_string(&rollback)?
+            )));
+        }
+    };
+    transaction.commit(None)?;
+    checks.extend(transaction::verify_manifest(&home)?);
+    let ok = checks.iter().all(|check| check.ok);
+    if !ok {
+        let rollback = committed_file_rollback(&home);
+        return Err(Error::Other(format!(
+            "Service installation verification failed; rollback: {}",
+            serde_json::to_string(&rollback)?
+        )));
+    }
+    let final_transaction = transaction::InstallTransaction::new(&home)?;
+    final_transaction.commit(Some(checks.clone()))?;
+    Ok(json!({
+        "kind": "fighorse.install-service.v2",
+        "service": manager,
+        "transport": "http",
+        "endpoint": endpoint,
+        "file": generated,
+        "target": target,
+        "apply": true,
+        "applied": activated,
+        "verification": checks,
+        "ok": true,
     }))
 }
 
@@ -1391,7 +1809,11 @@ fn apply_service(service: &str, file: &Path) -> Result<Value> {
                 .unwrap_or("")
                 .trim()
                 .to_string();
-            let domain = if uid.is_empty() { "gui".to_string() } else { format!("gui/{uid}") };
+            let domain = if uid.is_empty() {
+                "gui".to_string()
+            } else {
+                format!("gui/{uid}")
+            };
             let target_str = target.to_string_lossy().into_owned();
             Ok(json!({
                 "file": target.to_string_lossy(),
@@ -1416,7 +1838,9 @@ fn apply_service(service: &str, file: &Path) -> Result<Value> {
                 "enable_now": run_command("systemctl", &["--user", "enable", "--now", "fighorse-mcp.service"], &[]),
             }))
         }
-        other => Ok(json!({"skipped": true, "reason": format!("No apply strategy for service manager: {other}")})),
+        other => Ok(
+            json!({"skipped": true, "reason": format!("No apply strategy for service manager: {other}")}),
+        ),
     }
 }
 
@@ -1462,14 +1886,27 @@ fn install_guide(
             "linux_arm64": "cargo build --release --target aarch64-unknown-linux-gnu"
         },
         "optional_mcp_service": {
-            "command": "fighorse install --default --mode service --clients cursor,codex,kimi --apply",
-            "endpoint": "http://127.0.0.1:9449/mcp"
+            "command": "fighorse install --default --mode service --clients cursor,codex,kimi,claude --apply",
+            "endpoint": "http://127.0.0.1:9449/mcp",
+            "order": ["service", "/health", "initialize + tools/list", "clients", "skills", "manifest verification"]
+        },
+        "canonical_skill_targets": {
+            "cursor_kimi_codex": "~/.agents/skills/fighorse/SKILL.md",
+            "claude": "~/.claude/skills/fighorse/SKILL.md",
+            "cursor_rule": "~/.cursor/rules/fighorse.mdc"
+        },
+        "transaction": {
+            "manifest": "~/.fighorse/install/manifest.json",
+            "backups": "~/.fighorse/install/backups/",
+            "verify": "fighorse install verify",
+            "rollback": "fighorse install rollback",
+            "managed_removals": "desired_absent=true"
         },
         "ai_client_instructions": [
             "If the binary is not on PATH, copy it to the target path and use that absolute path in MCP/service config.",
             "After install, run fighorse quickstart --format json or MCP check_fighorse_ready.",
             "If auth.has_token is false, prompt the user to run fighorse auth login --token <FIGMA_TOKEN> or set FIGMA_TOKEN.",
-            "Use service mode only when Cursor/Codex/Kimi or another MCP client should call fighorse directly."
+            "Use service mode only when Cursor/Codex/Kimi/Claude or another MCP client should call fighorse directly."
         ],
         "current": {
             "source": source,
@@ -1503,6 +1940,493 @@ pub struct InstallOpts<'a> {
     pub apply: bool,
 }
 
+fn selected_canonical_clients(opts: &InstallOpts, service_mode: bool) -> Result<Vec<ClientKind>> {
+    if !service_mode {
+        return Ok(Vec::new());
+    }
+    coerce_clients(opts.client, opts.clients)
+        .iter()
+        .map(|client| ClientKind::parse(client))
+        .collect()
+}
+
+fn service_target(service: &str) -> PathBuf {
+    match service {
+        "launchd" => home_os()
+            .join("Library")
+            .join("LaunchAgents")
+            .join("com.groupultra.fighorse.mcp.plist"),
+        _ => home_os()
+            .join(".config")
+            .join("systemd")
+            .join("user")
+            .join("fighorse-mcp.service"),
+    }
+}
+
+fn service_manager(service: &str) -> &str {
+    if service == "auto" {
+        if cfg!(target_os = "macos") {
+            "launchd"
+        } else {
+            "systemd"
+        }
+    } else {
+        service
+    }
+}
+
+fn executable_check(path: &Path) -> model::InstallCheck {
+    let exists = path.is_file();
+    #[cfg(unix)]
+    let executable = {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::metadata(path)
+            .map(|metadata| metadata.permissions().mode() & 0o111 != 0)
+            .unwrap_or(false)
+    };
+    #[cfg(not(unix))]
+    let executable = exists;
+    model::InstallCheck::new("binary", exists && executable, path.to_string_lossy())
+}
+
+fn binary_path_check(path: &Path) -> model::InstallCheck {
+    let parent_on_path = path
+        .parent()
+        .map(|parent| path_dirs().iter().any(|item| Path::new(item) == parent))
+        .unwrap_or(false);
+    let resolved = executable_path("fighorse");
+    let resolved_matches_target = resolved.as_deref().is_some_and(|resolved| {
+        let resolved = Path::new(resolved);
+        resolved == path
+            || std::fs::canonicalize(resolved)
+                .ok()
+                .zip(std::fs::canonicalize(path).ok())
+                .is_some_and(|(resolved, target)| resolved == target)
+    });
+    let discoverable = parent_on_path || resolved_matches_target;
+    model::InstallCheck::new(
+        "binary_path",
+        path.is_file() && discoverable,
+        if discoverable {
+            "fighorse is discoverable on PATH".to_string()
+        } else {
+            format!(
+                "binary is available by absolute path {}; add its directory to PATH if desired",
+                path.display()
+            )
+        },
+    )
+}
+
+fn config_permission_check(home: &Path) -> model::InstallCheck {
+    let path = home.join("config.json");
+    if !path.exists() {
+        return model::InstallCheck::new("config_permissions", true, "config absent");
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mode = std::fs::metadata(&path)
+            .map(|metadata| metadata.permissions().mode() & 0o777)
+            .unwrap_or_default();
+        model::InstallCheck::new(
+            "config_permissions",
+            mode == 0o600,
+            format!("{} mode {mode:o}", path.display()),
+        )
+    }
+    #[cfg(not(unix))]
+    model::InstallCheck::new("config_permissions", true, path.to_string_lossy())
+}
+
+async fn apply_install_transaction(opts: &InstallOpts<'_>, self_install: bool) -> Result<Value> {
+    let home = fighorse_home(opts.home);
+    let home_string = home.to_string_lossy().into_owned();
+    let mode = opts.mode.unwrap_or("cli").to_ascii_lowercase();
+    let requested_service = matches!(mode.as_str(), "service" | "mcp" | "all");
+    let service_mode = requested_service && !opts.no_service && opts.service != "none";
+    if requested_service && opts.transport != "http" {
+        return Err(Error::Usage(
+            "Shared service installation requires --transport http and the /mcp endpoint.".into(),
+        ));
+    }
+    if opts.transport == "sse" {
+        return Err(Error::Usage(
+            "Legacy SSE transport is retired. Use --transport http and the /mcp endpoint.".into(),
+        ));
+    }
+
+    let selected = selected_canonical_clients(opts, service_mode)?;
+    let endpoint = format!("http://127.0.0.1:{}/mcp", opts.port);
+    let plan = if service_mode {
+        model::InstallPlan::service(home.clone(), &endpoint, selected.clone())
+    } else {
+        model::InstallPlan::cli(home.clone())
+    };
+    let mut completed = vec![model::InstallStep::Preflight];
+
+    install_home(Some(&home_string))?;
+
+    let source = Some(absolute_path(opts.source).unwrap_or_else(current_executable_path));
+    let target = absolute_path(opts.target)
+        .map(PathBuf::from)
+        .or_else(|| {
+            if self_install && opts.default {
+                Some(default_binary_target(opts.home))
+            } else {
+                None
+            }
+        })
+        .unwrap_or_else(|| {
+            if self_install {
+                install_path_to_target(opts.path, opts.home)
+            } else {
+                default_binary_target(opts.home)
+            }
+        });
+    let command = target.to_string_lossy().into_owned();
+    let mut transaction = transaction::InstallTransaction::new(&home)?;
+    transaction.set_endpoint(service_mode.then_some(endpoint.clone()));
+    let prepared_auth = prepare_auth(opts.token, &home, true)?;
+    let auth_report = prepared_auth.report.clone();
+    let mut service_runner = service::ProcessCommandRunner;
+    let mut service_state: Option<service::ServiceState> = None;
+    let mut service_touched = false;
+    let user_home = home_os();
+    let mut skills_migration = None;
+    let mut project_report = Value::Null;
+    let links = requested_binary_links(opts.link_dir, opts.link_dirs);
+    let skill_clients = if service_mode {
+        selected.clone()
+    } else {
+        vec![ClientKind::Codex]
+    };
+    completed.push(model::InstallStep::Backup);
+
+    let outcome: Result<(Vec<model::InstallCheck>, Value)> = async {
+        let mut stage_checks = Vec::new();
+        if let Some(content) = prepared_auth.content.as_deref() {
+            transaction.write_managed_with_mode(&prepared_auth.config_file, content, 0o600)?;
+        }
+        if let Some(source) = source.as_deref() {
+            let bytes = std::fs::read(source)?;
+            transaction.write_managed_with_mode(&target, &bytes, 0o755)?;
+            for link in &links {
+                #[cfg(unix)]
+                let link_result = transaction.write_managed_symlink(link, &target);
+                #[cfg(not(unix))]
+                let link_result = transaction.write_managed_with_mode(link, &bytes, 0o755);
+                match link_result {
+                    Ok(()) => stage_checks.push(model::InstallCheck::new(
+                        format!("binary_link:{}", link.display()),
+                        true,
+                        "installed PATH link",
+                    )),
+                    Err(Error::Io(error))
+                        if error.kind() == std::io::ErrorKind::PermissionDenied =>
+                    {
+                        stage_checks.push(model::InstallCheck::new(
+                            format!("binary_link:{}", link.display()),
+                            true,
+                            format!("skipped unwritable PATH link: {error}"),
+                        ));
+                    }
+                    Err(error) => return Err(error),
+                }
+            }
+        }
+        completed.push(model::InstallStep::Binary);
+        if !self_install {
+            let project_dir = opts
+                .path
+                .map(PathBuf::from)
+                .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
+            project_report = install_project_in_transaction(&mut transaction, &project_dir)?;
+        }
+
+        let mut service_result = Value::Null;
+        if service_mode {
+            let manager = service_manager(opts.service);
+            let generated = home.join("services").join(if manager == "launchd" {
+                "com.groupultra.fighorse.mcp.plist"
+            } else {
+                "fighorse-mcp.service"
+            });
+            let target_service = service_target(manager);
+            service_state = Some(service::probe_service_state(
+                &mut service_runner,
+                manager,
+                target_service.clone(),
+            )?);
+            transaction.set_service(service_state.clone());
+            let preserve_allow = [generated.as_path(), target_service.as_path()]
+                .iter()
+                .filter_map(|path| std::fs::read_to_string(path).ok())
+                .any(|text| {
+                    text.contains("FIGHORSE_MCP_LOCAL_WRITE=allow")
+                        || text.contains("<string>allow</string>")
+                });
+            let rendered = if manager == "launchd" {
+                service::launchd_plist(&command, opts.port, &home_string, preserve_allow)
+            } else {
+                service::systemd_unit(&command, opts.port, &home_string, preserve_allow)
+            };
+            transaction.write_managed(&generated, rendered.as_bytes())?;
+            transaction.write_managed(&target_service, rendered.as_bytes())?;
+            service_touched = true;
+            service_result = service::activate_service(
+                &mut service_runner,
+                service_state.as_ref().expect("service state initialized"),
+            )?;
+            stage_checks.extend(service_result_to_checks(manager, &service_result)?);
+            completed.push(model::InstallStep::Service);
+
+            let ready = transaction::wait_for_mcp_ready(
+                &endpoint,
+                100,
+                std::time::Duration::from_millis(100),
+            )
+            .await?;
+            completed.push(model::InstallStep::HealthReady);
+            stage_checks.extend(ready);
+
+            for kind in &selected {
+                let spec = ClientSpec::new(*kind, &endpoint);
+                let review_dir = home.join("clients").join(kind.as_str());
+                let review_file = if *kind == ClientKind::Codex {
+                    review_dir.join("config.toml")
+                } else {
+                    review_dir.join("mcp.json")
+                };
+                transaction.write_managed(&review_file, spec.review_content()?.as_bytes())?;
+
+                let config = clients::config_path(&home_os(), *kind);
+                let existing = std::fs::read_to_string(&config).ok();
+                let merged = spec.merge_config(existing.as_deref())?;
+                transaction.write_managed(&config, merged.as_bytes())?;
+            }
+            completed.push(model::InstallStep::Clients);
+        }
+
+        let packaged_skill = home.join("skills").join("fighorse");
+        let (_, _, migration) = apply_skills_in_transaction(
+            &mut transaction,
+            &packaged_skill,
+            &user_home,
+            &skill_clients,
+        )?;
+        skills_migration = Some(migration);
+        completed.push(model::InstallStep::Skills);
+        Ok((stage_checks, service_result))
+    }
+    .await;
+
+    let (mut verification, service_result) = match outcome {
+        Ok(result) => result,
+        Err(error) => {
+            let rollback =
+                transaction.rollback_pending_with_service(&mut service_runner, service_touched);
+            return Err(Error::Other(format!(
+                "{error}; rollback: {}",
+                serde_json::to_string(&rollback)?
+            )));
+        }
+    };
+
+    if let Err(error) = transaction.commit(None) {
+        let rollback =
+            transaction.rollback_pending_with_service(&mut service_runner, service_touched);
+        return Err(Error::Other(format!(
+            "{error}; rollback: {}",
+            serde_json::to_string(&rollback)?
+        )));
+    }
+    match transaction::verify_manifest(&home) {
+        Ok(checks) => verification.extend(checks),
+        Err(error) => {
+            let rollback = committed_file_rollback(&home);
+            return Err(Error::Other(format!(
+                "{error}; rollback: {}",
+                serde_json::to_string(&rollback)?
+            )));
+        }
+    }
+    verification.push(executable_check(&target));
+    verification.push(binary_path_check(&target));
+    verification.push(config_permission_check(&home));
+    let ok = verification.iter().all(|check| check.ok);
+    let final_transaction = match transaction::InstallTransaction::new(&home) {
+        Ok(transaction) => transaction,
+        Err(error) => {
+            let rollback = committed_file_rollback(&home);
+            return Err(Error::Other(format!(
+                "{error}; rollback: {}",
+                serde_json::to_string(&rollback)?
+            )));
+        }
+    };
+    if let Err(error) = final_transaction.commit(Some(verification.clone())) {
+        let rollback = committed_file_rollback(&home);
+        return Err(Error::Other(format!(
+            "{error}; rollback: {}",
+            serde_json::to_string(&rollback)?
+        )));
+    }
+    completed.push(model::InstallStep::Verified);
+    let report = model::InstallReport {
+        plan: Some(plan),
+        completed,
+        verification,
+        rollback: Vec::new(),
+        skills_migration,
+        ok,
+    };
+    if !ok {
+        let rollback = committed_file_rollback(&home);
+        return Err(Error::Other(format!(
+            "Installation verification failed; rollback: {}",
+            serde_json::to_string(&rollback)?
+        )));
+    }
+    Ok(json!({
+        "kind": if self_install { "fighorse.install-self.v2" } else { "fighorse.install-all.v2" },
+        "apply": true,
+        "mode": mode,
+        "manifest": transaction::manifest_path(&home),
+        "auth": auth_report,
+        "project": project_report,
+        "service": service_result,
+        "report": report,
+    }))
+}
+
+fn committed_file_rollback(home: &Path) -> Vec<model::InstallCheck> {
+    match transaction::rollback(home) {
+        Ok(report) => report.rollback,
+        Err(error) => vec![model::InstallCheck::new(
+            "managed_rollback",
+            false,
+            error.to_string(),
+        )],
+    }
+}
+
+fn service_result_to_checks(manager: &str, result: &Value) -> Result<Vec<model::InstallCheck>> {
+    let fields: &[(&str, &str)] = if manager == "launchd" {
+        &[
+            ("bootstrap", "service_activation_launchd_bootstrap"),
+            ("kickstart", "service_activation_launchd_kickstart"),
+        ]
+    } else {
+        &[
+            ("daemon_reload", "service_activation_systemd_daemon_reload"),
+            ("enable_now", "service_activation_systemd_enable"),
+        ]
+    };
+    let checks: Vec<_> = fields
+        .iter()
+        .map(|(field, name)| {
+            let value = result.get(*field).cloned().unwrap_or(Value::Null);
+            model::InstallCheck::new(
+                *name,
+                value.get("ok").and_then(Value::as_bool) == Some(true),
+                value.to_string(),
+            )
+        })
+        .collect();
+    if checks.iter().any(|check| !check.ok) {
+        Err(Error::Other(format!(
+            "service activation reported failed command: {}",
+            serde_json::to_string(&checks)?
+        )))
+    } else {
+        Ok(checks)
+    }
+}
+
+/// Async production entry point. The CLI uses this boundary so MCP readiness
+/// never creates a nested runtime.
+pub async fn install_self_async(opts: &InstallOpts<'_>) -> Result<Value> {
+    if opts.apply {
+        apply_install_transaction(opts, true).await
+    } else {
+        install_self(opts)
+    }
+}
+
+/// Async production entry point for a complete setup.
+pub async fn install_all_async(opts: &InstallOpts<'_>) -> Result<Value> {
+    if opts.apply {
+        apply_install_transaction(opts, false).await
+    } else {
+        install_all(opts)
+    }
+}
+
+/// Verify the persisted manifest, binary, permissions, and (when installed)
+/// the service health and MCP handshake.
+pub async fn install_verify(home: Option<&str>, port: i64) -> Result<Value> {
+    let home = fighorse_home(home);
+    let manifest = transaction::load_manifest(&home)?;
+    let endpoint = if port > 0 {
+        format!("http://127.0.0.1:{port}/mcp")
+    } else {
+        manifest
+            .endpoint
+            .clone()
+            .unwrap_or_else(|| "http://127.0.0.1:9449/mcp".into())
+    };
+    let mut checks = transaction::verify_manifest(&home)?;
+    let binary = manifest
+        .managed_files
+        .iter()
+        .find(|file| file.path.file_name().and_then(|name| name.to_str()) == Some("fighorse"))
+        .map(|file| file.path.clone())
+        .unwrap_or_else(|| home.join("bin").join("fighorse"));
+    checks.push(executable_check(&binary));
+    checks.push(binary_path_check(&binary));
+    checks.push(config_permission_check(&home));
+    let has_service = manifest.managed_files.iter().any(|file| {
+        matches!(
+            file.path
+                .extension()
+                .and_then(|extension| extension.to_str()),
+            Some("plist" | "service")
+        )
+    });
+    if has_service {
+        match transaction::wait_for_mcp_ready(&endpoint, 1, std::time::Duration::ZERO).await {
+            Ok(service_checks) => checks.extend(service_checks),
+            Err(error) => checks.push(model::InstallCheck::new(
+                "service_health_and_mcp",
+                false,
+                error.to_string(),
+            )),
+        }
+    }
+    checks.push(model::InstallCheck::new(
+        "manifest",
+        true,
+        transaction::manifest_path(&home).to_string_lossy(),
+    ));
+    let ok = checks.iter().all(|check| check.ok);
+    let update = transaction::InstallTransaction::new(&home)?;
+    update.commit(Some(checks.clone()))?;
+    Ok(serde_json::to_value(model::InstallReport {
+        verification: checks,
+        ok,
+        ..model::InstallReport::default()
+    })?)
+}
+
+/// Restore only files still matching the managed hashes in the manifest.
+pub fn install_rollback(home: Option<&str>) -> Result<Value> {
+    Ok(serde_json::to_value(transaction::rollback(
+        &fighorse_home(home),
+    )?)?)
+}
+
 /// Self-install this binary and emit AI-readable install guidance.
 pub fn install_self(opts: &InstallOpts) -> Result<Value> {
     let home = fighorse_home(opts.home);
@@ -1510,7 +2434,13 @@ pub fn install_self(opts: &InstallOpts) -> Result<Value> {
     let source = absolute_path(opts.source).unwrap_or_else(current_executable_path);
     let target = absolute_path(opts.target)
         .map(PathBuf::from)
-        .or_else(|| if opts.default { Some(default_binary_target(opts.home)) } else { None })
+        .or_else(|| {
+            if opts.default {
+                Some(default_binary_target(opts.home))
+            } else {
+                None
+            }
+        })
         .unwrap_or_else(|| install_path_to_target(opts.path, opts.home));
     let target_str = target.to_string_lossy().into_owned();
     let mode = opts.mode.unwrap_or("cli").to_lowercase();
@@ -1520,7 +2450,11 @@ pub fn install_self(opts: &InstallOpts) -> Result<Value> {
     } else {
         vec![]
     };
-    let command = if opts.apply { target_str.clone() } else { opts.command.to_string() };
+    let command = if opts.apply {
+        target_str.clone()
+    } else {
+        opts.command.to_string()
+    };
 
     let clients_result: Vec<Value> = selected
         .iter()
@@ -1539,13 +2473,20 @@ pub fn install_self(opts: &InstallOpts) -> Result<Value> {
 
     let mut next_steps = vec![
         Value::String("Run `fighorse quickstart` to verify setup.".into()),
-        Value::String("Run `fighorse auth login --token <FIGMA_TOKEN>` before calling Figma APIs.".into()),
+        Value::String(
+            "Run `fighorse auth login --token <FIGMA_TOKEN>` before calling Figma APIs.".into(),
+        ),
     ];
     if !opts.apply {
-        next_steps.push(Value::String("Add --apply to copy this binary and install generated config.".into()));
+        next_steps.push(Value::String(
+            "Add --apply to copy this binary and install generated config.".into(),
+        ));
     }
     if mcp_mode {
-        next_steps.push(Value::String("Restart or reload Cursor/Codex/Kimi and ask it to call discover_fighorse.".into()));
+        next_steps.push(Value::String(
+            "Restart or reload Cursor/Codex/Kimi/Claude and ask it to call discover_fighorse."
+                .into(),
+        ));
     }
 
     Ok(json!({
@@ -1627,8 +2568,7 @@ fn active_pid(pid: Option<i64>) -> bool {
                 extern "C" {
                     fn kill(pid: i32, sig: i32) -> i32;
                 }
-                kill(p as i32, 0) == 0
-                    || std::io::Error::last_os_error().raw_os_error() != Some(3)
+                kill(p as i32, 0) == 0 || std::io::Error::last_os_error().raw_os_error() != Some(3)
             }
             #[cfg(not(unix))]
             {
@@ -1655,7 +2595,10 @@ pub fn status() -> Value {
     } else {
         None
     };
-    let lock_pid = lock.as_ref().and_then(|l| l.get("pid")).and_then(|v| v.as_i64());
+    let lock_pid = lock
+        .as_ref()
+        .and_then(|l| l.get("pid"))
+        .and_then(|v| v.as_i64());
     let active = active_pid(lock_pid);
 
     let mut detected = Map::new();
@@ -1682,8 +2625,20 @@ pub fn status() -> Value {
             "default_install_mode": "cli",
             "cli_install": "fighorse install --default --apply",
             "source_cli_install": "cargo build --release && ./target/release/fighorse install --default --apply --source ./target/release/fighorse",
-            "service_install": "fighorse install --default --mode service --clients cursor,codex,kimi --apply",
+            "service_install": "fighorse install --default --mode service --clients cursor,codex,kimi,claude --apply",
             "first_check": "fighorse quickstart \"<figma-frame-url>\""
+        },
+        "canonical_skill_targets": {
+            "cursor_kimi_codex": "~/.agents/skills/fighorse/SKILL.md",
+            "claude": "~/.claude/skills/fighorse/SKILL.md",
+            "cursor_rule": "~/.cursor/rules/fighorse.mdc"
+        },
+        "transaction": {
+            "manifest": "~/.fighorse/install/manifest.json",
+            "backups": "~/.fighorse/install/backups/",
+            "verify": "fighorse install verify",
+            "rollback": "fighorse install rollback",
+            "managed_removals": "desired_absent=true"
         },
         "mcp_service": {
             "endpoint": "http://127.0.0.1:9449/mcp",
@@ -1702,7 +2657,7 @@ pub fn status() -> Value {
         "troubleshooting": {
             "token_missing": "Run fighorse auth login --token <FIGMA_TOKEN>.",
             "client_config": "Generated client configs use http://127.0.0.1:9449/mcp and expect one shared local service.",
-            "codex_handshake": "Repeated /mcp initialize requests must return MCP JSON/SSE, not text/plain; restart the service after upgrading.",
+            "codex_handshake": "Repeated /mcp initialize requests must return a standard Streamable HTTP JSON or event-stream response, not a product manifest; restart the service after upgrading.",
             "local_write": "MCP exports require FIGHORSE_MCP_LOCAL_WRITE=allow and an approved export root.",
             "stale_lock": format!("Remove {} only after confirming no fighorse MCP service is running.", lock_file.to_string_lossy())
         },
@@ -1721,7 +2676,10 @@ mod tests {
         assert_eq!(normalize_client("kimi-cli"), "kimi");
         assert_eq!(normalize_client("unknown"), "generic");
         assert_eq!(coerce_clients(Some("cursor"), None), vec!["cursor"]);
-        assert_eq!(coerce_clients(None, Some("cursor,codex,cursor")), vec!["cursor", "codex"]);
+        assert_eq!(
+            coerce_clients(None, Some("cursor,codex,cursor")),
+            vec!["cursor", "codex"]
+        );
         assert!(coerce_clients(None, Some("none")).is_empty());
     }
 
@@ -1741,12 +2699,25 @@ mod tests {
     fn install_client_generates_files() {
         let tmp = std::env::temp_dir().join(format!("fh-client-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&tmp);
-        let result = install_client(Some("cursor"), Some(&tmp.to_string_lossy()), "http", 9449, "fighorse", None, false).unwrap();
+        let result = install_client(
+            Some("cursor"),
+            Some(&tmp.to_string_lossy()),
+            "http",
+            9449,
+            "fighorse",
+            None,
+            false,
+        )
+        .unwrap();
         assert_eq!(result["client"], "cursor");
         assert!(tmp.join("mcp.json").exists());
         assert!(tmp.join("fighorse.cursor.mdc").exists());
-        let mcp: Value = serde_json::from_str(&std::fs::read_to_string(tmp.join("mcp.json")).unwrap()).unwrap();
-        assert_eq!(mcp["mcpServers"]["fighorse"]["url"], "http://127.0.0.1:9449/mcp");
+        let mcp: Value =
+            serde_json::from_str(&std::fs::read_to_string(tmp.join("mcp.json")).unwrap()).unwrap();
+        assert_eq!(
+            mcp["mcpServers"]["fighorse"]["url"],
+            "http://127.0.0.1:9449/mcp"
+        );
         let _ = std::fs::remove_dir_all(&tmp);
     }
 
@@ -1754,28 +2725,36 @@ mod tests {
     fn install_service_systemd_unit() {
         let tmp = std::env::temp_dir().join(format!("fh-svc-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&tmp);
-        let result = install_service("systemd", 9449, "fighorse", Some(&tmp.to_string_lossy()), false).unwrap();
+        let result = install_service(
+            "systemd",
+            9449,
+            "fighorse",
+            Some(&tmp.to_string_lossy()),
+            false,
+        )
+        .unwrap();
         assert_eq!(result["service"], "systemd");
         let file = result["file"].as_str().unwrap();
         let content = std::fs::read_to_string(file).unwrap();
         assert!(content.contains("ExecStart="));
-        assert!(content.contains("mcp serve --transport sse"));
+        assert!(content.contains("mcp serve --transport http"));
+        assert!(content.contains("FIGHORSE_MCP_LOCAL_WRITE=deny"));
         let _ = std::fs::remove_dir_all(&tmp);
     }
 
     #[test]
-    fn claude_mcp_payload_transforms_all_transports() {
+    fn claude_mcp_payload_accepts_http_and_explicit_stdio_but_rejects_sse() {
         // HTTP: transport -> type, url preserved.
         let http = json!({"transport": "http", "url": "http://127.0.0.1:9449/mcp"});
-        let p = claude_mcp_payload(&http);
+        let p = claude_mcp_payload(&http).unwrap();
         assert_eq!(p["type"], "http");
         assert_eq!(p["url"], "http://127.0.0.1:9449/mcp");
         assert!(p.get("transport").is_none());
 
-        // SSE.
         let sse = json!({"transport": "sse", "url": "http://127.0.0.1:9449/sse"});
-        let p = claude_mcp_payload(&sse);
-        assert_eq!(p["type"], "sse");
+        let error = claude_mcp_payload(&sse).unwrap_err().to_string();
+        assert!(error.contains("--transport http"));
+        assert!(error.contains("/mcp"));
 
         // stdio: no transport field -> type=stdio, command/args/env preserved.
         let stdio = json!({
@@ -1783,7 +2762,7 @@ mod tests {
             "args": ["mcp", "serve", "--transport", "stdio"],
             "env": {"FIGHORSE_MCP_MODE": "readonly"}
         });
-        let p = claude_mcp_payload(&stdio);
+        let p = claude_mcp_payload(&stdio).unwrap();
         assert_eq!(p["type"], "stdio");
         assert_eq!(p["command"], "/path/to/fighorse");
         assert!(p["args"].is_array());
@@ -1793,17 +2772,22 @@ mod tests {
     #[test]
     fn opencode_mcp_payload_transforms_all_transports() {
         let http = json!({"transport": "http", "url": "http://127.0.0.1:9449/mcp"});
-        let p = opencode_mcp_payload(&http);
+        let p = opencode_mcp_payload(&http).unwrap();
         assert_eq!(p["type"], "remote");
         assert_eq!(p["url"], "http://127.0.0.1:9449/mcp");
         assert_eq!(p["enabled"], true);
 
         let stdio = json!({"command": "fighorse", "args": ["mcp", "serve"], "env": {"K": "v"}});
-        let p = opencode_mcp_payload(&stdio);
+        let p = opencode_mcp_payload(&stdio).unwrap();
         assert_eq!(p["type"], "local");
         assert_eq!(p["enabled"], true);
         assert_eq!(p["command"], "fighorse");
         assert_eq!(p["env"]["K"], "v");
+
+        let sse = json!({"transport": "sse", "url": "http://127.0.0.1:9449/sse"});
+        let error = opencode_mcp_payload(&sse).unwrap_err().to_string();
+        assert!(error.contains("--transport http"));
+        assert!(error.contains("/mcp"));
     }
 
     #[test]
@@ -1826,7 +2810,11 @@ mod tests {
         let source = tmp.join("source-fighorse");
         std::fs::write(&source, "#!/bin/sh\necho fighorse\n").unwrap();
         set_executable(&source);
-        let link_dirs = format!("{},{}", writable.to_string_lossy(), locked.to_string_lossy());
+        let link_dirs = format!(
+            "{},{}",
+            writable.to_string_lossy(),
+            locked.to_string_lossy()
+        );
         let result = install_binary(
             Some(&source.to_string_lossy()),
             None,
@@ -1901,7 +2889,7 @@ mod tests {
         let result = install_all(&opts).unwrap();
         assert_eq!(result["mode"], "service");
         assert_eq!(result["clients"], serde_json::json!(["cursor", "codex"]));
-        assert_eq!(result["service"]["transport"], "http+sse");
+        assert_eq!(result["service"]["transport"], "http");
         assert!(result["service"]["file"].is_string());
         let _ = std::fs::remove_dir_all(&tmp);
     }
@@ -1934,7 +2922,11 @@ mod tests {
         assert!(PathBuf::from(target).is_absolute());
         assert_eq!(self_result["kind"], "fighorse.install-self.v1");
         assert_eq!(self_result["guide"]["kind"], "fighorse.install-guide.v1");
-        assert!(tmp.join("skills").join("fighorse").join("SKILL.md").exists());
+        assert!(tmp
+            .join("skills")
+            .join("fighorse")
+            .join("SKILL.md")
+            .exists());
         let _ = std::fs::remove_dir_all(&tmp);
     }
 }

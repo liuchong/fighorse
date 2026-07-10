@@ -1,0 +1,4 @@
+[mcp_servers.fighorse]
+url = "http://127.0.0.1:9449/mcp"
+enabled = true
+startup_timeout_sec = 60

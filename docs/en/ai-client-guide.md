@@ -10,7 +10,8 @@ Use the installer when possible:
 fighorse install client --client cursor --apply
 fighorse install client --client codex --apply
 fighorse install client --client kimi --apply
-fighorse install skill --clients cursor,codex,kimi --apply
+fighorse install client --client claude --apply
+fighorse install skill --clients cursor,codex,kimi,claude --apply
 ```
 
 For generated configs without applying:
@@ -19,6 +20,7 @@ For generated configs without applying:
 fighorse mcp config --client cursor --transport http
 fighorse mcp config --client codex --transport http
 fighorse mcp config --client kimi --transport http
+fighorse mcp config --client claude --transport http
 fighorse mcp config --client opencode --transport http
 ```
 
@@ -47,10 +49,15 @@ Recommended installed MCP config:
 Recommended local service:
 
 ```bash
-fighorse install --default --mode service --clients cursor,codex,kimi --apply
+fighorse install --default --mode service --clients cursor,codex,kimi,claude --apply
+fighorse install verify
 ```
 
-Connect to `http://127.0.0.1:9449/mcp` when the client supports Streamable HTTP. The legacy SSE endpoint remains available at `http://127.0.0.1:9449/sse`, and stdio remains an explicit compatibility mode. Installed clients should prefer the shared local service so the system has only one long-running `fighorse` MCP process.
+Connect to `http://127.0.0.1:9449/mcp` with the official Rust `rmcp` 2.2 Streamable HTTP service. It keeps independent stateful sessions, validates Host and Origin, negotiates JSON or event-stream responses, and shuts down gracefully. Legacy `/sse` and `/messages` endpoints are absent; `--transport sse` fails with guidance to use HTTP. A `text/event-stream` response from `/mcp` is standard Streamable HTTP behavior, not the legacy transport. Standard stdio remains an explicit compatibility mode.
+
+The installer activates the service, waits for `/health`, completes `initialize` and `tools/list`, then writes clients and skills. Managed hashes, backups, and `desired_absent` removals live in `~/.fighorse/install/manifest.json` and `~/.fighorse/install/backups/`; `fighorse install rollback` restores unchanged managed files and prior service state.
+
+Canonical instruction targets are `~/.agents/skills/fighorse/SKILL.md` for Cursor/Kimi/Codex, `~/.claude/skills/fighorse/SKILL.md` for Claude, and `~/.cursor/rules/fighorse.mdc` for Cursor.
 
 ## Mandatory Startup Flow
 
@@ -232,7 +239,6 @@ Expected config shape:
 {
   "mcpServers": {
     "fighorse": {
-      "transport": "http",
       "url": "http://127.0.0.1:9449/mcp"
     }
   }
@@ -272,7 +278,7 @@ fighorse install status
 curl http://127.0.0.1:9449/health
 ```
 
-Common failure: Codex may initialize a fresh Streamable HTTP session each time it starts. `/mcp` must accept repeated `initialize` requests and return MCP JSON/SSE, not `text/plain`. Restart the fighorse service after upgrading.
+Common failure: Codex may initialize a new Streamable HTTP session each time it starts. `/mcp` must create an independent stateful session and return a standard MCP JSON or event-stream response. Restart the fighorse service after upgrading.
 
 ### Kimi
 
@@ -287,6 +293,8 @@ Expected command shape:
 ```bash
 kimi mcp add --transport http fighorse http://127.0.0.1:9449/mcp
 ```
+
+Expected config payload: `{"transport":"http","url":"http://127.0.0.1:9449/mcp"}`.
 
 Verify:
 
@@ -311,7 +319,7 @@ Expected config shape:
 {
   "mcpServers": {
     "fighorse": {
-      "transport": "http",
+      "type": "http",
       "url": "http://127.0.0.1:9449/mcp"
     }
   }
@@ -392,7 +400,7 @@ For explicit stdio compatibility only:
   "args": ["mcp", "serve", "--transport", "stdio"],
   "env": {
     "FIGHORSE_MCP_MODE": "readonly",
-    "FIGHORSE_MCP_LOCAL_WRITE": "allow"
+    "FIGHORSE_MCP_LOCAL_WRITE": "deny"
   }
 }
 ```

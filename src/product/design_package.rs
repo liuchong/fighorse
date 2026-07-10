@@ -27,11 +27,17 @@ impl Source {
         }
         m.insert(
             "file_key".into(),
-            self.file_key.clone().map(Value::String).unwrap_or(Value::Null),
+            self.file_key
+                .clone()
+                .map(Value::String)
+                .unwrap_or(Value::Null),
         );
         m.insert(
             "node_id".into(),
-            self.node_id.clone().map(Value::String).unwrap_or(Value::Null),
+            self.node_id
+                .clone()
+                .map(Value::String)
+                .unwrap_or(Value::Null),
         );
         Value::Object(m)
     }
@@ -58,7 +64,10 @@ pub fn resolve_source(
 }
 
 fn normalize_target(value: Option<&str>, default: &str) -> String {
-    match value.map(|v| v.trim().to_lowercase()).filter(|v| !v.is_empty()) {
+    match value
+        .map(|v| v.trim().to_lowercase())
+        .filter(|v| !v.is_empty())
+    {
         Some(v) => v,
         None => default.to_string(),
     }
@@ -223,12 +232,12 @@ fn screen_candidates(target: &Value) -> Value {
             let bounds = node_bounds(&node);
             let w = bounds.get("width").and_then(|v| v.as_f64());
             let h = bounds.get("height").and_then(|v| v.as_f64());
-            let reason = if w.map(|w| w > 200.0).unwrap_or(false) && h.map(|h| h > 200.0).unwrap_or(false)
-            {
-                "large candidate frame/component"
-            } else {
-                "structural candidate"
-            };
+            let reason =
+                if w.map(|w| w > 200.0).unwrap_or(false) && h.map(|h| h > 200.0).unwrap_or(false) {
+                    "large candidate frame/component"
+                } else {
+                    "structural candidate"
+                };
             json!({
                 "id": node.get("id").cloned().unwrap_or(Value::Null),
                 "name": node.get("name").cloned().unwrap_or(Value::Null),
@@ -366,7 +375,11 @@ fn file_summary(data: &Value) -> Value {
     Value::Object(m)
 }
 
-fn implementation_risk_checklist(target: &Value, platform: Option<&str>, asset_format: Option<&str>) -> Value {
+fn implementation_risk_checklist(
+    target: &Value,
+    platform: Option<&str>,
+    asset_format: Option<&str>,
+) -> Value {
     let mut checklist = vec![
         Value::String("Check selected target scope before coding; CANVAS or flow nodes should be narrowed to frames.".into()),
         Value::String("Check screenshot fidelity after implementation, not only structured JSON.".into()),
@@ -377,10 +390,14 @@ fn implementation_risk_checklist(target: &Value, platform: Option<&str>, asset_f
         checklist.push(Value::String("Target platform is unspecified; ask before choosing framework, density, or native controls.".into()));
     }
     if is_blank(asset_format) {
-        checklist.push(Value::String("Asset format is unspecified; ask before exporting final slices.".into()));
+        checklist.push(Value::String(
+            "Asset format is unspecified; ask before exporting final slices.".into(),
+        ));
     }
     if target.get("type").and_then(|v| v.as_str()) == Some("CANVAS") {
-        checklist.push(Value::String("Current target is a CANVAS/page; use screen_candidates to pick exact frames.".into()));
+        checklist.push(Value::String(
+            "Current target is a CANVAS/page; use screen_candidates to pick exact frames.".into(),
+        ));
     }
     Value::Array(checklist)
 }
@@ -456,10 +473,14 @@ fn diagnostics(
 
     let mut warnings: Vec<Value> = Vec::new();
     if image_count == 0 {
-        warnings.push(Value::String("No screenshot URL was returned. Use get_screenshot or lower the target scope.".into()));
+        warnings.push(Value::String(
+            "No screenshot URL was returned. Use get_screenshot or lower the target scope.".into(),
+        ));
     }
     if token_total == 0 {
-        warnings.push(Value::String("No design tokens were extracted. Inspect context fills/textStyle directly.".into()));
+        warnings.push(Value::String(
+            "No design tokens were extracted. Inspect context fills/textStyle directly.".into(),
+        ));
     }
     if is_truncated {
         warnings.push(Value::String("Context was token-budget truncated. Request a smaller node or larger max_tokens for more detail.".into()));
@@ -512,7 +533,15 @@ fn package_base(
     };
     let learned = experience::guidance(&filters, 6, &ScopeOpts::default());
 
-    let mut diag = diagnostics(target, compacted, grouped_tokens, screenshots, assets, platform, asset_format);
+    let mut diag = diagnostics(
+        target,
+        compacted,
+        grouped_tokens,
+        screenshots,
+        assets,
+        platform,
+        asset_format,
+    );
     if let Some(obj) = diag.as_object_mut() {
         obj.insert(
             "experience".into(),
@@ -585,7 +614,12 @@ fn num_str(n: f64) -> String {
 /// Build a full design package by fetching Figma data and assembling context.
 pub async fn get_design_package(token: &str, opts: PackageOpts<'_>) -> Result<Value> {
     let source = resolve_source(opts.figma_url, opts.file_key, opts.node_id);
-    if source.file_key.as_deref().map(|k| k.is_empty()).unwrap_or(true) {
+    if source
+        .file_key
+        .as_deref()
+        .map(|k| k.is_empty())
+        .unwrap_or(true)
+    {
         return Err(Error::Other("A Figma URL or file_key is required".into()));
     }
     let file_key = source.file_key.clone().unwrap();
@@ -594,12 +628,29 @@ pub async fn get_design_package(token: &str, opts: PackageOpts<'_>) -> Result<Va
 
     let data = if let Some(nid) = &node_id {
         if !nid.is_empty() {
-            files_api::get_file_nodes(token, &file_key, nid, None, Some(&depth_str), None, None).await?
+            files_api::get_file_nodes(token, &file_key, nid, None, Some(&depth_str), None, None)
+                .await?
         } else {
-            files_api::get_file(token, &file_key, None, None, Some(&depth_str), None, None, None).await?
+            files_api::get_file(
+                token,
+                &file_key,
+                files_api::GetFileParams {
+                    depth: Some(&depth_str),
+                    ..Default::default()
+                },
+            )
+            .await?
         }
     } else {
-        files_api::get_file(token, &file_key, None, None, Some(&depth_str), None, None, None).await?
+        files_api::get_file(
+            token,
+            &file_key,
+            files_api::GetFileParams {
+                depth: Some(&depth_str),
+                ..Default::default()
+            },
+        )
+        .await?
     };
 
     let target = figma::response_to_node(&data);

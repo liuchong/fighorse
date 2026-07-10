@@ -113,10 +113,7 @@ pub async fn request(
     };
 
     let status = resp.status();
-    let status_text = status
-        .canonical_reason()
-        .unwrap_or("")
-        .to_string();
+    let status_text = status.canonical_reason().unwrap_or("").to_string();
     let text = resp.text().await.unwrap_or_default();
     let parsed = parse_body(&text);
 

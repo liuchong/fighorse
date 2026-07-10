@@ -292,7 +292,7 @@ pub fn schema() -> Value {
             "recommendation": "Action AI should take next time.",
             "evidence": "What happened: screenshot diff, build error, overlap, etc.",
             "tags": "Comma-separated string or array.",
-            "tool_context": {"client": "cursor|codex|kimi-cli|opencode|other", "command": "CLI command or MCP tool that surfaced the issue"}
+            "tool_context": {"client": "cursor|codex|kimi|claude|opencode|other", "command": "CLI command or MCP tool that surfaced the issue"}
         }
     })
 }
@@ -340,16 +340,16 @@ fn iso8601_from_epoch(secs: u64, millis: u32) -> String {
     let m = if mp < 10 { mp + 3 } else { mp - 9 };
     let year = if m <= 2 { y + 1 } else { y };
 
-    format!(
-        "{year:04}-{m:02}-{d:02}T{hour:02}:{min:02}:{sec:02}.{millis:03}Z"
-    )
+    format!("{year:04}-{m:02}-{d:02}T{hour:02}:{min:02}:{sec:02}.{millis:03}Z")
 }
 
 fn random_id() -> String {
     // No Date.now/random determinism concerns here (real CLI). Use time + a
     // pseudo-random suffix derived from nanos.
     use std::time::{SystemTime, UNIX_EPOCH};
-    let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default();
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default();
     format!("{}-{}", now.as_millis(), now.subsec_nanos() % 1_000_000)
 }
 
@@ -370,22 +370,32 @@ pub fn normalize_record(input: &Value) -> Result<Value> {
         let mut m = Map::new();
         m.insert(
             "figma_url".into(),
-            str_or_null(field(input, &["figma_url", "figma-url"]).or_else(|| source_obj.and_then(|s| field(s, &["figma_url", "figma-url"])))),
+            str_or_null(
+                field(input, &["figma_url", "figma-url"])
+                    .or_else(|| source_obj.and_then(|s| field(s, &["figma_url", "figma-url"]))),
+            ),
         );
         m.insert(
             "file_key".into(),
-            str_or_null(field(input, &["file_key", "file-key"]).or_else(|| source_obj.and_then(|s| field(s, &["file_key", "file-key"])))),
+            str_or_null(
+                field(input, &["file_key", "file-key"])
+                    .or_else(|| source_obj.and_then(|s| field(s, &["file_key", "file-key"]))),
+            ),
         );
         m.insert(
             "node_id".into(),
-            str_or_null(field(input, &["node_id", "node-id"]).or_else(|| source_obj.and_then(|s| field(s, &["node_id", "node-id"])))),
+            str_or_null(
+                field(input, &["node_id", "node-id"])
+                    .or_else(|| source_obj.and_then(|s| field(s, &["node_id", "node-id"]))),
+            ),
         );
         clean_map(m)
     };
 
     let target = {
         let platform = normalize_scalar(
-            field(input, &["platform"]).or_else(|| target_obj.and_then(|t| field(t, &["platform"]))),
+            field(input, &["platform"])
+                .or_else(|| target_obj.and_then(|t| field(t, &["platform"]))),
             None,
         );
         let asset_format = normalize_scalar(
@@ -403,11 +413,16 @@ pub fn normalize_record(input: &Value) -> Result<Value> {
         let mut m = Map::new();
         m.insert(
             "client".into(),
-            str_or_null(field(input, &["client"]).or_else(|| tool_obj.and_then(|t| field(t, &["client"])))),
+            str_or_null(
+                field(input, &["client"]).or_else(|| tool_obj.and_then(|t| field(t, &["client"]))),
+            ),
         );
         m.insert(
             "command".into(),
-            str_or_null(field(input, &["command"]).or_else(|| tool_obj.and_then(|t| field(t, &["command"])))),
+            str_or_null(
+                field(input, &["command"])
+                    .or_else(|| tool_obj.and_then(|t| field(t, &["command"]))),
+            ),
         );
         clean_map(m)
     };
@@ -556,12 +571,13 @@ pub struct Filters {
 
 fn matches(record: &Value, f: &Filters) -> bool {
     let target = record.get("target");
-    matches_text(f.platform.as_deref(), target.and_then(|t| t.get("platform")))
-        && matches_text(
-            f.asset_format.as_deref(),
-            target.and_then(|t| t.get("asset_format")),
-        )
-        && matches_text(f.category.as_deref(), record.get("category"))
+    matches_text(
+        f.platform.as_deref(),
+        target.and_then(|t| t.get("platform")),
+    ) && matches_text(
+        f.asset_format.as_deref(),
+        target.and_then(|t| t.get("asset_format")),
+    ) && matches_text(f.category.as_deref(), record.get("category"))
         && match f.tag.as_deref().and_then(|t| {
             let t = t.trim();
             if t.is_empty() {
@@ -619,7 +635,10 @@ pub fn list_experiences(filters: &Filters, limit: usize, opts: &ScopeOpts) -> Va
     let filters_map = {
         let mut m = Map::new();
         m.insert("platform".into(), opt_string(filters.platform.clone()));
-        m.insert("asset_format".into(), opt_string(filters.asset_format.clone()));
+        m.insert(
+            "asset_format".into(),
+            opt_string(filters.asset_format.clone()),
+        );
         m.insert("category".into(), opt_string(filters.category.clone()));
         m.insert("tag".into(), opt_string(filters.tag.clone()));
         m.insert("scope".into(), opt_string(opts.scope.clone()));
@@ -669,7 +688,10 @@ pub fn guidance_markdown(data: &Value) -> String {
         .and_then(|r| r.as_array())
         .cloned()
         .unwrap_or_default();
-    let instruction = data.get("instruction").and_then(|v| v.as_str()).unwrap_or("");
+    let instruction = data
+        .get("instruction")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
     let store_path = data
         .get("summary")
         .and_then(|s| s.get("store_path"))
@@ -811,6 +833,9 @@ mod tests {
     #[test]
     fn iso8601_format() {
         // 2021-01-01T00:00:00.000Z is epoch 1609459200.
-        assert_eq!(iso8601_from_epoch(1_609_459_200, 0), "2021-01-01T00:00:00.000Z");
+        assert_eq!(
+            iso8601_from_epoch(1_609_459_200, 0),
+            "2021-01-01T00:00:00.000Z"
+        );
     }
 }

@@ -6,11 +6,11 @@
 
 use super::args::{flag_present, optional_float, optional_int, parse_flags};
 use super::{
-    err_message, parse_json_map, print_data, read_stdin, require_arg, require_token,
-    require_value, write_output,
+    err_message, parse_json_map, print_data, read_stdin, require_arg, require_token, require_value,
+    write_output,
 };
 use crate::api::{
-    coverage as api_coverage, comments as comments_api, components as components_api,
+    comments as comments_api, components as components_api, coverage as api_coverage,
     dev_resources as dev_resources_api, files as files_api, operations as api_operations,
     projects as projects_api, styles as styles_api, users as users_api, variables as variables_api,
     webhooks as webhooks_api,
@@ -46,7 +46,8 @@ pub fn cmd_auth_login(args: &[String]) -> Result<()> {
     let token = raw_token.map(|t| t.trim().to_string());
     match token {
         Some(t) if !t.is_empty() => {
-            config::save_config(&json!({ "token": t }))?;
+            let home = config::fighorse_home();
+            crate::install::install_auth(Some(&t), home.to_str(), true)?;
             println!("Saved Figma token to {}", config::config_path().display());
             Ok(())
         }
@@ -58,7 +59,8 @@ pub fn cmd_auth_login(args: &[String]) -> Result<()> {
 }
 
 pub fn cmd_auth_logout(_args: &[String]) -> Result<()> {
-    config::clear_config()?;
+    let home = config::fighorse_home();
+    crate::install::logout_auth(home.to_str())?;
     println!("Removed saved Figma token");
     Ok(())
 }
@@ -98,7 +100,10 @@ unsafe fn libc_isatty(fd: i32) -> bool {
 
 pub async fn cmd_file_get(args: &[String]) -> Result<()> {
     let token = require_token();
-    let flags = parse_flags(args, &["--version", "--depth", "--ids", "--geometry", "--output"]);
+    let flags = parse_flags(
+        args,
+        &["--version", "--depth", "--ids", "--geometry", "--output"],
+    );
     let file_key = require_arg(&flags.rest, 0, "file-key").to_string();
     let depth = flags
         .get("depth")
@@ -107,12 +112,13 @@ pub async fn cmd_file_get(args: &[String]) -> Result<()> {
     let data = files_api::get_file(
         &token,
         &file_key,
-        flags.get("version"),
-        flags.get("ids"),
-        depth.as_deref(),
-        flags.get("geometry"),
-        None,
-        None,
+        files_api::GetFileParams {
+            version: flags.get("version"),
+            ids: flags.get("ids"),
+            depth: depth.as_deref(),
+            geometry: flags.get("geometry"),
+            ..Default::default()
+        },
     )
     .await?;
     print_data(&data, flags.get("output"))
@@ -149,7 +155,8 @@ pub async fn cmd_file_versions(args: &[String]) -> Result<()> {
     let file_key = require_arg(args, 0, "file-key").to_string();
     let rest: Vec<String> = args.iter().skip(1).cloned().collect();
     let flags = parse_flags(&rest, &["--page-size"]);
-    let data = files_api::get_file_versions(&token, &file_key, flags.get("page_size"), None, None).await?;
+    let data =
+        files_api::get_file_versions(&token, &file_key, flags.get("page_size"), None, None).await?;
     print_data(&data, None)
 }
 
@@ -162,12 +169,11 @@ pub async fn cmd_file_compact(args: &[String]) -> Result<()> {
     let data = files_api::get_file(
         &token,
         &file_key,
-        None,
-        flags.get("ids"),
-        depth.map(int_str).as_deref(),
-        None,
-        None,
-        None,
+        files_api::GetFileParams {
+            ids: flags.get("ids"),
+            depth: depth.map(int_str).as_deref(),
+            ..Default::default()
+        },
     )
     .await?;
     let node = figma::response_to_node(&data);
@@ -196,17 +202,15 @@ pub async fn cmd_file_tree(args: &[String]) -> Result<()> {
     let data = files_api::get_file(
         &token,
         &file_key,
-        None,
-        None,
-        Some(&int_str(effective_depth)),
-        None,
-        None,
-        None,
+        files_api::GetFileParams {
+            depth: Some(&int_str(effective_depth)),
+            ..Default::default()
+        },
     )
     .await?;
     let doc = data.get("document").cloned().unwrap_or(Value::Null);
     // file tree uses only dimension + layout extractors.
-    let tree = compact::simplify_tree_with(&doc, depth, &compact::TREE_EXTRACTORS);
+    let tree = compact::simplify_tree_with(&doc, depth, compact::TREE_EXTRACTORS);
     print_data(&tree, flags.get("output"))
 }
 
@@ -222,12 +226,10 @@ pub async fn cmd_file_to_md(args: &[String]) -> Result<()> {
     let data = files_api::get_file(
         &token,
         &file_key,
-        None,
-        None,
-        Some(&int_str(effective_depth)),
-        None,
-        None,
-        None,
+        files_api::GetFileParams {
+            depth: Some(&int_str(effective_depth)),
+            ..Default::default()
+        },
     )
     .await?;
     let doc = data.get("document").cloned().unwrap_or(Value::Null);
@@ -263,8 +265,18 @@ pub async fn cmd_file_to_md(args: &[String]) -> Result<()> {
         if !ids.is_empty() {
             let joined = ids.join(",");
             let image_data = files_api::get_images(
-                &token, &file_key, &joined, None, Some("2"), Some("png"), None, None, None, None,
-                None, None,
+                &token,
+                &file_key,
+                &joined,
+                None,
+                Some("2"),
+                Some("png"),
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
             )
             .await?;
             if let Some(images) = image_data.get("images").and_then(|v| v.as_object()) {
@@ -305,16 +317,29 @@ pub async fn cmd_file_diff(args: &[String]) -> Result<()> {
     let flags = parse_flags(args, &["--from", "--to", "--depth", "--output"]);
     let file_key = require_arg(&flags.rest, 0, "file-key").to_string();
     let depth = optional_int(flags.get("depth"));
-    let from = require_value(
-        flags.get("from").or_else(|| flags.arg(1)),
-        "--from",
-    );
+    let from = require_value(flags.get("from").or_else(|| flags.arg(1)), "--from");
     let to = require_value(flags.get("to").or_else(|| flags.arg(2)), "--to");
 
     let depth_str = depth.map(int_str);
     let (old_data, new_data) = tokio::try_join!(
-        files_api::get_file(&token, &file_key, Some(&from), None, depth_str.as_deref(), None, None, None),
-        files_api::get_file(&token, &file_key, Some(&to), None, depth_str.as_deref(), None, None, None),
+        files_api::get_file(
+            &token,
+            &file_key,
+            files_api::GetFileParams {
+                version: Some(&from),
+                depth: depth_str.as_deref(),
+                ..Default::default()
+            }
+        ),
+        files_api::get_file(
+            &token,
+            &file_key,
+            files_api::GetFileParams {
+                version: Some(&to),
+                depth: depth_str.as_deref(),
+                ..Default::default()
+            }
+        ),
     )?;
     let old_doc = old_data.get("document").cloned().unwrap_or(Value::Null);
     let new_doc = new_data.get("document").cloned().unwrap_or(Value::Null);
@@ -335,19 +360,20 @@ pub async fn cmd_file_schema(args: &[String]) -> Result<()> {
     let data = files_api::get_file(
         &token,
         &file_key,
-        None,
-        None,
-        depth.map(int_str).as_deref(),
-        None,
-        None,
-        None,
+        files_api::GetFileParams {
+            depth: depth.map(int_str).as_deref(),
+            ..Default::default()
+        },
     )
     .await?;
     let doc = data.get("document").cloned().unwrap_or(Value::Null);
     match schema::infer_component_schema(&doc, &component_id) {
         Some(inferred) => {
             if format == "ts" {
-                write_output(&schema::schema_to_typescript(&inferred), flags.get("output"))
+                write_output(
+                    &schema::schema_to_typescript(&inferred),
+                    flags.get("output"),
+                )
             } else {
                 print_data(&inferred, flags.get("output"))
             }
@@ -363,7 +389,10 @@ pub async fn cmd_file_schema(args: &[String]) -> Result<()> {
 
 pub async fn cmd_tokens_extract(args: &[String]) -> Result<()> {
     let token = require_token();
-    let flags = parse_flags(args, &["--depth", "--format", "--prefix", "--output", "--category"]);
+    let flags = parse_flags(
+        args,
+        &["--depth", "--format", "--prefix", "--output", "--category"],
+    );
     let file_key = require_arg(&flags.rest, 0, "file-key").to_string();
     let depth = optional_int(flags.get("depth")).or_else(|| optional_int(flags.arg(1)));
     let format = flags.get("format").unwrap_or("json");
@@ -374,12 +403,10 @@ pub async fn cmd_tokens_extract(args: &[String]) -> Result<()> {
     let data = files_api::get_file(
         &token,
         &file_key,
-        None,
-        None,
-        Some(&int_str(effective_depth)),
-        None,
-        None,
-        None,
+        files_api::GetFileParams {
+            depth: Some(&int_str(effective_depth)),
+            ..Default::default()
+        },
     )
     .await?;
     let doc = data.get("document").cloned().unwrap_or(Value::Null);
@@ -452,15 +479,18 @@ pub async fn cmd_images_export(args: &[String]) -> Result<()> {
     let manifest = flag_present(args, "--manifest");
     let node_ids: Vec<String> = ids.split(',').map(String::from).collect();
 
+    let scale = num_str(scale);
     let results = img_export::export_images(
         &token,
         &file_key,
         &node_ids,
-        &format,
-        &num_str(scale),
-        flags.get("dir"),
-        manifest,
-        flags.get("prefix"),
+        &img_export::ExportOptions {
+            format: &format,
+            scale: &scale,
+            dest_dir: flags.get("dir"),
+            manifest,
+            prefix: flags.get("prefix"),
+        },
     )
     .await?;
 
@@ -475,7 +505,10 @@ pub async fn cmd_image_export(args: &[String]) -> Result<()> {
     let flags = parse_flags(args, &["--ids"]);
     let file_key = require_arg(&flags.rest, 0, "file-key").to_string();
     let (ids, remaining): (String, Vec<String>) = match flags.get("ids") {
-        Some(ids) => (ids.to_string(), flags.rest.iter().skip(1).cloned().collect()),
+        Some(ids) => (
+            ids.to_string(),
+            flags.rest.iter().skip(1).cloned().collect(),
+        ),
         None => {
             let ids = require_arg(&flags.rest, 1, "node-ids").to_string();
             (ids, flags.rest.iter().skip(2).cloned().collect())
@@ -578,7 +611,9 @@ pub async fn cmd_components_team(args: &[String]) -> Result<()> {
     let team_id = require_arg(args, 0, "team-id").to_string();
     let rest: Vec<String> = args.iter().skip(1).cloned().collect();
     let flags = parse_flags(&rest, &["--page-size"]);
-    let data = components_api::get_team_components(&token, &team_id, flags.get("page_size"), None, None).await?;
+    let data =
+        components_api::get_team_components(&token, &team_id, flags.get("page_size"), None, None)
+            .await?;
     print_data(&data, None)
 }
 
@@ -607,7 +642,9 @@ pub async fn cmd_components_list(args: &[String]) -> Result<()> {
     let token = require_token();
     let flags = parse_flags(args, &["--team", "--page-size"]);
     if let Some(team) = flags.get("team") {
-        let data = components_api::get_team_components(&token, team, flags.get("page_size"), None, None).await?;
+        let data =
+            components_api::get_team_components(&token, team, flags.get("page_size"), None, None)
+                .await?;
         print_data(&data, None)
     } else {
         let file_key = require_arg(&flags.rest, 0, "file-key").to_string();
@@ -623,7 +660,8 @@ pub async fn cmd_styles_team(args: &[String]) -> Result<()> {
     let team_id = require_arg(args, 0, "team-id").to_string();
     let rest: Vec<String> = args.iter().skip(1).cloned().collect();
     let flags = parse_flags(&rest, &["--page-size"]);
-    let data = styles_api::get_team_styles(&token, &team_id, flags.get("page_size"), None, None).await?;
+    let data =
+        styles_api::get_team_styles(&token, &team_id, flags.get("page_size"), None, None).await?;
     print_data(&data, None)
 }
 
@@ -645,7 +683,8 @@ pub async fn cmd_styles_list(args: &[String]) -> Result<()> {
     let token = require_token();
     let flags = parse_flags(args, &["--team", "--page-size"]);
     if let Some(team) = flags.get("team") {
-        let data = styles_api::get_team_styles(&token, team, flags.get("page_size"), None, None).await?;
+        let data =
+            styles_api::get_team_styles(&token, team, flags.get("page_size"), None, None).await?;
         print_data(&data, None)
     } else {
         let file_key = require_arg(&flags.rest, 0, "file-key").to_string();
@@ -725,7 +764,10 @@ pub fn cmd_figma_api_coverage(args: &[String]) -> Result<()> {
     let flags = parse_flags(args, &["--format", "--output"]);
     let report = api_coverage::coverage_report();
     if flags.get("format") == Some("md") {
-        write_output(&api_coverage::coverage_report_markdown(&report), flags.get("output"))
+        write_output(
+            &api_coverage::coverage_report_markdown(&report),
+            flags.get("output"),
+        )
     } else {
         print_data(&report, flags.get("output"))
     }
@@ -777,7 +819,10 @@ pub fn cmd_discover(args: &[String]) -> Result<()> {
     let flags = parse_flags(args, &["--format", "--output"]);
     let manifest = crate::discovery::manifest();
     if flags.get("format") == Some("md") {
-        write_output(&crate::discovery::manifest_markdown(&manifest), flags.get("output"))
+        write_output(
+            &crate::discovery::manifest_markdown(&manifest),
+            flags.get("output"),
+        )
     } else {
         print_data(&manifest, flags.get("output"))
     }
@@ -793,7 +838,10 @@ pub fn cmd_quickstart(args: &[String]) -> Result<()> {
     if flags.get("format") == Some("json") {
         print_data(&report, flags.get("output"))
     } else {
-        write_output(&crate::discovery::quickstart_markdown(&report), flags.get("output"))
+        write_output(
+            &crate::discovery::quickstart_markdown(&report),
+            flags.get("output"),
+        )
     }
 }
 
@@ -803,19 +851,31 @@ pub fn cmd_doctor(args: &[String]) -> Result<()> {
 }
 
 pub fn cmd_mcp_config(args: &[String]) -> Result<()> {
-    let flags = parse_flags(args, &["--client", "--transport", "--port", "--command", "--output"]);
+    let flags = parse_flags(
+        args,
+        &["--client", "--transport", "--port", "--command", "--output"],
+    );
     let port = optional_int(flags.get("port")).unwrap_or(9449);
     let config = crate::discovery::mcp_config(
         flags.get("client").unwrap_or("generic"),
         flags.get("transport").unwrap_or("http"),
         port,
         flags.get("command").unwrap_or("fighorse"),
-    );
+    )?;
     print_data(&config, flags.get("output"))
 }
 
 pub fn cmd_visual_audit(args: &[String]) -> Result<()> {
-    let flags = parse_flags(args, &["--screenshot", "--platform", "--asset-format", "--notes", "--output"]);
+    let flags = parse_flags(
+        args,
+        &[
+            "--screenshot",
+            "--platform",
+            "--asset-format",
+            "--notes",
+            "--output",
+        ],
+    );
     let figma_url = require_arg(&flags.rest, 0, "figma-url").to_string();
     let audit = crate::product::visual_audit::audit(
         Some(&figma_url),
@@ -828,7 +888,10 @@ pub fn cmd_visual_audit(args: &[String]) -> Result<()> {
 }
 
 pub fn cmd_project_playbook(args: &[String]) -> Result<()> {
-    let flags = parse_flags(args, &["--platform", "--asset-format", "--project-dir", "--output"]);
+    let flags = parse_flags(
+        args,
+        &["--platform", "--asset-format", "--project-dir", "--output"],
+    );
     let playbook = crate::product::playbook::build(
         flags.get("platform"),
         flags.get("asset_format"),
@@ -842,8 +905,15 @@ pub async fn cmd_design_package(args: &[String]) -> Result<()> {
     let flags = parse_flags(
         args,
         &[
-            "--node-id", "--depth", "--max-tokens", "--output", "--screenshot-format",
-            "--scale", "--screenshot-limit", "--platform", "--asset-format",
+            "--node-id",
+            "--depth",
+            "--max-tokens",
+            "--output",
+            "--screenshot-format",
+            "--scale",
+            "--screenshot-limit",
+            "--platform",
+            "--asset-format",
         ],
     );
     let input = require_arg(&flags.rest, 0, "figma-url-or-file-key").to_string();
@@ -900,7 +970,12 @@ pub async fn cmd_smoke(args: &[String]) -> Result<()> {
             if parsed.node_id.is_none() {
                 next_steps.push(Value::String("Copy a link to a selected frame, component, or group so the URL includes node-id.".into()));
             }
-            if pkg.get("target").and_then(|t| t.get("type")).and_then(|v| v.as_str()) == Some("CANVAS") {
+            if pkg
+                .get("target")
+                .and_then(|t| t.get("type"))
+                .and_then(|v| v.as_str())
+                == Some("CANVAS")
+            {
                 next_steps.push(Value::String("Current target is a CANVAS/page; use screen_candidates from a design package to pick exact frames.".into()));
             }
             let out = json!({
@@ -975,22 +1050,34 @@ pub fn cmd_experience_add(args: &[String]) -> Result<()> {
     let flags = parse_flags(
         args,
         &[
-            "--summary", "--lesson", "--category", "--severity", "--platform",
-            "--asset-format", "--figma-url", "--file-key", "--node-id", "--tags",
-            "--evidence", "--recommendation", "--client", "--command", "--json",
-            "--scope", "--project-dir", "--output",
+            "--summary",
+            "--lesson",
+            "--category",
+            "--severity",
+            "--platform",
+            "--asset-format",
+            "--figma-url",
+            "--file-key",
+            "--node-id",
+            "--tags",
+            "--evidence",
+            "--recommendation",
+            "--client",
+            "--command",
+            "--json",
+            "--scope",
+            "--project-dir",
+            "--output",
         ],
     );
     // stdin fallback when no --json and no --summary and stdin is piped.
-    let stdin_json = if flags.get("json").is_none() && flags.get("summary").is_none() && !atty_stdin() {
-        Some(read_stdin())
-    } else {
-        None
-    };
-    let base = parse_json_map(
-        flags.get("json").or(stdin_json.as_deref()),
-        "experience",
-    );
+    let stdin_json =
+        if flags.get("json").is_none() && flags.get("summary").is_none() && !atty_stdin() {
+            Some(read_stdin())
+        } else {
+            None
+        };
+    let base = parse_json_map(flags.get("json").or(stdin_json.as_deref()), "experience");
 
     let extra = compact_map(vec![
         ("summary", flags.get("summary").map(String::from)),
@@ -1004,7 +1091,10 @@ pub fn cmd_experience_add(args: &[String]) -> Result<()> {
         ("node_id", flags.get("node_id").map(String::from)),
         ("tags", flags.get("tags").map(String::from)),
         ("evidence", flags.get("evidence").map(String::from)),
-        ("recommendation", flags.get("recommendation").map(String::from)),
+        (
+            "recommendation",
+            flags.get("recommendation").map(String::from),
+        ),
         ("client", flags.get("client").map(String::from)),
         ("command", flags.get("command").map(String::from)),
     ]);
@@ -1030,7 +1120,16 @@ pub fn cmd_experience_add(args: &[String]) -> Result<()> {
 pub fn cmd_experience_list(args: &[String]) -> Result<()> {
     let flags = parse_flags(
         args,
-        &["--platform", "--asset-format", "--category", "--tag", "--limit", "--scope", "--project-dir", "--output"],
+        &[
+            "--platform",
+            "--asset-format",
+            "--category",
+            "--tag",
+            "--limit",
+            "--scope",
+            "--project-dir",
+            "--output",
+        ],
     );
     let limit = optional_int(flags.get("limit")).unwrap_or(8) as usize;
     let filters = Filters {
@@ -1043,13 +1142,26 @@ pub fn cmd_experience_list(args: &[String]) -> Result<()> {
         scope: flags.get("scope").map(String::from),
         project_dir: flags.get("project_dir").map(String::from),
     };
-    print_data(&exp::list_experiences(&filters, limit, &opts), flags.get("output"))
+    print_data(
+        &exp::list_experiences(&filters, limit, &opts),
+        flags.get("output"),
+    )
 }
 
 pub fn cmd_experience_summary(args: &[String]) -> Result<()> {
     let flags = parse_flags(
         args,
-        &["--platform", "--asset-format", "--category", "--tag", "--limit", "--format", "--scope", "--project-dir", "--output"],
+        &[
+            "--platform",
+            "--asset-format",
+            "--category",
+            "--tag",
+            "--limit",
+            "--format",
+            "--scope",
+            "--project-dir",
+            "--output",
+        ],
     );
     let limit = optional_int(flags.get("limit")).unwrap_or(6) as usize;
     let filters = Filters {
@@ -1080,9 +1192,15 @@ pub fn fail(e: &crate::error::Error) -> ! {
 
 pub async fn cmd_mcp_serve(args: &[String]) -> Result<()> {
     let flags = parse_flags(args, &["--transport", "--port", "--host", "--cors-origin"]);
-    let transport = flags.get("transport").unwrap_or("sse").to_string();
+    let transport = flags.get("transport").unwrap_or("http").to_string();
     let port = optional_int(flags.get("port")).unwrap_or(9449);
-    crate::mcp::server::serve(&transport, port, flags.get("host"), flags.get("cors_origin")).await
+    crate::mcp::server::serve(
+        &transport,
+        port,
+        flags.get("host"),
+        flags.get("cors_origin"),
+    )
+    .await
 }
 
 // --- Install commands ---
@@ -1099,21 +1217,32 @@ fn stdin_token_if_piped() -> Option<String> {
 
 pub fn cmd_install_home(args: &[String]) -> Result<()> {
     let flags = parse_flags(args, &["--home", "--output"]);
-    print_data(&install::install_home(flags.get("home"))?, flags.get("output"))
+    print_data(
+        &install::install_home(flags.get("home"))?,
+        flags.get("output"),
+    )
 }
 
 pub fn cmd_install_auth(args: &[String]) -> Result<()> {
     let flags = parse_flags(args, &["--token", "--home", "--output"]);
     let apply = flag_present(args, "--apply");
     // clean_args = rest minus --apply.
-    let clean: Vec<&String> = flags.rest.iter().filter(|a| a.as_str() != "--apply").collect();
+    let clean: Vec<&String> = flags
+        .rest
+        .iter()
+        .filter(|a| a.as_str() != "--apply")
+        .collect();
     let stdin_tok = if apply { stdin_token_if_piped() } else { None };
     let token = flags
         .get("token")
         .map(String::from)
         .or_else(|| clean.first().map(|s| s.to_string()))
         .or_else(|| std::env::var("FIGMA_TOKEN").ok().filter(|s| !s.is_empty()))
-        .or_else(|| std::env::var("FIGMA_API_KEY").ok().filter(|s| !s.is_empty()))
+        .or_else(|| {
+            std::env::var("FIGMA_API_KEY")
+                .ok()
+                .filter(|s| !s.is_empty())
+        })
         .or(stdin_tok);
     print_data(
         &install::install_auth(token.as_deref(), flags.get("home"), apply)?,
@@ -1123,20 +1252,43 @@ pub fn cmd_install_auth(args: &[String]) -> Result<()> {
 
 pub fn cmd_install_project(args: &[String]) -> Result<()> {
     let flags = parse_flags(args, &["--project-dir", "--output"]);
-    print_data(&install::install_project(flags.get("project_dir"))?, flags.get("output"))
+    print_data(
+        &install::install_project(flags.get("project_dir"))?,
+        flags.get("output"),
+    )
 }
 
 pub fn cmd_install_skill(args: &[String]) -> Result<()> {
-    let flags = parse_flags(args, &["--dir", "--home", "--client", "--clients", "--output"]);
+    let flags = parse_flags(
+        args,
+        &["--dir", "--home", "--client", "--clients", "--output"],
+    );
     let apply = flag_present(args, "--apply");
     print_data(
-        &install::install_skill(flags.get("dir"), flags.get("home"), flags.get("client"), flags.get("clients"), apply)?,
+        &install::install_skill(
+            flags.get("dir"),
+            flags.get("home"),
+            flags.get("client"),
+            flags.get("clients"),
+            apply,
+        )?,
         flags.get("output"),
     )
 }
 
 pub fn cmd_install_client(args: &[String]) -> Result<()> {
-    let flags = parse_flags(args, &["--client", "--dir", "--transport", "--port", "--command", "--home", "--output"]);
+    let flags = parse_flags(
+        args,
+        &[
+            "--client",
+            "--dir",
+            "--transport",
+            "--port",
+            "--command",
+            "--home",
+            "--output",
+        ],
+    );
     let apply = flag_present(args, "--apply");
     let port = optional_int(flags.get("port")).unwrap_or(9449);
     print_data(
@@ -1153,24 +1305,38 @@ pub fn cmd_install_client(args: &[String]) -> Result<()> {
     )
 }
 
-pub fn cmd_install_service(args: &[String]) -> Result<()> {
-    let flags = parse_flags(args, &["--service", "--port", "--command", "--home", "--output"]);
+pub async fn cmd_install_service(args: &[String]) -> Result<()> {
+    let flags = parse_flags(
+        args,
+        &["--service", "--port", "--command", "--home", "--output"],
+    );
     let apply = flag_present(args, "--apply");
     let port = optional_int(flags.get("port")).unwrap_or(9449);
     print_data(
-        &install::install_service(
+        &install::install_service_async(
             flags.get("service").unwrap_or("auto"),
             port,
             flags.get("command").unwrap_or("fighorse"),
             flags.get("home"),
             apply,
-        )?,
+        )
+        .await?,
         flags.get("output"),
     )
 }
 
 pub fn cmd_install_binary(args: &[String]) -> Result<()> {
-    let flags = parse_flags(args, &["--source", "--target", "--link-dir", "--link-dirs", "--home", "--output"]);
+    let flags = parse_flags(
+        args,
+        &[
+            "--source",
+            "--target",
+            "--link-dir",
+            "--link-dirs",
+            "--home",
+            "--output",
+        ],
+    );
     let apply = flag_present(args, "--apply");
     print_data(
         &install::install_binary(
@@ -1190,7 +1356,27 @@ pub fn cmd_install_status(args: &[String]) -> Result<()> {
     print_data(&install::status(), flags.get("output"))
 }
 
-fn install_opts_from<'a>(flags: &'a super::args::Flags, args: &'a [String]) -> install::InstallOpts<'a> {
+pub async fn cmd_install_verify(args: &[String]) -> Result<()> {
+    let flags = parse_flags(args, &["--home", "--port", "--output"]);
+    let port = optional_int(flags.get("port")).unwrap_or(0);
+    print_data(
+        &install::install_verify(flags.get("home"), port).await?,
+        flags.get("output"),
+    )
+}
+
+pub fn cmd_install_rollback(args: &[String]) -> Result<()> {
+    let flags = parse_flags(args, &["--home", "--output"]);
+    print_data(
+        &install::install_rollback(flags.get("home"))?,
+        flags.get("output"),
+    )
+}
+
+fn install_opts_from<'a>(
+    flags: &'a super::args::Flags,
+    args: &'a [String],
+) -> install::InstallOpts<'a> {
     install::InstallOpts {
         source: flags.get("source"),
         path: flags.get("path").or_else(|| flags.get("project_dir")),
@@ -1212,22 +1398,58 @@ fn install_opts_from<'a>(flags: &'a super::args::Flags, args: &'a [String]) -> i
     }
 }
 
-pub fn cmd_install_self(args: &[String]) -> Result<()> {
+pub async fn cmd_install_self(args: &[String]) -> Result<()> {
     let flags = parse_flags(
         args,
-        &["--source", "--path", "--target", "--client", "--clients", "--transport", "--port",
-          "--command", "--home", "--token", "--mode", "--service", "--link-dir", "--link-dirs", "--output"],
+        &[
+            "--source",
+            "--path",
+            "--target",
+            "--client",
+            "--clients",
+            "--transport",
+            "--port",
+            "--command",
+            "--home",
+            "--token",
+            "--mode",
+            "--service",
+            "--link-dir",
+            "--link-dirs",
+            "--output",
+        ],
     );
     let opts = install_opts_from(&flags, args);
-    print_data(&install::install_self(&opts)?, flags.get("output"))
+    print_data(
+        &install::install_self_async(&opts).await?,
+        flags.get("output"),
+    )
 }
 
-pub fn cmd_install_all(args: &[String]) -> Result<()> {
+pub async fn cmd_install_all(args: &[String]) -> Result<()> {
     let flags = parse_flags(
         args,
-        &["--client", "--clients", "--transport", "--port", "--command", "--home", "--project-dir",
-          "--source", "--target", "--link-dir", "--link-dirs", "--service", "--token", "--mode", "--output"],
+        &[
+            "--client",
+            "--clients",
+            "--transport",
+            "--port",
+            "--command",
+            "--home",
+            "--project-dir",
+            "--source",
+            "--target",
+            "--link-dir",
+            "--link-dirs",
+            "--service",
+            "--token",
+            "--mode",
+            "--output",
+        ],
     );
     let opts = install_opts_from(&flags, args);
-    print_data(&install::install_all(&opts)?, flags.get("output"))
+    print_data(
+        &install::install_all_async(&opts).await?,
+        flags.get("output"),
+    )
 }

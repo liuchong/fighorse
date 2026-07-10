@@ -155,7 +155,11 @@ fn extract_into(tree: &Value, tokens: &mut Vec<Value>) {
 pub fn tokens_by_category(tokens: &[Value]) -> Value {
     let mut grouped: Map<String, Value> = Map::new();
     for t in tokens {
-        let ty = t.get("type").and_then(|v| v.as_str()).unwrap_or("").to_string();
+        let ty = t
+            .get("type")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
         grouped
             .entry(ty)
             .or_insert_with(|| Value::Array(vec![]))
@@ -191,7 +195,11 @@ fn scalar_str(v: &Value) -> String {
 
 fn css_value(token: &Value) -> String {
     match token.get("type").and_then(|v| v.as_str()) {
-        Some("color") => token.get("hex").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+        Some("color") => token
+            .get("hex")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string(),
         Some("spacing") => {
             let obj = token.get("value").and_then(|v| v.as_object());
             match obj {
@@ -279,7 +287,11 @@ pub fn tokens_to_tailwind(tokens: &[Value]) -> Value {
     let non_alnum = regex::Regex::new(r"[^a-z0-9]+").unwrap();
     for t in tokens {
         if t.get("type").and_then(|v| v.as_str()) == Some("color") {
-            let raw = t.get("name").and_then(|v| v.as_str()).unwrap_or("").to_lowercase();
+            let raw = t
+                .get("name")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_lowercase();
             let key = non_alnum.replace_all(&raw, "-").into_owned();
             let hex = t.get("hex").cloned().unwrap_or(Value::Null);
             colors.insert(key, hex);
@@ -300,7 +312,11 @@ pub fn format_tokens(tokens: &[Value], format: &str, prefix: &str) -> Formatted 
     match format {
         "css" => Formatted::Text(tokens_to_css(tokens, prefix)),
         "scss" => {
-            let scss_prefix = if prefix == "--figma-" { "$figma-" } else { prefix };
+            let scss_prefix = if prefix == "--figma-" {
+                "$figma-"
+            } else {
+                prefix
+            };
             Formatted::Text(tokens_to_scss(tokens, scss_prefix))
         }
         "tailwind" => Formatted::Json(tokens_to_tailwind(tokens)),
@@ -342,7 +358,10 @@ mod tests {
     #[test]
     fn extracts_typography() {
         let result = extract_tokens(&sample_tree());
-        let typos: Vec<&Value> = result.iter().filter(|t| t["type"] == "typography").collect();
+        let typos: Vec<&Value> = result
+            .iter()
+            .filter(|t| t["type"] == "typography")
+            .collect();
         assert_eq!(typos.len(), 1);
         assert_eq!(typos[0]["name"], "Title");
     }
@@ -351,7 +370,10 @@ mod tests {
     fn extracts_typography_from_compacted() {
         let simplified = compact::simplify_tree(&sample_tree(), Some(3));
         let result = extract_tokens(&simplified);
-        let typos: Vec<&Value> = result.iter().filter(|t| t["type"] == "typography").collect();
+        let typos: Vec<&Value> = result
+            .iter()
+            .filter(|t| t["type"] == "typography")
+            .collect();
         assert_eq!(typos.len(), 1);
         assert_eq!(typos[0]["value"]["fontSize"], 24);
     }

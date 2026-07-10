@@ -4,12 +4,16 @@
 //! URLs, then downloads them into an allow-listed export directory.
 
 use crate::api::files;
+use crate::config;
 use crate::error::{Error, Result};
 use crate::http;
 use serde_json::{json, Value};
-use std::path::{Path, PathBuf};
+use std::io::Write;
+use std::path::{Component, Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 
 const DEFAULT_EXPORT_DIR: &str = "./.fighorse/exports";
+static EXPORT_TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
 /// Normalize a format string to one of svg/pdf/jpg/png.
 pub fn normalize_format(format: &str) -> String {
@@ -81,22 +85,46 @@ fn safe_name(s: &str) -> String {
 }
 
 fn allowed_export_roots() -> Vec<PathBuf> {
-    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-    let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
-    vec![
+    let cwd = canonical_anchor(&std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
+    let home = canonical_anchor(&dirs::home_dir().unwrap_or_else(|| PathBuf::from(".")));
+    let mut roots = vec![
         cwd.join(".fighorse").join("exports"),
         cwd.join("assets").join("fighorse"),
         home.join(".fighorse").join("exports"),
-    ]
+    ];
+    if std::env::var("FIGHORSE_MCP_SERVICE").is_ok_and(|value| !value.is_empty()) {
+        roots.push(canonical_anchor(&config::fighorse_home()).join("exports"));
+    }
+    roots
 }
 
 fn child_path(root: &Path, target: &Path) -> bool {
     root == target || target.starts_with(root)
 }
 
+fn normalize_path(path: &Path) -> PathBuf {
+    let mut normalized = PathBuf::new();
+    for component in path.components() {
+        match component {
+            Component::Prefix(prefix) => normalized.push(prefix.as_os_str()),
+            Component::RootDir => normalized.push(Path::new(std::path::MAIN_SEPARATOR_STR)),
+            Component::CurDir => {}
+            Component::ParentDir => {
+                normalized.pop();
+            }
+            Component::Normal(part) => normalized.push(part),
+        }
+    }
+    normalized
+}
+
+fn canonical_anchor(path: &Path) -> PathBuf {
+    canonical_path(path)
+}
+
 /// Find the nearest existing ancestor directory of `target`.
 fn existing_ancestor(target: &Path) -> PathBuf {
-    let mut dir = target.to_path_buf();
+    let mut dir = normalize_path(target);
     loop {
         if dir.exists() {
             return dir;
@@ -110,28 +138,38 @@ fn existing_ancestor(target: &Path) -> PathBuf {
 
 /// Canonicalize a path, resolving symlinks up to the nearest existing ancestor.
 fn canonical_path(target: &Path) -> PathBuf {
-    let ancestor = existing_ancestor(target);
-    let relative = target.strip_prefix(&ancestor).unwrap_or(target);
+    let normalized = normalize_path(target);
+    let ancestor = existing_ancestor(&normalized);
+    let relative = normalized.strip_prefix(&ancestor).unwrap_or(&normalized);
     let real_ancestor = std::fs::canonicalize(&ancestor).unwrap_or(ancestor);
-    real_ancestor.join(relative)
+    normalize_path(&real_ancestor.join(relative))
 }
 
 fn first_allowed_root(dest_dir: &Path) -> Option<PathBuf> {
     let target = canonical_path(dest_dir);
     allowed_export_roots().into_iter().find(|root| {
+        let logical_root = normalize_path(root);
         let canonical_root = canonical_path(root);
-        child_path(&canonical_root, &target)
+        canonical_root == logical_root && child_path(&canonical_root, &target)
     })
 }
 
 /// Resolve and create the export directory, enforcing the allow-list.
 fn safe_export_dir(dest_dir: Option<&str>) -> Result<PathBuf> {
-    let dest = dest_dir.unwrap_or(DEFAULT_EXPORT_DIR);
+    let service_default = std::env::var("FIGHORSE_MCP_SERVICE")
+        .ok()
+        .filter(|value| !value.is_empty())
+        .map(|_| config::fighorse_home().join("exports"));
+    let dest_path = match dest_dir {
+        Some(dest) => PathBuf::from(dest),
+        None => service_default.unwrap_or_else(|| PathBuf::from(DEFAULT_EXPORT_DIR)),
+    };
+    let dest = dest_path.to_string_lossy();
     let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-    let resolved = if Path::new(dest).is_absolute() {
-        PathBuf::from(dest)
+    let resolved = if dest_path.is_absolute() {
+        normalize_path(&dest_path)
     } else {
-        cwd.join(dest)
+        normalize_path(&cwd.join(&dest_path))
     };
 
     let root = first_allowed_root(&resolved).ok_or_else(|| {
@@ -151,6 +189,76 @@ fn safe_export_dir(dest_dir: Option<&str>) -> Result<PathBuf> {
     Ok(real_dest)
 }
 
+#[cfg(unix)]
+fn atomic_replace_export_file(path: &Path, content: &[u8]) -> Result<()> {
+    use std::ffi::CString;
+    use std::os::fd::{AsRawFd, FromRawFd};
+    use std::os::unix::ffi::OsStrExt;
+    use std::os::unix::fs::OpenOptionsExt;
+
+    let parent = path
+        .parent()
+        .ok_or_else(|| Error::Usage(format!("Export path has no parent: {}", path.display())))?;
+    let file_name = path
+        .file_name()
+        .ok_or_else(|| Error::Usage(format!("Export path has no file name: {}", path.display())))?;
+    let parent_handle = std::fs::OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_DIRECTORY | libc::O_NOFOLLOW | libc::O_CLOEXEC)
+        .open(parent)?;
+    let dir_fd = parent_handle.as_raw_fd();
+
+    let target_name = CString::new(file_name.as_bytes())
+        .map_err(|_| Error::Usage("Export file name contains a NUL byte".into()))?;
+    let temp_name = CString::new(format!(
+        ".fighorse-write-{}-{}",
+        std::process::id(),
+        EXPORT_TEMP_SEQUENCE.fetch_add(1, Ordering::Relaxed)
+    ))
+    .expect("generated export temporary file name cannot contain NUL");
+    let temp_fd = unsafe {
+        libc::openat(
+            dir_fd,
+            temp_name.as_ptr(),
+            libc::O_WRONLY | libc::O_CREAT | libc::O_EXCL | libc::O_NOFOLLOW | libc::O_CLOEXEC,
+            0o600,
+        )
+    };
+    if temp_fd < 0 {
+        return Err(Error::from(std::io::Error::last_os_error()));
+    }
+
+    let mut temp_file = unsafe { std::fs::File::from_raw_fd(temp_fd) };
+    if let Err(error) = temp_file
+        .write_all(content)
+        .and_then(|_| temp_file.sync_all())
+    {
+        drop(temp_file);
+        unsafe {
+            libc::unlinkat(dir_fd, temp_name.as_ptr(), 0);
+        }
+        return Err(Error::from(error));
+    }
+    drop(temp_file);
+
+    let renamed =
+        unsafe { libc::renameat(dir_fd, temp_name.as_ptr(), dir_fd, target_name.as_ptr()) };
+    if renamed != 0 {
+        let error = std::io::Error::last_os_error();
+        unsafe {
+            libc::unlinkat(dir_fd, temp_name.as_ptr(), 0);
+        }
+        return Err(Error::from(error));
+    }
+    Ok(())
+}
+
+#[cfg(not(unix))]
+fn atomic_replace_export_file(path: &Path, content: &[u8]) -> Result<()> {
+    std::fs::write(path, content)?;
+    Ok(())
+}
+
 fn write_manifest(dir: &Path, kind: &str, entries: &[Value]) -> Result<()> {
     let manifest = json!({
         "kind": kind,
@@ -158,7 +266,7 @@ fn write_manifest(dir: &Path, kind: &str, entries: &[Value]) -> Result<()> {
         "entries": entries,
     });
     let content = serde_json::to_string_pretty(&manifest)?;
-    std::fs::write(dir.join("manifest.json"), content)?;
+    atomic_replace_export_file(&dir.join("manifest.json"), content.as_bytes())?;
     Ok(())
 }
 
@@ -182,7 +290,7 @@ async fn fetch_image(url: &str, dest_path: &str, fallback_ext: &str) -> Result<S
     if let Some(parent) = Path::new(&final_path).parent() {
         std::fs::create_dir_all(parent)?;
     }
-    std::fs::write(&final_path, &bytes)?;
+    atomic_replace_export_file(Path::new(&final_path), &bytes)?;
     Ok(final_path)
 }
 
@@ -191,25 +299,43 @@ pub struct ExportResult {
     pub rows: Vec<(String, String)>,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct ExportOptions<'a> {
+    pub format: &'a str,
+    pub scale: &'a str,
+    pub dest_dir: Option<&'a str>,
+    pub manifest: bool,
+    pub prefix: Option<&'a str>,
+}
+
+impl Default for ExportOptions<'_> {
+    fn default() -> Self {
+        Self {
+            format: "png",
+            scale: "2",
+            dest_dir: None,
+            manifest: false,
+            prefix: None,
+        }
+    }
+}
+
 /// Render and download images for the given node ids.
 pub async fn export_images(
     token: &str,
     file_key: &str,
     node_ids: &[String],
-    format: &str,
-    scale: &str,
-    dest_dir: Option<&str>,
-    manifest: bool,
-    prefix: Option<&str>,
+    options: &ExportOptions<'_>,
 ) -> Result<Vec<(String, String)>> {
-    let format = normalize_format(format);
+    let dir = safe_export_dir(options.dest_dir)?;
+    let format = normalize_format(options.format);
     let ids_joined = node_ids.join(",");
     let result = files::get_images(
         token,
         file_key,
         &ids_joined,
         None,
-        Some(scale),
+        Some(options.scale),
         Some(&format),
         None,
         None,
@@ -221,9 +347,8 @@ pub async fn export_images(
     .await?;
 
     let images = result.get("images").cloned().unwrap_or(Value::Null);
-    let dir = safe_export_dir(dest_dir)?;
     let ext = format_extension(&format);
-    let filename_prefix = match prefix {
+    let filename_prefix = match options.prefix {
         Some(p) if !p.trim().is_empty() => safe_name(p),
         _ => String::new(),
     };
@@ -243,14 +368,14 @@ pub async fn export_images(
                 "node_id": node_id,
                 "path": written,
                 "format": format,
-                "scale": scale,
+                "scale": options.scale,
                 "source_url": url,
             }));
             rows.push((node_id.clone(), written));
         }
     }
 
-    if manifest {
+    if options.manifest {
         write_manifest(&dir, "fighorse.image_export", &entries)?;
     }
     Ok(rows)
@@ -264,6 +389,7 @@ pub async fn download_image_fills(
     manifest: bool,
     prefix: Option<&str>,
 ) -> Result<Vec<(String, String)>> {
+    let dir = safe_export_dir(dest_dir)?;
     let result = files::get_image_fills(token, file_key).await?;
     let images = result
         .get("meta")
@@ -272,7 +398,6 @@ pub async fn download_image_fills(
         .cloned()
         .unwrap_or_else(|| Value::Object(Default::default()));
 
-    let dir = safe_export_dir(dest_dir)?;
     let filename_prefix = match prefix {
         Some(p) if !p.trim().is_empty() => safe_name(p),
         _ => String::new(),

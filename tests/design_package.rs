@@ -73,7 +73,10 @@ async fn design_package_from_figma_url() {
         .unwrap()
         .iter()
         .any(|r| r.as_str().unwrap_or("").contains("Jetpack Compose")));
-    assert!(!pkg["fidelity_workflow"]["attention_checks"].as_array().unwrap().is_empty());
+    assert!(!pkg["fidelity_workflow"]["attention_checks"]
+        .as_array()
+        .unwrap()
+        .is_empty());
     assert!(pkg["asset_export_plan"]["mcp_tools"]
         .as_array()
         .unwrap()
@@ -84,14 +87,20 @@ async fn design_package_from_figma_url() {
         .as_str()
         .unwrap()
         .contains(".fighorse/exports"));
-    assert_eq!(pkg["learned_experience"]["kind"], "fighorse.learned-guidance.v1");
+    assert_eq!(
+        pkg["learned_experience"]["kind"],
+        "fighorse.learned-guidance.v1"
+    );
     assert!(pkg["next_tools"]
         .as_array()
         .unwrap()
         .iter()
         .any(|t| t["tool"] == "record_experience"));
     assert_eq!(pkg["target"]["name"], "Hero Card");
-    assert_eq!(pkg["screenshots"]["images"]["1:2"], "https://images.example/hero.png");
+    assert_eq!(
+        pkg["screenshots"]["images"]["1:2"],
+        "https://images.example/hero.png"
+    );
     assert!(!pkg["tokens"]["color"].as_array().unwrap().is_empty());
     assert_eq!(pkg["diagnostics"]["status"], "ready");
     assert_eq!(pkg["diagnostics"]["screenshots"]["count"], 1);

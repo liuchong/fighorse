@@ -2,7 +2,6 @@
 //!
 //! Library crate exposing the API client, transformers, and supporting modules.
 //! The `fighorse` binary (`src/main.rs`) wires these into the CLI.
-#![allow(dead_code)]
 
 pub mod api;
 pub mod cli;

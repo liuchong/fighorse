@@ -46,7 +46,9 @@ async fn http_client_contract() {
         .respond_with(ResponseTemplate::new(204))
         .mount(&server)
         .await;
-    let body = http::delete("/v1/del", Some("token"), &[]).await.expect("delete ok");
+    let body = http::delete("/v1/del", Some("token"), &[])
+        .await
+        .expect("delete ok");
     assert_eq!(body, json!({}));
 
     // Non-2xx surfaces status + parsed body.

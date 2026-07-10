@@ -42,7 +42,7 @@ Figma REST API
 - Public-first: пользователи могут успешно работать через CLI до изучения MCP.
 - Инспектируемой: разработчики могут запустить ту же команду, что вызывает AI-инструмент.
 - Скриптуемой: shell, CI и кастомные агенты могут использовать бинарник напрямую.
-- Транспортно-нейтральной: stdio MCP, SSE MCP и CLI разделяют поведение.
+- Транспортно-нейтральной: общий Streamable HTTP, явный standard stdio MCP и CLI разделяют бизнес-поведение.
 - Проще в тестировании: чистые трансформации и API-обертки остаются отделимыми от конфигурации клиента.
 
 ## Многоуровневая архитектура
@@ -160,7 +160,7 @@ fighorse разделяет три домена безопасности:
 
 Это разделение важно, потому что загрузка локальных скриншотов или image fills гораздо менее чувствительна, чем мутация Figma, но все же требует валидации пути. Пользователь явно контролирует оба домена.
 
-SSE MCP по умолчанию работает на localhost (`127.0.0.1`) и поддерживает controlled CORS. Парсинг stdio применяет message-size limits для предотвращения local denial-of-service поведения.
+Default MCP adapter — official Rust `rmcp` 2.2 `StreamableHttpService` с `LocalSessionManager`: независимые stateful sessions, проверка Host и Origin до dispatch, JSON или event-stream response по standard Streamable HTTP и graceful shutdown по SIGINT/SIGTERM. Event stream на `/mcp` не является legacy SSE transport; `/sse` и `/messages` не обслуживаются, а `--transport sse` завершается ошибкой. Explicit compatibility использует standard rmcp stdio без private framing protocol.
 
 ## Дизайн установки
 
@@ -171,11 +171,17 @@ SSE MCP по умолчанию работает на localhost (`127.0.0.1`) и
 - Хранение auth в `~/.fighorse/config.json`.
 - MCP client snippets для Cursor, Codex, Kimi, Claude, opencode и generic агентов.
 - User-level skills/rules для AI-клиентов.
-- Пользовательские сервисы macOS launchd и Linux systemd для SSE MCP.
+- Пользовательские сервисы macOS launchd и Linux systemd для Streamable HTTP MCP.
 
 Когда доступны нативные команды клиента, инсталлятор предпочитает их. Иначе он пишет стандартные пользовательские конфигурационные файлы с бэкапами.
 
-`fighorse install --default --apply` по умолчанию работает в CLI-only режиме, потому что публичный CLI не должен удивлять пользователя фоновым сервисом или занятым портом. Настройка long-running MCP service явная: через `install --default --mode service` или `install service`. Установленные клиенты должны разделять локальный HTTP endpoint по адресу `http://127.0.0.1:9449/mcp`, защищенный singleton lock и совместимый с повторяющимися Streamable HTTP handshakes.
+`fighorse install --default --apply` по умолчанию работает в CLI-only режиме. Команда для четырёх клиентов: `fighorse install --default --mode service --clients cursor,codex,kimi,claude --apply`; только Claude: `fighorse install client --client claude --apply`.
+
+Payload: Cursor `{"url":"http://127.0.0.1:9449/mcp"}`, Kimi `{"transport":"http","url":"http://127.0.0.1:9449/mcp"}`, Claude `{"type":"http","url":"http://127.0.0.1:9449/mcp"}`, Codex — `[mcp_servers.fighorse]` с тем же URL.
+
+Транзакция: `preflight -> backup -> binary -> service -> health_ready -> clients -> skills -> verified`; client config не записывается до `/health` и реальных `initialize`/`tools/list`. Manifest хранит hash, backup, порядок и `desired_absent: true`; rollback восстанавливает managed files и service state в обратном порядке, а custom skill conflict сохраняется с deterministic backup.
+
+Три canonical-цели: `~/.agents/skills/fighorse/SKILL.md` (Cursor/Kimi/Codex), `~/.claude/skills/fighorse/SKILL.md` (Claude), `~/.cursor/rules/fighorse.mdc` (Cursor). Fresh service/stdio deny local write; migration сохраняет только существующий explicit allow.
 
 ## Позиция в экосистеме
 
@@ -231,7 +237,7 @@ fighorse не стремится быть универсальным генер�
 
 Проект должен оставаться верифицируемым без реального Figma-токена:
 
-- Unit tests покрывают парсинг аргументов, compacting, парсинг URL, валидацию путей, покрытие OpenAPI, dispatch операций, MCP tool/resource routing, discovery manifest, install output, design-package diagnostics и stdio framing limits.
+- Unit и integration tests покрывают парсинг аргументов, compacting, URL, валидацию путей, OpenAPI, MCP routing, official HTTP/standard stdio, discovery manifest, install transaction, design-package diagnostics и docs consistency.
 - Интеграционные тесты, обращающиеся к реальному Figma API, опциональны.
 - Документация и сгенерированные install артефакты должны отражать текущее поведение CLI.
 

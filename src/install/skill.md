@@ -31,6 +31,16 @@ When the task needs a low-level Figma endpoint, call generated MCP tools named `
 
 Installed clients should reuse the shared local MCP service at `http://127.0.0.1:9449/mcp` instead of spawning separate long-lived stdio servers. Use stdio only as an explicit compatibility mode for clients that cannot connect to the local HTTP endpoint.
 
+The HTTP endpoint is the official Rust `rmcp` 2.2 Streamable HTTP service. It keeps independent stateful sessions, validates Host and Origin, returns a standard JSON or event-stream response according to content negotiation, and shuts down gracefully. Legacy `/sse` and `/messages` endpoints are not served; `--transport sse` fails with guidance to use `--transport http`.
+
+Install the shared service for all primary clients with `fighorse install --default --mode service --clients cursor,codex,kimi,claude --apply`, or install Claude alone with `fighorse install client --client claude --apply`. Service installation activates the service, waits for `/health`, completes `initialize` and `tools/list`, then writes client configurations. Finish with `fighorse install verify`; use `fighorse install rollback` to restore unchanged managed files from manifest backups.
+
+Canonical AI instruction targets are:
+
+- Cursor, Kimi, and Codex: `~/.agents/skills/fighorse/SKILL.md`
+- Claude: `~/.claude/skills/fighorse/SKILL.md`
+- Cursor rule: `~/.cursor/rules/fighorse.mdc`
+
 ## Assets
 
 Use `export_images`, `export_component`, or `download_image_fills` with `manifest=true` for local slices, controls, icons, and image fills. MCP export requires `FIGHORSE_MCP_LOCAL_WRITE=allow` and still only writes inside approved export roots. Use `./.fighorse/exports` for temporary slices, `./assets/fighorse` or the app resource directory for packaged assets, and `~/.fighorse/exports` for cross-project scratch data. Do not write exports to protected system paths, dependency caches, or hard-to-discover temporary locations unless explicitly requested.

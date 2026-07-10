@@ -1,0 +1,14 @@
+[Unit]
+Description=fighorse MCP service
+
+[Service]
+Environment="FIGHORSE_HOME=/tmp/Home Dir\\x\"y%%z"
+Environment="FIGHORSE_MCP_MODE=readonly"
+Environment="FIGHORSE_MCP_LOCAL_WRITE=deny"
+Environment="FIGHORSE_MCP_SERVICE=true"
+ExecStart="/tmp/Fig Horse\\bin\"ary%%q" mcp serve --transport http --host 127.0.0.1 --port 9449
+Restart=always
+WorkingDirectory="/tmp/Home Dir\\x\"y%%z"
+
+[Install]
+WantedBy=default.target

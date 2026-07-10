@@ -43,7 +43,9 @@ pub fn value_to_string(v: &Value) -> Option<String> {
 pub fn build_query(params: &[(&str, Value)]) -> Option<String> {
     let parts: Vec<String> = params
         .iter()
-        .filter_map(|(k, v)| value_to_string(v).map(|s| format!("{k}={}", encode_uri_component(&s))))
+        .filter_map(|(k, v)| {
+            value_to_string(v).map(|s| format!("{k}={}", encode_uri_component(&s)))
+        })
         .collect();
     if parts.is_empty() {
         None
@@ -174,9 +176,7 @@ pub fn parse_figma_url(input: &str) -> ParsedUrl {
         .path()
         .split('/')
         .filter(|s| !s.is_empty())
-        .map(|s| {
-            percent_decode(s)
-        })
+        .map(percent_decode)
         .collect();
 
     let file_key = file_key_from_segments(&segments);
@@ -257,7 +257,10 @@ mod tests {
     #[test]
     fn build_query_multiple() {
         assert_eq!(
-            build_query(&params(vec![("depth", json!(2)), ("version", json!("123"))])),
+            build_query(&params(vec![
+                ("depth", json!(2)),
+                ("version", json!("123"))
+            ])),
             Some("?depth=2&version=123".to_string())
         );
     }
@@ -289,7 +292,10 @@ mod tests {
     #[test]
     fn build_url_with_params() {
         assert_eq!(
-            build_url("https://api.figma.com/v1/files/abc", &params(vec![("depth", json!(2))])),
+            build_url(
+                "https://api.figma.com/v1/files/abc",
+                &params(vec![("depth", json!(2))])
+            ),
             "https://api.figma.com/v1/files/abc?depth=2"
         );
     }

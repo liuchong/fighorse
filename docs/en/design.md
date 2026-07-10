@@ -42,7 +42,7 @@ This keeps the system:
 - Public-first: users can succeed with the CLI before learning MCP.
 - Inspectable: developers can run the same command an AI tool calls.
 - Scriptable: shell, CI, and custom agents can use the binary directly.
-- Transport-neutral: stdio MCP, SSE MCP, and CLI all share behavior.
+- Transport-neutral: shared Streamable HTTP, explicit standard stdio MCP, and CLI all share the same business behavior.
 - Easier to test: pure transformations and API wrappers remain separable from client configuration.
 
 ## Layered Architecture
@@ -160,7 +160,7 @@ Local file exports are still restricted to approved roots:
 
 This separation matters because downloading local screenshots or image fills is much less sensitive than mutating Figma, but still needs path validation. The user explicitly controls both domains.
 
-SSE MCP defaults to localhost (`127.0.0.1`) and supports controlled CORS. Stdio parsing enforces message-size limits to avoid local denial-of-service behavior.
+The default MCP adapter is official Rust `rmcp` 2.2 `StreamableHttpService` with `LocalSessionManager`. It provides independent stateful sessions, validates Host and Origin before dispatch, supports JSON or event-stream responses under the standard Streamable HTTP contract, and cancels sessions during graceful SIGINT/SIGTERM shutdown. The event stream returned by `/mcp` is not the retired legacy SSE transport. `/sse` and `/messages` are not served, and `--transport sse` fails with migration guidance to HTTP. Explicit compatibility mode uses standard rmcp stdio without a private framing protocol.
 
 ## Installation Design
 
@@ -171,11 +171,22 @@ SSE MCP defaults to localhost (`127.0.0.1`) and supports controlled CORS. Stdio 
 - Auth storage in `~/.fighorse/config.json`.
 - MCP client snippets for Cursor, Codex, Kimi, Claude, opencode, and generic agents.
 - User-level skills/rules for AI clients.
-- macOS launchd and Linux systemd user services for SSE MCP.
+- macOS launchd and Linux systemd user services for Streamable HTTP MCP.
 
 When native client commands are available, installer code prefers them. Otherwise it writes standard user configuration files with backups.
 
-`fighorse install --default --apply` defaults to CLI-only because a public CLI should not surprise users with a background service or bound port. Long-running MCP service setup is explicit through `install --default --mode service` or `install service`. Installed clients should share the local HTTP endpoint at `http://127.0.0.1:9449/mcp`, guarded by a singleton lock and compatible with repeated Streamable HTTP handshakes.
+`fighorse install --default --apply` defaults to CLI-only because a public CLI should not surprise users with a background service or bound port. Long-running MCP service setup is explicit:
+
+```bash
+fighorse install --default --mode service --clients cursor,codex,kimi,claude --apply
+fighorse install client --client claude --apply
+```
+
+Installed clients share `http://127.0.0.1:9449/mcp`. Native payloads are Cursor `{"url":"http://127.0.0.1:9449/mcp"}`, Kimi `{"transport":"http","url":"http://127.0.0.1:9449/mcp"}`, Claude `{"type":"http","url":"http://127.0.0.1:9449/mcp"}`, and Codex `[mcp_servers.fighorse]` with the URL.
+
+The service transaction is `preflight -> backup -> binary -> service -> health_ready -> clients -> skills -> verified`. Client files are not written until `/health` and a real `initialize` plus `tools/list` handshake succeed. The manifest records managed hashes, backup paths, order, and removals as `desired_absent: true`; rollback traverses those entries in reverse order and also restores service state. Customized legacy skills remain untouched and receive deterministic conflict backups.
+
+Canonical targets collapse per-client copies into exactly three artifacts: `~/.agents/skills/fighorse/SKILL.md` for Cursor/Kimi/Codex, `~/.claude/skills/fighorse/SKILL.md` for Claude, and `~/.cursor/rules/fighorse.mdc` for Cursor. Fresh service and explicit stdio payloads deny local writes; migration preserves an existing explicit allow.
 
 ## Ecosystem Position
 
@@ -231,7 +242,7 @@ The durable product boundary is the context and asset pipeline: fetch, compact, 
 
 The project should remain verifiable without a real Figma token:
 
-- Unit tests cover argument parsing, compacting, URL parsing, path validation, OpenAPI coverage, operation dispatch, MCP tool/resource routing, discovery manifest, install output, design-package diagnostics, and stdio framing limits.
+- Unit and integration tests cover argument parsing, compacting, URL parsing, path validation, OpenAPI coverage, operation dispatch, MCP tool/resource routing, official HTTP and standard stdio transports, discovery manifest, transactional installation, design-package diagnostics, and documentation consistency.
 - Integration tests that touch the real Figma API are opt-in.
 - Docs and generated install artifacts must reflect current CLI behavior.
 

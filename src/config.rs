@@ -28,7 +28,10 @@ pub fn config_path() -> PathBuf {
 
 /// Path to the legacy config file (`~/.config/fighorse/config.json`).
 pub fn legacy_config_path() -> PathBuf {
-    home_dir().join(".config").join("fighorse").join("config.json")
+    home_dir()
+        .join(".config")
+        .join("fighorse")
+        .join("config.json")
 }
 
 fn read_json_file(path: &PathBuf) -> serde_json::Map<String, Value> {
@@ -125,10 +128,7 @@ pub fn load_config() -> Config {
 
 /// True when the MCP server is allowed to perform Figma write operations.
 pub fn mcp_write_enabled() -> bool {
-    matches!(
-        load_config().mcp_mode.as_str(),
-        "write" | "full" | "unsafe"
-    )
+    matches!(load_config().mcp_mode.as_str(), "write" | "full" | "unsafe")
 }
 
 /// True when the MCP server is allowed to write local files (asset exports).

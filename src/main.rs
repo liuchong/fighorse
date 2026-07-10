@@ -1,9 +1,6 @@
 //! fighorse CLI entry point.
 //!
-//! Routes commands to API modules and AI enhancements. During the Rust rewrite
-//! this dispatches the ported command groups; unported groups fall through to
-//! help until their milestone lands.
-#![allow(dead_code)]
+//! Routes commands to API modules and AI enhancements.
 
 use fighorse::cli::commands;
 use fighorse::config;
@@ -15,10 +12,16 @@ use std::process::ExitCode;
 /// `config/setup-proxy!` which echoes the chosen proxy to stderr.
 fn setup_proxy(proxy: &Option<String>) {
     if let Some(proxy_url) = proxy {
-        if std::env::var("HTTP_PROXY").map(|v| v.is_empty()).unwrap_or(true) {
+        if std::env::var("HTTP_PROXY")
+            .map(|v| v.is_empty())
+            .unwrap_or(true)
+        {
             std::env::set_var("HTTP_PROXY", proxy_url);
         }
-        if std::env::var("HTTPS_PROXY").map(|v| v.is_empty()).unwrap_or(true) {
+        if std::env::var("HTTPS_PROXY")
+            .map(|v| v.is_empty())
+            .unwrap_or(true)
+        {
             std::env::set_var("HTTPS_PROXY", proxy_url);
         }
         eprintln!("Using proxy: {proxy_url}");
@@ -52,8 +55,7 @@ async fn async_main() -> ExitCode {
     let cmd1 = args.first().map(String::as_str);
     let cmd2 = args.get(1).map(String::as_str);
 
-    let is_help = matches!(cmd1, Some("help"))
-        || args.iter().any(|a| a == "--help" || a == "-h");
+    let is_help = matches!(cmd1, Some("help")) || args.iter().any(|a| a == "--help" || a == "-h");
     if is_help {
         print_help();
         return ExitCode::SUCCESS;
@@ -85,20 +87,22 @@ async fn async_main() -> ExitCode {
         (Some("experience"), Some("path")) => finish(commands::cmd_experience_path(&rest2)),
 
         // Install: `install` with a --flag or nothing after → self; subcommands otherwise.
-        (Some("install"), Some("self")) => finish(commands::cmd_install_self(&rest2)),
+        (Some("install"), Some("self")) => finish(commands::cmd_install_self(&rest2).await),
         (Some("install"), Some("home")) => finish(commands::cmd_install_home(&rest2)),
         (Some("install"), Some("auth")) => finish(commands::cmd_install_auth(&rest2)),
         (Some("install"), Some("project")) => finish(commands::cmd_install_project(&rest2)),
         (Some("install"), Some("binary")) => finish(commands::cmd_install_binary(&rest2)),
         (Some("install"), Some("client")) => finish(commands::cmd_install_client(&rest2)),
-        (Some("install"), Some("service")) => finish(commands::cmd_install_service(&rest2)),
+        (Some("install"), Some("service")) => finish(commands::cmd_install_service(&rest2).await),
         (Some("install"), Some("skill")) => finish(commands::cmd_install_skill(&rest2)),
-        (Some("install"), Some("all")) => finish(commands::cmd_install_all(&rest2)),
+        (Some("install"), Some("all")) => finish(commands::cmd_install_all(&rest2).await),
         (Some("install"), Some("status")) => finish(commands::cmd_install_status(&rest2)),
+        (Some("install"), Some("verify")) => finish(commands::cmd_install_verify(&rest2).await),
+        (Some("install"), Some("rollback")) => finish(commands::cmd_install_rollback(&rest2)),
         (Some("install"), Some(sub)) if sub.starts_with("--") => {
-            finish(commands::cmd_install_self(&rest1))
+            finish(commands::cmd_install_self(&rest1).await)
         }
-        (Some("install"), None) => finish(commands::cmd_install_all(&rest1)),
+        (Some("install"), None) => finish(commands::cmd_install_all(&rest1).await),
 
         // Auth
         (Some("auth"), Some("login")) => finish(commands::cmd_auth_login(&rest2)),
@@ -181,8 +185,6 @@ async fn async_main() -> ExitCode {
         (Some("mcp"), Some("serve")) => finish(commands::cmd_mcp_serve(&rest2).await),
         (Some("mcp"), None) => finish(commands::cmd_mcp_serve(&rest1).await),
 
-        // Unported groups (quickstart/discover/doctor/smoke/design/visual/project/
-        // experience/install/mcp) fall through to help until M4-M6.
         _ => {
             print_help();
             ExitCode::SUCCESS
@@ -192,7 +194,6 @@ async fn async_main() -> ExitCode {
 
 fn print_help() {
     print!(
-        "{}",
         r#"fighorse — Figma data Swiss Army knife, shaped for AI consumption
 
 Usage: fighorse <command> [args...]
@@ -232,12 +233,18 @@ Install:
   install binary --source P [--apply]           Install CLI binary into fighorse home and PATH links
   install project [--project-dir D]             Enable project-scoped .fighorse experience
   install client --client cursor|codex|kimi|claude|opencode|openclaw|hermes-agent [--apply]  Generate or apply client MCP setup
-  install service [--service launchd|systemd] [--apply]  Generate or apply auto-start MCP SSE service
-  install skill [--dir D] [--clients C] [--apply]  Generate or apply fighorse skill/agent files
+  install service [--service launchd|systemd] [--apply]  Generate or apply auto-start MCP HTTP service
+  install skill [--dir D] [--clients C] [--apply]  Apply canonical skills/rule and safely migrate generated legacy copies
   install [--default|--path D|--target P] [--mode cli|service] [--apply]  Self-install this binary and emit AI-readable install guidance
   install self [--default|--path D|--target P] [--apply]  Same as install root command
   install all [--mode cli|service|all] [--no-service] [--clients C] [--source P] [--apply]  Generate or apply setup; default mode is cli
   install status                                Show install paths and detected state
+  install verify [--home D] [--port N]          Verify manifest, binary, service handshake, clients, and skills
+  install rollback [--home D]                   Restore unchanged managed files from manifest backups
+  Service setup: fighorse install --default --mode service --clients cursor,codex,kimi,claude --apply
+  Claude only:  fighorse install client --client claude --apply
+  Service transaction order: binary/service -> /health -> initialize + tools/list -> clients -> skills -> manifest verification
+  Canonical skills: ~/.agents/skills/fighorse/SKILL.md (Cursor/Kimi/Codex), ~/.claude/skills/fighorse/SKILL.md, ~/.cursor/rules/fighorse.mdc
 
 Auth:
   auth login --token <token>                    Save Figma token
@@ -312,17 +319,17 @@ Design Tokens:
   tokens extract <file-key> [depth]             Extract design tokens
 
 MCP Server:
-  mcp serve [--transport http|sse|stdio] [--port N] [--host 127.0.0.1]  Start MCP server
+  mcp serve [--transport http|stdio] [--port N] [--host 127.0.0.1]  Start MCP server
+  HTTP endpoint: http://127.0.0.1:9449/mcp (official rmcp stateful sessions; JSON or event-stream responses)
+  --transport sse fails with migration guidance; legacy /sse and /messages endpoints are not served
 
 Environment:
   FIGMA_TOKEN    Figma Personal Access Token
   FIGHORSE_HOME  Default: ~/.fighorse
   FIGHORSE_MCP_MODE  MCP safety mode: readonly (default) or write
   FIGHORSE_MCP_LOCAL_WRITE  Set to allow for MCP local asset exports inside approved roots
-  FIGHORSE_MCP_STDIO_MAX_BYTES  Max stdio Content-Length message size, default 10485760
   FIGHORSE_MCP_ALLOW_MULTIPLE  Set to 1 only for development when bypassing the MCP singleton lock
   FIGHORSE_HTTP_TIMEOUT_MS  Figma REST request timeout, default 120000
-  FIGHORSE_CLI_EXPLICIT_EXIT  Set to 0 only for tests/debugging to disable one-shot CLI explicit exit
   FIGHORSE_EXPERIENCE_PATH  Override local experience JSONL store
   FIGHORSE_EXPERIENCE_SCOPE  auto (default), global, project, or merged
   HTTP_PROXY     HTTP proxy URL (e.g. http://127.0.0.1:7897)

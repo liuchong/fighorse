@@ -47,8 +47,17 @@ fighorse asset download <file_key> --dir ./assets/fighorse --manifest
 Optional MCP service mode for AI clients:
 
 ```bash
-fighorse install --default --mode service --clients cursor,codex,kimi --apply
+fighorse install --default --mode service --clients cursor,codex,kimi,claude --apply
+fighorse install verify
+# Claude only:
+fighorse install client --client claude --apply
 ```
+
+Service installation is transactional: binary and service files are written first, the installer waits for `/health`, completes a real `initialize` plus `tools/list` handshake on `/mcp`, and only then writes client configuration and skills. Managed files and `desired_absent` removals are recorded in `~/.fighorse/install/manifest.json`; prior content and migration conflicts are kept under `~/.fighorse/install/backups/`. Run `fighorse install rollback` to restore unchanged managed files and previous service state.
+
+Native HTTP payloads differ by client: Cursor uses `{"url":"http://127.0.0.1:9449/mcp"}`, Kimi uses `{"transport":"http","url":"http://127.0.0.1:9449/mcp"}`, Claude uses `{"type":"http","url":"http://127.0.0.1:9449/mcp"}`, and Codex uses `[mcp_servers.fighorse]` with `url = "http://127.0.0.1:9449/mcp"`.
+
+The canonical instruction targets are `~/.agents/skills/fighorse/SKILL.md` for Cursor/Kimi/Codex, `~/.claude/skills/fighorse/SKILL.md` for Claude, and `~/.cursor/rules/fighorse.mdc` for Cursor.
 
 Package distributable binaries with Cargo. Cross-compile per target with the
 matching Rust toolchain (or `cargo-zigbuild` for Linux targets):
@@ -78,8 +87,8 @@ cargo build --release --target aarch64-unknown-linux-gnu
 | Figma Data | `file get`, `file nodes`, `node get`, `file tree`, `file compact` |
 | Assets | `image export`, `component export`, `asset download`, `images render`, `images fills` |
 | Design System | `components`, `component-sets`, `styles`, `variables`, `tokens extract` |
-| Install | `install`, `install self`, `install home`, `install auth`, `install binary`, `install client`, `install service`, `install skill`, `install all` |
-| MCP | `mcp serve --transport http`, `mcp serve --transport sse --host 127.0.0.1`, explicit `stdio` compatibility mode |
+| Install | `install`, `install self`, `install home`, `install auth`, `install binary`, `install client`, `install service`, `install skill`, `install all`, `install verify`, `install rollback` |
+| MCP | `mcp serve --transport http`, explicit `stdio` compatibility mode |
 
 ## Safety Defaults
 
@@ -87,6 +96,8 @@ cargo build --release --target aarch64-unknown-linux-gnu
 - MCP local file exports require `FIGHORSE_MCP_LOCAL_WRITE=allow`.
 - Export paths are limited to `./.fighorse/exports`, `./assets/fighorse`, and `~/.fighorse/exports`.
 - Installed AI clients default to the shared local HTTP MCP endpoint at `http://127.0.0.1:9449/mcp`; the MCP server uses a singleton lock to avoid duplicate long-running processes.
+- `/mcp` is the official Rust `rmcp` 2.2 Streamable HTTP service with independent stateful sessions, Host/Origin validation, JSON or event-stream responses, and graceful shutdown. The legacy `/sse` and `/messages` endpoints are not served; `--transport sse` fails with migration guidance to `--transport http`.
+- Fresh service and explicit stdio configs set `FIGHORSE_MCP_LOCAL_WRITE=deny`; an existing explicit `allow` is preserved during migration.
 - Normal CLI commands remain one-shot processes: they do not start the MCP service, bind ports, or use the MCP singleton lock. `fighorse install all` defaults to CLI-only setup; use `--mode service` or `install service --apply` only when you explicitly want a long-running MCP service.
 - AI clients must ask for the target platform and asset format when missing; PNG is only a render fallback, not a product decision.
 
