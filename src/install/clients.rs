@@ -37,7 +37,7 @@ impl ClientKind {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 enum Transport {
     Http,
     Stdio {
@@ -48,7 +48,7 @@ enum Transport {
 
 /// A client-native MCP configuration rendered from one source for both review
 /// artifacts and applied user configuration.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ClientSpec {
     pub kind: ClientKind,
     pub url: String,
@@ -192,6 +192,20 @@ impl ClientSpec {
             "{}\n",
             serde_json::to_string_pretty(&Value::Object(root))?
         ))
+    }
+
+    /// Verify only the fighorse-owned MCP entry so client-owned state may
+    /// evolve without invalidating the installation manifest.
+    pub fn matches_config(&self, existing: &str) -> bool {
+        if self.kind == ClientKind::Codex {
+            return self
+                .merge_config(Some(existing))
+                .is_ok_and(|merged| merged == existing);
+        }
+        serde_json::from_str::<Value>(existing)
+            .ok()
+            .and_then(|root| root.pointer("/mcpServers/fighorse").cloned())
+            .is_some_and(|configured| configured == self.json_payload())
     }
 }
 

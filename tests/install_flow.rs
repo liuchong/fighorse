@@ -150,6 +150,39 @@ fn managed_writes_are_idempotent_and_manifest_is_token_free() {
 }
 
 #[test]
+fn client_config_verification_ignores_unrelated_mutation_but_detects_fighorse_drift() {
+    let root = temp_root("client-semantic-verify");
+    let target = root.join(".claude.json");
+    let spec = ClientSpec::new(ClientKind::Claude, "http://127.0.0.1:9449/mcp");
+    let installed = spec.merge_config(Some(r#"{"theme":"dark"}"#)).unwrap();
+
+    let mut transaction = InstallTransaction::new(&root).unwrap();
+    transaction
+        .write_managed_client_config(&target, installed.as_bytes(), &spec)
+        .unwrap();
+    transaction.commit(None).unwrap();
+
+    let mut client_owned: Value =
+        serde_json::from_str(&fs::read_to_string(&target).unwrap()).unwrap();
+    client_owned["numStartups"] = json!(42);
+    fs::write(&target, serde_json::to_vec_pretty(&client_owned).unwrap()).unwrap();
+    let unrelated_checks = verify_manifest(&root).unwrap();
+    assert!(
+        unrelated_checks.iter().all(|check| check.ok),
+        "{unrelated_checks:?}"
+    );
+
+    client_owned["mcpServers"]["fighorse"]["url"] = json!("http://127.0.0.1:9449/not-mcp");
+    fs::write(&target, serde_json::to_vec_pretty(&client_owned).unwrap()).unwrap();
+    let drift_checks = verify_manifest(&root).unwrap();
+    assert!(
+        drift_checks.iter().any(|check| !check.ok),
+        "{drift_checks:?}"
+    );
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
 fn known_legacy_skills_are_removed_verified_and_restored_by_rollback() {
     let root = temp_root("skill-known-migration");
     let install_home = root.join("fighorse-home");

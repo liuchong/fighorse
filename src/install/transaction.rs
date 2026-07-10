@@ -1,5 +1,6 @@
 //! Managed-file transaction, manifest, verification, and MCP readiness checks.
 
+use super::clients::ClientSpec;
 use super::model::{InstallCheck, InstallReport};
 use super::service::{self, ServiceCommandRunner, ServiceState};
 use crate::error::{Error, Result};
@@ -20,6 +21,16 @@ pub enum ManagedFileKind {
     Symlink,
 }
 
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ManagedFileVerification {
+    #[default]
+    Exact,
+    ClientConfig {
+        spec: ClientSpec,
+    },
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ManagedFile {
     pub path: PathBuf,
@@ -38,6 +49,8 @@ pub struct ManagedFile {
     pub previous_mode: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub previous_symlink_target: Option<PathBuf>,
+    #[serde(default)]
+    pub verification: ManagedFileVerification,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -125,6 +138,20 @@ impl InstallTransaction {
         self.write_managed_with_mode(path, content, mode.unwrap_or(0o644))
     }
 
+    pub fn write_managed_client_config(
+        &mut self,
+        path: &Path,
+        content: &[u8],
+        spec: &ClientSpec,
+    ) -> Result<()> {
+        self.write_managed(path, content)?;
+        let managed = self.changed.get_mut(path).ok_or_else(|| {
+            Error::Other(format!("managed client config missing: {}", path.display()))
+        })?;
+        managed.verification = ManagedFileVerification::ClientConfig { spec: spec.clone() };
+        Ok(())
+    }
+
     pub fn write_managed_with_mode(
         &mut self,
         path: &Path,
@@ -146,7 +173,7 @@ impl InstallTransaction {
             .as_ref()
             .map(|snapshot| snapshot.content.as_slice());
         if current.is_some_and(|bytes| content_hash(bytes) == desired_hash) {
-            let managed = match self.previous.get(path).cloned() {
+            let mut managed = match self.previous.get(path).cloned() {
                 Some(managed) if !managed.desired_absent => managed,
                 Some(mut managed) => {
                     managed.hash = desired_hash.clone();
@@ -175,11 +202,13 @@ impl InstallTransaction {
                         previous_kind: None,
                         previous_mode: None,
                         previous_symlink_target: None,
+                        verification: ManagedFileVerification::Exact,
                     };
                     apply_snapshot_metadata(&mut managed, snapshot.as_ref());
                     managed
                 }
             };
+            managed.verification = ManagedFileVerification::Exact;
             self.changed.insert(path.to_path_buf(), managed);
             return Ok(());
         }
@@ -212,6 +241,7 @@ impl InstallTransaction {
             previous_kind: None,
             previous_mode: None,
             previous_symlink_target: None,
+            verification: ManagedFileVerification::Exact,
         };
         apply_snapshot_metadata(&mut managed, snapshot.as_ref());
         self.changed.insert(path.to_path_buf(), managed);
@@ -237,9 +267,11 @@ impl InstallTransaction {
                 previous_kind: None,
                 previous_mode: None,
                 previous_symlink_target: None,
+                verification: ManagedFileVerification::Exact,
             });
             managed.kind = ManagedFileKind::Symlink;
             managed.desired_absent = false;
+            managed.verification = ManagedFileVerification::Exact;
             apply_snapshot_metadata(&mut managed, snapshot.as_ref());
             self.changed.insert(path.to_path_buf(), managed);
             return Ok(());
@@ -271,6 +303,7 @@ impl InstallTransaction {
             previous_kind: None,
             previous_mode: None,
             previous_symlink_target: None,
+            verification: ManagedFileVerification::Exact,
         };
         apply_snapshot_metadata(&mut managed, snapshot.as_ref());
         self.changed.insert(path.to_path_buf(), managed);
@@ -317,6 +350,7 @@ impl InstallTransaction {
             previous_kind: None,
             previous_mode: None,
             previous_symlink_target: None,
+            verification: ManagedFileVerification::Exact,
         };
         apply_snapshot_metadata(&mut managed, Some(&snapshot));
         self.changed.insert(path.to_path_buf(), managed);
@@ -358,7 +392,7 @@ impl InstallTransaction {
             .collect();
         files.extend(self.changed.clone());
         let manifest = InstallManifest {
-            schema_version: 3,
+            schema_version: 4,
             managed_files: files.into_values().collect(),
             last_verification,
             endpoint: self.endpoint.clone(),
@@ -447,15 +481,25 @@ pub fn verify_manifest(home: &Path) -> Result<Vec<InstallCheck>> {
                 false,
                 "managed path should be absent",
             ),
-            Ok(Some(snapshot)) => InstallCheck::new(
-                format!("managed:{}", managed.path.display()),
-                snapshot_matches(&snapshot, managed),
-                if snapshot_matches(&snapshot, managed) {
-                    "managed content matches manifest"
-                } else {
-                    "managed content or file type differs from manifest"
-                },
-            ),
+            Ok(Some(snapshot)) => {
+                let matches = match &managed.verification {
+                    ManagedFileVerification::Exact => snapshot_matches(&snapshot, managed),
+                    ManagedFileVerification::ClientConfig { spec } => {
+                        snapshot.kind == ManagedFileKind::Regular
+                            && String::from_utf8(snapshot.content)
+                                .is_ok_and(|content| spec.matches_config(&content))
+                    }
+                };
+                InstallCheck::new(
+                    format!("managed:{}", managed.path.display()),
+                    matches,
+                    if matches {
+                        "managed content matches manifest"
+                    } else {
+                        "managed content or file type differs from manifest"
+                    },
+                )
+            }
             Ok(None) => InstallCheck::new(
                 format!("managed:{}", managed.path.display()),
                 false,

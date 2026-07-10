@@ -1060,7 +1060,7 @@ fn apply_canonical_client(spec: &ClientSpec, home: Option<&str>) -> Result<Value
     let install_home = fighorse_home(home);
     let mut transaction = transaction::InstallTransaction::new(&install_home)?;
     let outcome = (|| -> Result<(Vec<Value>, skills::SkillMigrationReport)> {
-        transaction.write_managed(&file, merged.as_bytes())?;
+        transaction.write_managed_client_config(&file, merged.as_bytes(), spec)?;
         let mut skill_result = Vec::new();
         for target in skills::canonical_targets(&user_home, &[spec.kind]) {
             let content = match target.kind {
@@ -2213,7 +2213,7 @@ async fn apply_install_transaction(opts: &InstallOpts<'_>, self_install: bool) -
                 let config = clients::config_path(&home_os(), *kind);
                 let existing = std::fs::read_to_string(&config).ok();
                 let merged = spec.merge_config(existing.as_deref())?;
-                transaction.write_managed(&config, merged.as_bytes())?;
+                transaction.write_managed_client_config(&config, merged.as_bytes(), &spec)?;
             }
             completed.push(model::InstallStep::Clients);
         }

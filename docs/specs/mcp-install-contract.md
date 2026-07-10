@@ -62,6 +62,9 @@ keeps a stable write order. JSON and TOML client configuration is merged so
 unknown user-owned fields survive. A first manifest commit records all
 managed changes; manifest, binary, permission, and optional service checks
 then run; a final commit stores those checks as `last_verification`.
+Aggregate client files are verified semantically at the fighorse MCP entry,
+not by whole-file hash, because clients may update unrelated runtime metadata.
+All dedicated fighorse files continue to require exact content and file type.
 
 If a write or service step fails before commit, pending files are restored in
 reverse order and a newly activated service is unloaded or the previous
