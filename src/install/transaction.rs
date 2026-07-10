@@ -634,15 +634,23 @@ async fn mcp_post(
         .and_then(|value| value.to_str().ok())
         .is_some_and(|value| value.starts_with("text/event-stream"));
     let text = response.text().await?;
-    let body = if is_sse {
+    let body = if text.trim().is_empty() {
+        Value::Null
+    } else if is_sse {
         let data = text
             .lines()
-            .find_map(|line| line.strip_prefix("data:").map(str::trim))
-            .filter(|line| !line.is_empty())
-            .ok_or_else(|| Error::Other("MCP SSE response contained no data event.".into()))?;
-        serde_json::from_str(data)?
-    } else if text.trim().is_empty() {
-        Value::Null
+            .filter_map(|line| line.strip_prefix("data:"))
+            .map(str::trim)
+            .find(|line| !line.is_empty());
+        match data {
+            Some(data) => serde_json::from_str(data)?,
+            None if message.get("id").is_none() => Value::Null,
+            None => {
+                return Err(Error::Other(
+                    "MCP SSE response contained no data event.".into(),
+                ))
+            }
+        }
     } else {
         serde_json::from_str(&text)?
     };

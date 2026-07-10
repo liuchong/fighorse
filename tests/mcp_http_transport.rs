@@ -207,6 +207,21 @@ async fn streamable_http_supports_independent_repeated_handshakes() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn installer_readiness_accepts_empty_successful_notification_response() {
+    let server = start_server().await;
+    let checks = fighorse::install::transaction::wait_for_mcp_ready(
+        &format!("{}/mcp", server.base),
+        10,
+        Duration::from_millis(10),
+    )
+    .await
+    .unwrap();
+
+    assert!(checks.iter().all(|check| check.ok), "{checks:?}");
+    assert!(checks.iter().any(|check| check.name == "mcp_tools_list"));
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn official_http_handler_serves_resources_prompts_and_notifications() {
     let server = start_server().await;
     let client = reqwest::Client::new();
