@@ -207,6 +207,54 @@ async fn streamable_http_supports_independent_repeated_handshakes() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn streamable_http_session_delete_returns_ok_and_terminates_session() {
+    let server = start_server().await;
+    let client = reqwest::Client::new();
+    let initialized = mcp_post(
+        &client,
+        &server,
+        json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": {
+                "protocolVersion": "2025-06-18",
+                "capabilities": {},
+                "clientInfo": {"name": "session-delete-test", "version": "1"}
+            }
+        }),
+        None,
+    )
+    .await;
+    assert_eq!(initialized.status(), reqwest::StatusCode::OK);
+    let session = initialized
+        .headers()
+        .get("mcp-session-id")
+        .and_then(|value| value.to_str().ok())
+        .expect("stateful server must return a session ID")
+        .to_owned();
+    let _ = mcp_json(initialized).await;
+
+    let deleted = client
+        .delete(format!("{}/mcp", server.base))
+        .header("mcp-session-id", &session)
+        .header("mcp-protocol-version", "2025-06-18")
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(deleted.status(), reqwest::StatusCode::OK);
+
+    let after_delete = mcp_post(
+        &client,
+        &server,
+        json!({"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}),
+        Some(&session),
+    )
+    .await;
+    assert_eq!(after_delete.status(), reqwest::StatusCode::NOT_FOUND);
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn installer_readiness_accepts_empty_successful_notification_response() {
     let server = start_server().await;
     let checks = fighorse::install::transaction::wait_for_mcp_ready(

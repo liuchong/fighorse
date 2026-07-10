@@ -332,6 +332,20 @@ async fn enforce_http_request_policy(
     next.run(request).await
 }
 
+async fn normalize_successful_session_delete(
+    request: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> axum::response::Response {
+    use axum::http::{Method, StatusCode};
+
+    let is_session_delete = request.method() == Method::DELETE && request.uri().path() == "/mcp";
+    let mut response = next.run(request).await;
+    if is_session_delete && response.status() == StatusCode::ACCEPTED {
+        *response.status_mut() = StatusCode::OK;
+    }
+    response
+}
+
 async fn serve_http(port: i64, host: Option<&str>, cors_origin: Option<&str>) -> Result<()> {
     use axum::{middleware, response::IntoResponse, routing::get, Json, Router};
 
@@ -383,7 +397,8 @@ async fn serve_http(port: i64, host: Option<&str>, cors_origin: Option<&str>) ->
                 allowed_origins,
             },
             enforce_http_request_policy,
-        ));
+        ))
+        .layer(middleware::from_fn(normalize_successful_session_delete));
 
     let addr = format!("{host}:{port}");
     let listener = tokio::net::TcpListener::bind(&addr)
