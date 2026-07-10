@@ -712,6 +712,8 @@ fn client_skill_targets(client: &str) -> Vec<Value> {
         ],
         "codex" => vec![json!({"kind": "skill", "dir": j(&[".codex", "skills", "fighorse"])})],
         "kimi" => vec![json!({"kind": "skill", "dir": j(&[".kimi", "skills", "fighorse"])})],
+        "claude" => vec![json!({"kind": "skill", "dir": j(&[".claude", "skills", "fighorse"])})],
+        "opencode" => vec![json!({"kind": "skill", "dir": j(&[".config", "opencode", "skills", "fighorse"])})],
         "generic" => vec![
             json!({"kind": "skill", "dir": j(&[".config", "agents", "skills", "fighorse"])}),
             json!({"kind": "skill", "dir": j(&[".agents", "skills", "fighorse"])}),
@@ -846,6 +848,22 @@ fn client_detection(client: &str) -> Value {
             "apply_supported": true,
             "apply_methods": ["json-config"]
         }),
+        "claude" => json!({
+            "client": "claude",
+            "command": executable_path("claude"),
+            "mcp_config": j(&[".claude.json"]),
+            "skill_dir": j(&[".claude", "skills", "fighorse"]),
+            "apply_supported": true,
+            "apply_methods": ["claude mcp add --transport http -s user", "json-config-fallback"]
+        }),
+        "opencode" => json!({
+            "client": "opencode",
+            "command": executable_path("opencode"),
+            "mcp_config": j(&[".config", "opencode", "opencode.json"]),
+            "skill_dir": j(&[".config", "opencode", "skills", "fighorse"]),
+            "apply_supported": true,
+            "apply_methods": ["opencode mcp add --url", "json-config-fallback"]
+        }),
         other => json!({
             "client": other,
             "artifact_generation_supported": true,
@@ -857,7 +875,7 @@ fn client_detection(client: &str) -> Value {
 
 fn apply_client(client: &str, server: &Value, command: &str, home: Option<&str>) -> Result<Value> {
     let client = normalize_client(client);
-    if !matches!(client.as_str(), "cursor" | "codex" | "kimi" | "generic") {
+    if !matches!(client.as_str(), "cursor" | "codex" | "kimi" | "claude" | "opencode" | "generic") {
         return Ok(json!({
             "client": client,
             "ok": false,
@@ -901,6 +919,67 @@ fn apply_client(client: &str, server: &Value, command: &str, home: Option<&str>)
             let file = home_os().join(".kimi").join("mcp.json");
             merge_json_mcp_config(&file, server)?
         }
+        "claude" => {
+            // Claude Code: prefer `claude mcp add -s user`, fall back to
+            // merging into ~/.claude.json (mcpServers) with a format transform.
+            let config_file = home_os().join(".claude.json");
+            if let Some(claude) = executable_path("claude") {
+                let add = if let Some(url) = server.get("url").and_then(|v| v.as_str()) {
+                    run_command(&claude, &["mcp", "add", "-s", "user", "--transport", "http", "fighorse", url], &[])
+                } else {
+                    run_command(
+                        &claude,
+                        &[
+                            "mcp", "add", "-s", "user",
+                            "-e", &format!("FIGHORSE_HOME={}", fighorse_home(home).to_string_lossy()),
+                            "-e", "FIGHORSE_MCP_MODE=readonly",
+                            "-e", "FIGHORSE_MCP_LOCAL_WRITE=allow",
+                            "fighorse", "--", command, "mcp", "serve", "--transport", "stdio",
+                        ],
+                        &[],
+                    )
+                };
+                if add.get("ok").and_then(|v| v.as_bool()).unwrap_or(false) {
+                    json!({"method": "claude-cli", "ok": true, "result": add})
+                } else {
+                    let fallback = merge_claude_config(&config_file, server)?;
+                    json!({"method": "claude-cli-with-json-fallback", "ok": true, "result": add, "fallback": fallback})
+                }
+            } else {
+                merge_claude_config(&config_file, server)?
+            }
+        }
+        "opencode" => {
+            // opencode: prefer `opencode mcp add --url` for remote, fall back
+            // to merging into ~/.config/opencode/opencode.json (mcp section).
+            let config_file = home_os().join(".config").join("opencode").join("opencode.json");
+            if let Some(opencode) = executable_path("opencode") {
+                let add = if let Some(url) = server.get("url").and_then(|v| v.as_str()) {
+                    run_command(&opencode, &["mcp", "add", "fighorse", "--url", url], &[])
+                } else {
+                    // Local stdio: opencode mcp add <name> --env K=V ... -- <cmd> <args>
+                    run_command(
+                        &opencode,
+                        &[
+                            "mcp", "add", "fighorse",
+                            "--env", &format!("FIGHORSE_HOME={}", fighorse_home(home).to_string_lossy()),
+                            "--env", "FIGHORSE_MCP_MODE=readonly",
+                            "--env", "FIGHORSE_MCP_LOCAL_WRITE=allow",
+                            "--", command, "mcp", "serve", "--transport", "stdio",
+                        ],
+                        &[],
+                    )
+                };
+                if add.get("ok").and_then(|v| v.as_bool()).unwrap_or(false) {
+                    json!({"method": "opencode-cli", "ok": true, "result": add})
+                } else {
+                    let fallback = merge_opencode_config(&config_file, server)?;
+                    json!({"method": "opencode-cli-with-json-fallback", "ok": true, "result": add, "fallback": fallback})
+                }
+            } else {
+                merge_opencode_config(&config_file, server)?
+            }
+        }
         "generic" => {
             let file = home_os().join(".config").join("agents").join("mcp.json");
             merge_json_mcp_config(&file, server)?
@@ -914,6 +993,86 @@ fn apply_client(client: &str, server: &Value, command: &str, home: Option<&str>)
         "mcp": config_result,
         "skills": skill_result,
     }))
+}
+
+/// Transform a fighorse MCP server config into Claude Code's `mcpServers`
+/// shape: HTTP/SSE use `{"type": ..., "url": ...}`, stdio uses
+/// `{"type": "stdio", "command": ..., "args": ..., "env": ...}`.
+fn claude_mcp_payload(server: &Value) -> Value {
+    let transport = server.get("transport").and_then(|v| v.as_str());
+    match transport {
+        Some(t @ ("http" | "sse")) => json!({"type": t, "url": server.get("url").cloned().unwrap_or(Value::Null)}),
+        // stdio config has command/args/env, no transport field.
+        _ => {
+            let mut payload = serde_json::Map::new();
+            payload.insert("type".into(), json!("stdio"));
+            if let Some(c) = server.get("command") {
+                payload.insert("command".into(), c.clone());
+            }
+            if let Some(a) = server.get("args") {
+                payload.insert("args".into(), a.clone());
+            }
+            if let Some(e) = server.get("env") {
+                payload.insert("env".into(), e.clone());
+            }
+            Value::Object(payload)
+        }
+    }
+}
+
+/// Merge the fighorse server into Claude Code's `~/.claude.json` mcpServers.
+fn merge_claude_config(file: &Path, server: &Value) -> Result<Value> {
+    let mut current = read_json_object(file);
+    let servers = current
+        .entry("mcpServers".to_string())
+        .or_insert_with(|| Value::Object(Map::new()));
+    if let Some(obj) = servers.as_object_mut() {
+        obj.insert("fighorse".to_string(), claude_mcp_payload(server));
+    }
+    write_json_with_backup(file, &Value::Object(current))?;
+    Ok(json!({"method": "json-config", "ok": true, "file": file.to_string_lossy()}))
+}
+
+/// Transform a fighorse MCP server config into opencode's `mcp` shape:
+/// HTTP/SSE -> `{"type": "remote", "url": ..., "enabled": true}`,
+/// stdio -> `{"type": "local", "command": ..., "args": ..., "env": ..., "enabled": true}`.
+fn opencode_mcp_payload(server: &Value) -> Value {
+    let transport = server.get("transport").and_then(|v| v.as_str());
+    match transport {
+        Some("http" | "sse") => json!({
+            "type": "remote",
+            "url": server.get("url").cloned().unwrap_or(Value::Null),
+            "enabled": true
+        }),
+        _ => {
+            let mut payload = serde_json::Map::new();
+            payload.insert("type".into(), json!("local"));
+            payload.insert("enabled".into(), json!(true));
+            if let Some(c) = server.get("command") {
+                payload.insert("command".into(), c.clone());
+            }
+            if let Some(a) = server.get("args") {
+                payload.insert("args".into(), a.clone());
+            }
+            if let Some(e) = server.get("env") {
+                payload.insert("env".into(), e.clone());
+            }
+            Value::Object(payload)
+        }
+    }
+}
+
+/// Merge the fighorse server into opencode's `opencode.json` mcp section.
+fn merge_opencode_config(file: &Path, server: &Value) -> Result<Value> {
+    let mut current = read_json_object(file);
+    let servers = current
+        .entry("mcp".to_string())
+        .or_insert_with(|| Value::Object(Map::new()));
+    if let Some(obj) = servers.as_object_mut() {
+        obj.insert("fighorse".to_string(), opencode_mcp_payload(server));
+    }
+    write_json_with_backup(file, &Value::Object(current))?;
+    Ok(json!({"method": "json-config", "ok": true, "file": file.to_string_lossy()}))
 }
 
 fn merge_codex_config(file: &Path, server: &Value, command: &str, home: Option<&str>) -> Result<Value> {
@@ -977,17 +1136,43 @@ pub fn install_client(
                 "kind": "fighorse.client-install.v1",
                 "client": client,
                 "transport": transport,
+                "generated_at": now_iso(),
                 "mcp_server": server,
                 "detected": client_detection(&client),
                 "recommended_tool_order": ["discover_fighorse", "check_fighorse_ready", "list_experiences", "get_design_package", "visual_audit", "record_experience"],
                 "ai_contract": guidance::ai_contract(),
+                "notes": [
+                    "By default this command writes reviewable snippets only.",
+                    "Use --apply to install into detected user-level client config and skill/rule locations.",
+                    "The default HTTP transport reuses the installed local MCP service, so multiple AI clients do not spawn separate fighorse processes.",
+                    "Use `figma-api coverage` or MCP resource `fighorse://coverage` for exact public REST API coverage.",
+                    "For Codex, apply prefers `codex mcp add` and falls back to a managed TOML block.",
+                    "For Cursor, apply uses `cursor --add-mcp`, writes ~/.cursor/mcp.json for Cursor Agent CLI, and attempts `cursor agent mcp enable fighorse`.",
+                    "For Kimi, apply prefers `kimi mcp add` and falls back to ~/.kimi/mcp.json."
+                ]
             }),
         )?
         .to_string_lossy()
         .into_owned(),
     ));
+    let readme_body = format!(
+        "# fighorse {client} install\n\n\
+Main MCP config: `mcp.json`.\n\n\
+Run with `--apply` to install into detected client config and skill locations.\n\n\
+Recommended order: discover_fighorse, check_fighorse_ready, list_experiences, get_design_package, visual_audit, record_experience.\n\
+For exact public REST API calls, inspect `fighorse://coverage` or run `fighorse figma-api coverage`.\n\n\
+## Complementary: Official Figma MCP\n\n\
+For capabilities not exposed by the public Figma REST API, also install the official Figma Remote MCP.\n\n\
+- Remote URL: `https://mcp.figma.com/mcp`\n\
+- Transport: HTTP (Streamable HTTP)\n\
+- Auth: OAuth via your Figma account\n\
+- Use for: native canvas writes, Code to Canvas, Code Connect auto-mapping, FigJam generation, Make resources\n\
+- Pricing: free during beta; will become usage-based paid (per Figma docs)\n\
+- Seat: Full seat required for writes to shared files; Dev seat is read-only outside drafts\n\n\
+Both fighorse and the official MCP can coexist in the same client. fighorse handles design-to-code read workflows; official MCP handles canvas mutation and product-only features.\n"
+    );
     files.push(Value::String(
-        write_text(&readme, &format!("# fighorse {client} install\n\nMain MCP config: `mcp.json`.\n\nRun with `--apply` to install into detected client config and skill locations.\n\nRecommended order: discover_fighorse, check_fighorse_ready, list_experiences, get_design_package, visual_audit, record_experience.\n"))?
+        write_text(&readme, &readme_body)?
             .to_string_lossy()
             .into_owned(),
     ));
@@ -1541,6 +1726,49 @@ mod tests {
         assert!(content.contains("ExecStart="));
         assert!(content.contains("mcp serve --transport sse"));
         let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn claude_mcp_payload_transforms_all_transports() {
+        // HTTP: transport -> type, url preserved.
+        let http = json!({"transport": "http", "url": "http://127.0.0.1:9449/mcp"});
+        let p = claude_mcp_payload(&http);
+        assert_eq!(p["type"], "http");
+        assert_eq!(p["url"], "http://127.0.0.1:9449/mcp");
+        assert!(p.get("transport").is_none());
+
+        // SSE.
+        let sse = json!({"transport": "sse", "url": "http://127.0.0.1:9449/sse"});
+        let p = claude_mcp_payload(&sse);
+        assert_eq!(p["type"], "sse");
+
+        // stdio: no transport field -> type=stdio, command/args/env preserved.
+        let stdio = json!({
+            "command": "/path/to/fighorse",
+            "args": ["mcp", "serve", "--transport", "stdio"],
+            "env": {"FIGHORSE_MCP_MODE": "readonly"}
+        });
+        let p = claude_mcp_payload(&stdio);
+        assert_eq!(p["type"], "stdio");
+        assert_eq!(p["command"], "/path/to/fighorse");
+        assert!(p["args"].is_array());
+        assert_eq!(p["env"]["FIGHORSE_MCP_MODE"], "readonly");
+    }
+
+    #[test]
+    fn opencode_mcp_payload_transforms_all_transports() {
+        let http = json!({"transport": "http", "url": "http://127.0.0.1:9449/mcp"});
+        let p = opencode_mcp_payload(&http);
+        assert_eq!(p["type"], "remote");
+        assert_eq!(p["url"], "http://127.0.0.1:9449/mcp");
+        assert_eq!(p["enabled"], true);
+
+        let stdio = json!({"command": "fighorse", "args": ["mcp", "serve"], "env": {"K": "v"}});
+        let p = opencode_mcp_payload(&stdio);
+        assert_eq!(p["type"], "local");
+        assert_eq!(p["enabled"], true);
+        assert_eq!(p["command"], "fighorse");
+        assert_eq!(p["env"]["K"], "v");
     }
 
     #[test]
