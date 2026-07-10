@@ -358,6 +358,42 @@ fn old_manifest_entries_default_to_present_content() {
 }
 
 #[test]
+fn new_install_prunes_missing_present_entries_but_keeps_absence_contracts() {
+    let root = temp_root("manifest-prune");
+    let home = root.join("home");
+    let present = root.join("present");
+    let stale = root.join("stale");
+    let retired = root.join("retired");
+
+    let mut initial = InstallTransaction::new(&home).unwrap();
+    initial.write_managed(&present, b"present").unwrap();
+    initial.write_managed(&stale, b"stale").unwrap();
+    initial.write_managed(&retired, b"retired").unwrap();
+    initial.commit(None).unwrap();
+
+    let mut remove = InstallTransaction::new(&home).unwrap();
+    remove.remove_managed(&retired).unwrap();
+    remove.commit(None).unwrap();
+    fs::remove_file(&stale).unwrap();
+
+    InstallTransaction::new(&home)
+        .unwrap()
+        .commit(None)
+        .unwrap();
+    let manifest = load_manifest(&home).unwrap();
+    assert!(manifest
+        .managed_files
+        .iter()
+        .any(|file| file.path == present));
+    assert!(!manifest.managed_files.iter().any(|file| file.path == stale));
+    assert!(manifest
+        .managed_files
+        .iter()
+        .any(|file| file.path == retired && file.desired_absent));
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
 fn payload_and_service_renderers_match_fixtures() {
     let endpoint = "http://127.0.0.1:9449/mcp";
     let cases = [

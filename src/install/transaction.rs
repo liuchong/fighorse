@@ -342,7 +342,20 @@ impl InstallTransaction {
     }
 
     pub fn commit(&self, last_verification: Option<Vec<InstallCheck>>) -> Result<InstallManifest> {
-        let mut files = self.previous.clone();
+        let mut files: BTreeMap<_, _> = self
+            .previous
+            .iter()
+            .filter(|(path, file)| {
+                if self.changed.contains_key(*path) || file.desired_absent {
+                    return true;
+                }
+                match std::fs::symlink_metadata(path) {
+                    Ok(_) => true,
+                    Err(error) => error.kind() != std::io::ErrorKind::NotFound,
+                }
+            })
+            .map(|(path, file)| (path.clone(), file.clone()))
+            .collect();
         files.extend(self.changed.clone());
         let manifest = InstallManifest {
             schema_version: 3,

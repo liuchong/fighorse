@@ -306,6 +306,7 @@ fn project_install_merges_user_content_and_failure_restores_everything() {
             "--project-dir",
             project.to_str().unwrap(),
         ])
+        .env("FIGHORSE_HOME", &home)
         .output()
         .unwrap();
     assert!(merged.status.success());

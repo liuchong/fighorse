@@ -802,17 +802,26 @@ fn install_project_in_transaction(
     );
     transaction.write_managed(&readme_file, readme_content.as_bytes())?;
 
+    Ok(project_install_report(project_dir, true))
+}
+
+fn project_install_report(project_dir: &Path, applied: bool) -> Value {
+    let dir = project_dir.join(".fighorse");
+    let config_file = dir.join("fighorse.json");
+    let ignore_file = dir.join(".gitignore");
+    let readme_file = dir.join("README.md");
     let opts = ScopeOpts {
         scope: Some("project".to_string()),
         project_dir: Some(project_dir.to_string_lossy().into_owned()),
     };
-    Ok(json!({
+    json!({
         "kind": "fighorse.install-project.v1",
+        "apply": applied,
         "project_dir": project_dir.to_string_lossy(),
         "files": [config_file.to_string_lossy(), ignore_file.to_string_lossy(), readme_file.to_string_lossy()],
         "ai_contract": guidance::ai_contract(),
         "experience": experience::store_info(&opts),
-    }))
+    })
 }
 
 fn merge_managed_block(existing: Option<&str>, start: &str, end: &str, managed: &str) -> String {
@@ -2529,6 +2538,10 @@ pub fn install_all(opts: &InstallOpts) -> Result<Value> {
     } else {
         command_path(opts.command, opts.home)
     };
+    let project_dir = opts
+        .path
+        .map(PathBuf::from)
+        .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
 
     let clients_result: Vec<Value> = selected
         .iter()
@@ -2553,7 +2566,7 @@ pub fn install_all(opts: &InstallOpts) -> Result<Value> {
         "home": install_home(Some(&home_str))?,
         "auth": install_auth(opts.token, Some(&home_str), opts.apply)?,
         "binary": install_binary(opts.source, Some(&binary_target_str), opts.link_dir, opts.link_dirs, Some(&home_str), opts.apply && has_source)?,
-        "project": install_project(opts.path)?,
+        "project": project_install_report(&project_dir, false),
         "skill": install_skill(None, Some(&home_str), None, opts.clients.filter(|_| mcp_mode), opts.apply)?,
         "clients_result": clients_result,
         "service": install_service(if skip_service { "none" } else { opts.service }, opts.port, &command, Some(&home_str), opts.apply)?,
@@ -2867,6 +2880,8 @@ mod tests {
         assert!(result["clients_result"].as_array().unwrap().is_empty());
         assert_eq!(result["service"]["service"], "none");
         assert_eq!(result["service"]["skipped"], true);
+        assert_eq!(result["project"]["apply"], false);
+        assert!(!tmp.join(".fighorse/fighorse.json").exists());
         let _ = std::fs::remove_dir_all(&tmp);
     }
 
@@ -2891,6 +2906,8 @@ mod tests {
         assert_eq!(result["clients"], serde_json::json!(["cursor", "codex"]));
         assert_eq!(result["service"]["transport"], "http");
         assert!(result["service"]["file"].is_string());
+        assert_eq!(result["project"]["apply"], false);
+        assert!(!tmp.join(".fighorse/fighorse.json").exists());
         let _ = std::fs::remove_dir_all(&tmp);
     }
 
