@@ -460,12 +460,17 @@ pub fn install_binary(
         requested.push(ld.to_string());
     }
     let disable = requested.iter().any(|d| d.trim().to_lowercase() == "none");
+    let explicit = requested
+        .iter()
+        .any(|d| !d.trim().is_empty() && d.trim().to_lowercase() != "none");
     let mut all_dirs = if disable {
         vec![]
+    } else if explicit {
+        // Explicit --link-dir(s) replace the preferred defaults so callers can
+        // target writable dirs without also attempting /usr/local/bin.
+        requested.clone()
     } else {
-        let mut v = requested.clone();
-        v.extend(path_preferred_link_dirs());
-        v
+        path_preferred_link_dirs()
     };
     let mut seen = std::collections::HashSet::new();
     all_dirs = all_dirs
@@ -485,14 +490,21 @@ pub fn install_binary(
         })?;
         let binary = copy_executable(&src, &target)?;
         let mut applied_links = Vec::new();
+        let mut skipped_links = Vec::new();
         for l in &links {
-            applied_links.push(Value::String(
-                symlink_or_copy(&target, l)?.to_string_lossy().into_owned(),
-            ));
+            match symlink_or_copy(&target, l) {
+                Ok(path) => applied_links.push(Value::String(path.to_string_lossy().into_owned())),
+                Err(e) => skipped_links.push(json!({
+                    "link": l.to_string_lossy(),
+                    "error": e.to_string(),
+                    "reason": "PATH link directory is not writable; install continues with remaining link dirs",
+                })),
+            }
         }
         Some(json!({
             "binary": binary.to_string_lossy(),
             "links": applied_links,
+            "skipped_links": skipped_links,
         }))
     } else {
         None
@@ -1792,6 +1804,59 @@ mod tests {
         assert_eq!(p["enabled"], true);
         assert_eq!(p["command"], "fighorse");
         assert_eq!(p["env"]["K"], "v");
+    }
+
+    #[test]
+    fn install_binary_skips_unwritable_link_dirs() {
+        let tmp = std::env::temp_dir().join(format!("fh-bin-skip-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).unwrap();
+        let home = tmp.join("home");
+        let writable = tmp.join("writable-bin");
+        let locked = tmp.join("locked-bin");
+        std::fs::create_dir_all(&writable).unwrap();
+        std::fs::create_dir_all(&locked).unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mut perms = std::fs::metadata(&locked).unwrap().permissions();
+            perms.set_mode(0o555);
+            std::fs::set_permissions(&locked, perms).unwrap();
+        }
+        let source = tmp.join("source-fighorse");
+        std::fs::write(&source, "#!/bin/sh\necho fighorse\n").unwrap();
+        set_executable(&source);
+        let link_dirs = format!("{},{}", writable.to_string_lossy(), locked.to_string_lossy());
+        let result = install_binary(
+            Some(&source.to_string_lossy()),
+            None,
+            None,
+            Some(&link_dirs),
+            Some(&home.to_string_lossy()),
+            true,
+        )
+        .unwrap();
+        let applied = result["applied"].as_object().unwrap();
+        let links = applied["links"].as_array().unwrap();
+        let skipped = applied["skipped_links"].as_array().unwrap();
+        assert!(links
+            .iter()
+            .any(|v| v.as_str().unwrap().contains("writable-bin")));
+        assert!(
+            skipped
+                .iter()
+                .any(|v| v["link"].as_str().unwrap().contains("locked-bin")),
+            "unwritable link dir should be reported in skipped_links: {skipped:?}"
+        );
+        assert!(writable.join("fighorse").exists());
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mut perms = std::fs::metadata(&locked).unwrap().permissions();
+            perms.set_mode(0o755);
+            std::fs::set_permissions(&locked, perms).unwrap();
+        }
+        let _ = std::fs::remove_dir_all(&tmp);
     }
 
     #[test]
