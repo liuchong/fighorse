@@ -884,7 +884,12 @@ fn apply_client(client: &str, server: &Value, command: &str, home: Option<&str>)
         }));
     }
     let config_result = match client.as_str() {
-        "cursor" => merge_json_mcp_config(&home_os().join(".cursor").join("mcp.json"), server)?,
+        "cursor" => {
+            // Cursor's mcp.json expects just {url} for HTTP/SSE and {command,args,env}
+            // for stdio - it does not use a `transport`/`type` field.
+            let payload = cursor_mcp_payload(server);
+            merge_json_mcp_config(&home_os().join(".cursor").join("mcp.json"), &payload)?
+        }
         "codex" => {
             // Prefer codex CLI, fall back to managed TOML block.
             let config_file = home_os().join(".codex").join("config.toml");
@@ -993,6 +998,24 @@ fn apply_client(client: &str, server: &Value, command: &str, home: Option<&str>)
         "mcp": config_result,
         "skills": skill_result,
     }))
+}
+
+/// Cursor's mcp.json shape: HTTP/SSE -> `{url}`, stdio -> `{command, args, env}`.
+/// Cursor does not use a `transport`/`type` discriminator field.
+fn cursor_mcp_payload(server: &Value) -> Value {
+    let transport = server.get("transport").and_then(|v| v.as_str());
+    match transport {
+        Some("http" | "sse") => json!({"url": server.get("url").cloned().unwrap_or(Value::Null)}),
+        _ => {
+            let mut payload = serde_json::Map::new();
+            for k in ["command", "args", "env"] {
+                if let Some(v) = server.get(k) {
+                    payload.insert(k.to_string(), v.clone());
+                }
+            }
+            Value::Object(payload)
+        }
+    }
 }
 
 /// Transform a fighorse MCP server config into Claude Code's `mcpServers`
