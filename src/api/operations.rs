@@ -25,35 +25,6 @@ fn snake_to_kebab(k: &str) -> String {
     k.replace('_', "-")
 }
 
-/// Flexible param lookup: tries the keyword, its kebab form, the string key, and
-/// the underscore->dash string, matching `fighorse.api.operations/param`.
-fn param<'a>(params: &'a Value, key: &str) -> Option<&'a str> {
-    let obj = params.as_object()?;
-    obj.get(key)
-        .or_else(|| obj.get(&snake_to_kebab(key)))
-        .and_then(|v| match v {
-            Value::String(s) => Some(s.as_str()),
-            _ => None,
-        })
-        // Numbers/bools are passed as their string form by callers; the
-        // version relies on `(str v)` only at the HTTP layer. Params here are
-        // typically strings already. Fall back to non-string scalar rendering.
-        .or_else(|| {
-            obj.get(key)
-                .or_else(|| obj.get(&snake_to_kebab(key)))
-                .and_then(scalar_str)
-        })
-}
-
-/// Render a JSON scalar to a borrowed-or-leaked string for param passing.
-/// Returns None for objects/arrays/null.
-fn scalar_str(v: &Value) -> Option<&str> {
-    match v {
-        Value::String(s) => Some(s.as_str()),
-        _ => None,
-    }
-}
-
 /// Owned param that also stringifies numbers/bools (for query values).
 fn param_owned(params: &Value, key: &str) -> Option<String> {
     let obj = params.as_object()?;
@@ -102,9 +73,6 @@ pub async fn call_operation(
             param_owned(params, $k)
         };
     }
-    let pd = |k: &str| param_owned(params, k);
-    let ps = |k: &str| param(params, k).map(|s| s.to_string());
-    let _ = (&pd, &ps);
 
     match operation_id {
         "getFile" => {

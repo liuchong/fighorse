@@ -48,7 +48,15 @@ impl std::error::Error for Error {}
 impl From<reqwest::Error> for Error {
     fn from(e: reqwest::Error) -> Self {
         if e.is_timeout() {
-            Error::Timeout(0)
+            // Report the configured timeout rather than a placeholder. Call
+            // sites in `http` already convert timeouts explicitly; this keeps
+            // any other path (e.g. streaming a response body) accurate too.
+            let ms = std::env::var("FIGHORSE_HTTP_TIMEOUT_MS")
+                .ok()
+                .and_then(|v| v.trim().parse::<u64>().ok())
+                .filter(|n| *n > 0)
+                .unwrap_or(120_000);
+            Error::Timeout(ms)
         } else {
             Error::Http(e)
         }

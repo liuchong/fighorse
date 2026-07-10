@@ -43,15 +43,10 @@ pub fn path_segment(value: &str) -> String {
 fn client() -> &'static Client {
     static CLIENT: OnceLock<Client> = OnceLock::new();
     CLIENT.get_or_init(|| {
-        let mut builder = Client::builder();
         // reqwest reads HTTP(S)_PROXY from the environment by default; honor the
-        // same variables config::setup_proxy sets.
-        if let Ok(no_timeout) = std::env::var("FIGHORSE_HTTP_NO_TIMEOUT") {
-            if no_timeout == "1" {
-                builder = builder.timeout(Duration::from_secs(0));
-            }
-        }
-        builder.build().unwrap_or_else(|_| Client::new())
+        // same variables config::setup_proxy sets. Per-request timeouts are
+        // applied at each call site.
+        Client::builder().build().unwrap_or_else(|_| Client::new())
     })
 }
 

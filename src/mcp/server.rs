@@ -218,7 +218,6 @@ pub async fn serve_stdio() -> Result<()> {
     let mut stdout = tokio::io::stdout();
     let mut buffer: Vec<u8> = Vec::new();
     let mut header_mode = false;
-    let mut mode_locked = false;
     let max_bytes = stdio_max_bytes();
 
     if std::env::var("FIGHORSE_MCP_STDIO_LOG").as_deref() == Ok("1") {
@@ -237,7 +236,7 @@ pub async fn serve_stdio() -> Result<()> {
         buffer.extend_from_slice(&chunk[..n]);
 
         loop {
-            match extract_message(&buffer, &mut header_mode, &mut mode_locked, max_bytes) {
+            match extract_message(&buffer, &mut header_mode, max_bytes) {
                 Ok(Some((msg_bytes, consumed))) => {
                     buffer.drain(..consumed);
                     if msg_bytes.is_empty() {
@@ -273,7 +272,6 @@ pub async fn serve_stdio() -> Result<()> {
 fn extract_message(
     buffer: &[u8],
     header_mode: &mut bool,
-    mode_locked: &mut bool,
     max_bytes: usize,
 ) -> Result<Option<(Vec<u8>, usize)>> {
     if buffer.is_empty() {
@@ -319,7 +317,6 @@ fn extract_message(
             return Ok(None);
         }
         *header_mode = true;
-        *mode_locked = true;
         return Ok(Some((buffer[body_start..body_end].to_vec(), body_end)));
     }
 
@@ -329,7 +326,6 @@ fn extract_message(
         if line.last() == Some(&b'\r') {
             line = &line[..line.len() - 1];
         }
-        *mode_locked = true;
         return Ok(Some((line.to_vec(), idx + 1)));
     }
 
@@ -488,9 +484,8 @@ mod tests {
     #[test]
     fn extract_newline_message() {
         let mut hm = false;
-        let mut locked = false;
         let buf = b"{\"a\":1}\n".to_vec();
-        let (msg, consumed) = extract_message(&buf, &mut hm, &mut locked, 1000).unwrap().unwrap();
+        let (msg, consumed) = extract_message(&buf, &mut hm, 1000).unwrap().unwrap();
         assert_eq!(msg, b"{\"a\":1}");
         assert_eq!(consumed, 8);
         assert!(!hm);
@@ -499,9 +494,8 @@ mod tests {
     #[test]
     fn extract_header_message() {
         let mut hm = false;
-        let mut locked = false;
         let buf = b"Content-Length: 7\r\n\r\n{\"a\":1}".to_vec();
-        let (msg, _consumed) = extract_message(&buf, &mut hm, &mut locked, 1000).unwrap().unwrap();
+        let (msg, _consumed) = extract_message(&buf, &mut hm, 1000).unwrap().unwrap();
         assert_eq!(msg, b"{\"a\":1}");
         assert!(hm);
     }
