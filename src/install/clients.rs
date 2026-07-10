@@ -168,7 +168,11 @@ impl ClientSpec {
     /// preserving all unknown user fields.
     pub fn merge_config(&self, existing: Option<&str>) -> Result<String> {
         if self.kind == ClientKind::Codex {
-            return merge_codex(existing.unwrap_or_default(), &self.toml_payload());
+            return merge_codex(
+                existing.unwrap_or_default(),
+                &self.toml_payload(),
+                (!self.url.is_empty()).then_some(self.url.as_str()),
+            );
         }
         let mut root = match existing {
             Some(text) if !text.trim().is_empty() => serde_json::from_str::<Value>(text)?
@@ -200,7 +204,7 @@ pub fn config_path(home: &Path, kind: ClientKind) -> PathBuf {
     }
 }
 
-fn merge_codex(existing: &str, payload: &str) -> Result<String> {
+fn merge_codex(existing: &str, payload: &str, desired_url: Option<&str>) -> Result<String> {
     const BEGIN: &str = "# BEGIN fighorse managed";
     const END: &str = "# END fighorse managed";
     let block = format!("{BEGIN}\n{payload}{END}\n");
@@ -215,7 +219,24 @@ fn merge_codex(existing: &str, payload: &str) -> Result<String> {
             .unwrap_or(&existing[end..]);
         return Ok(format!("{}{}{}", &existing[..start], block, suffix));
     }
-    if existing.contains("[mcp_servers.fighorse]") {
+    if let Some((start, end)) = codex_fighorse_section(existing) {
+        let current = &existing[start..end];
+        let exact_payload = current.trim() == payload.trim();
+        let current_url = toml_string_assignment(current, "url");
+        let has_command = toml_string_assignment(current, "command").is_some();
+        let equivalent_http = desired_url
+            .is_some_and(|desired| current_url.as_deref() == Some(desired) && !has_command);
+        if exact_payload || equivalent_http {
+            return Ok(existing.to_string());
+        }
+        if known_legacy_codex_fighorse(current, current_url.as_deref()) {
+            return Ok(format!(
+                "{}{}{}",
+                &existing[..start],
+                block,
+                &existing[end..]
+            ));
+        }
         return Err(Error::Usage(
             "Existing user-managed [mcp_servers.fighorse] block was not overwritten.".into(),
         ));
@@ -225,6 +246,63 @@ fn merge_codex(existing: &str, payload: &str) -> Result<String> {
     } else {
         Ok(format!("{}\n\n{block}", existing.trim_end()))
     }
+}
+
+fn codex_fighorse_section(existing: &str) -> Option<(usize, usize)> {
+    const HEADER: &str = "[mcp_servers.fighorse]";
+    const ENV_HEADER: &str = "[mcp_servers.fighorse.env]";
+    let mut start = None;
+    let mut offset = 0;
+    for line in existing.split_inclusive('\n') {
+        let trimmed = line.trim();
+        match start {
+            None if trimmed == HEADER => start = Some(offset),
+            Some(section_start)
+                if trimmed.starts_with('[') && trimmed.ends_with(']') && trimmed != ENV_HEADER =>
+            {
+                return Some((section_start, offset));
+            }
+            _ => {}
+        }
+        offset += line.len();
+    }
+    start.map(|section_start| (section_start, existing.len()))
+}
+
+fn toml_string_assignment(section: &str, key: &str) -> Option<String> {
+    section.lines().find_map(|line| {
+        let (candidate, value) = line.trim().split_once('=')?;
+        if candidate.trim() != key {
+            return None;
+        }
+        let value = value.trim();
+        if value.len() < 2 {
+            return None;
+        }
+        let quote = value.as_bytes()[0];
+        if !matches!(quote, b'"' | b'\'') || value.as_bytes()[value.len() - 1] != quote {
+            return None;
+        }
+        Some(value[1..value.len() - 1].to_string())
+    })
+}
+
+fn known_legacy_codex_fighorse(section: &str, url: Option<&str>) -> bool {
+    let legacy_url = matches!(
+        url,
+        Some(
+            "http://127.0.0.1:9449/sse"
+                | "http://localhost:9449/sse"
+                | "http://127.0.0.1:9449/messages"
+                | "http://localhost:9449/messages"
+        )
+    );
+    let legacy_stdio = toml_string_assignment(section, "command")
+        .is_some_and(|command| command.to_ascii_lowercase().contains("fighorse"))
+        && section.contains("args")
+        && section.contains("\"mcp\"")
+        && section.contains("\"serve\"");
+    legacy_url || legacy_stdio
 }
 
 fn toml_escape(value: &str) -> String {
