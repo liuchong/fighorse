@@ -117,4 +117,4 @@ FIGMA_INTEGRATION_TESTS=1 FIGMA_TOKEN=<token> cargo test -- --ignored
 
 ## License
 
-[1st Public License (1PL)](https://license.pub/1pl/)
+[1st Public License (1PL)](https://license.pub/1pl/) (full text in the [LICENSE](LICENSE) file)

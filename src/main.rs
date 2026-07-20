@@ -55,6 +55,12 @@ async fn async_main() -> ExitCode {
     let cmd1 = args.first().map(String::as_str);
     let cmd2 = args.get(1).map(String::as_str);
 
+    let is_version = args.iter().any(|a| a == "--version" || a == "-V");
+    if is_version {
+        println!("fighorse {}", env!("CARGO_PKG_VERSION"));
+        return ExitCode::SUCCESS;
+    }
+
     let is_help = matches!(cmd1, Some("help")) || args.iter().any(|a| a == "--help" || a == "-h");
     if is_help {
         print_help();

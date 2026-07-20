@@ -1,10 +1,14 @@
 [package]
 name = "fighorse"
-version = "0.1.0"
+version = "0.0.1"
 edition = "2021"
 description = "Figma data Swiss Army knife, shaped for AI consumption"
-license = "1PL"
+license-file = "LICENSE"
 rust-version = "1.86"
+repository = "https://github.com/liuchong/fighorse"
+homepage = "https://github.com/liuchong/fighorse"
+keywords = ["figma", "mcp", "cli", "design-tokens", "ai"]
+categories = ["command-line-utilities", "development-tools"]
 
 [[bin]]
 name = "fighorse"
