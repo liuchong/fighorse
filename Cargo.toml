@@ -1,6 +1,6 @@
 [package]
 name = "fighorse"
-version = "0.0.2"
+version = "0.0.3"
 edition = "2024"
 description = "Figma data Swiss Army knife, shaped for AI consumption"
 license-file = "LICENSE"
