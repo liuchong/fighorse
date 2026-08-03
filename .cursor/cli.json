@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Mcp(fighorse:discover_fighorse)"
+    ],
+    "deny": []
+  }
+}
