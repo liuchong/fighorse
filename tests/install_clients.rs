@@ -23,6 +23,7 @@ fn four_clients_render_native_http_payloads() {
     let codex = ClientSpec::new(ClientKind::Codex, ENDPOINT).toml_payload();
     assert!(codex.contains(&format!("url = \"{ENDPOINT}\"")));
     assert!(codex.contains("[mcp_servers.fighorse.tools.discover_fighorse]"));
+    assert!(codex.contains("[mcp_servers.fighorse.tools.get_resource_catalog]"));
     assert!(codex.contains("approval_mode = \"approve\""));
     assert!(!codex.contains("default_tools_approval_mode"));
 }
@@ -62,18 +63,27 @@ fn skills_have_only_canonical_cross_client_targets() {
 }
 
 #[test]
-fn codex_merge_adds_discovery_approval_migrates_legacy_and_rejects_unknown() {
+fn codex_merge_adds_readonly_bootstrap_approvals_and_rejects_unknown() {
     let spec = ClientSpec::new(ClientKind::Codex, ENDPOINT);
     let equivalent = format!("model = \"gpt\"\n\n[mcp_servers.fighorse]\nurl = \"{ENDPOINT}\"\n");
     let migrated_equivalent = spec.merge_config(Some(&equivalent)).unwrap();
     assert!(migrated_equivalent.contains("# BEGIN fighorse managed"));
     assert!(migrated_equivalent.contains("[mcp_servers.fighorse.tools.discover_fighorse]"));
+    assert!(migrated_equivalent.contains("[mcp_servers.fighorse.tools.get_resource_catalog]"));
     assert!(migrated_equivalent.contains("approval_mode = \"approve\""));
 
     let approved = format!(
-        "[mcp_servers.fighorse]\nurl = \"{ENDPOINT}\"\n\n[mcp_servers.fighorse.tools.discover_fighorse]\napproval_mode = \"approve\"\n"
+        "[mcp_servers.fighorse]\nurl = \"{ENDPOINT}\"\n\n[mcp_servers.fighorse.tools.discover_fighorse]\napproval_mode = \"approve\"\n\n[mcp_servers.fighorse.tools.get_resource_catalog]\napproval_mode = \"approve\"\n"
     );
     assert_eq!(spec.merge_config(Some(&approved)).unwrap(), approved);
+
+    let discovery_only = format!(
+        "[mcp_servers.fighorse]\nurl = \"{ENDPOINT}\"\n\n[mcp_servers.fighorse.tools.discover_fighorse]\napproval_mode = \"approve\"\n"
+    );
+    let migrated_discovery_only = spec.merge_config(Some(&discovery_only)).unwrap();
+    assert!(migrated_discovery_only.contains("# BEGIN fighorse managed"));
+    assert!(migrated_discovery_only.contains("[mcp_servers.fighorse.tools.discover_fighorse]"));
+    assert!(migrated_discovery_only.contains("[mcp_servers.fighorse.tools.get_resource_catalog]"));
 
     let legacy = "model = \"gpt\"\n\n[mcp_servers.fighorse]\nurl = \"http://127.0.0.1:9449/sse\"\n";
     let migrated = spec.merge_config(Some(legacy)).unwrap();

@@ -138,14 +138,14 @@ impl ClientSpec {
     pub fn toml_payload(&self) -> String {
         match &self.transport {
             Transport::Http => format!(
-                "[mcp_servers.fighorse]\nurl = \"{}\"\nenabled = true\nstartup_timeout_sec = 60\n\n[mcp_servers.fighorse.tools.discover_fighorse]\napproval_mode = \"approve\"\n",
+                "[mcp_servers.fighorse]\nurl = \"{}\"\nenabled = true\nstartup_timeout_sec = 60\n\n[mcp_servers.fighorse.tools.discover_fighorse]\napproval_mode = \"approve\"\n\n[mcp_servers.fighorse.tools.get_resource_catalog]\napproval_mode = \"approve\"\n",
                 toml_escape(&self.url)
             ),
             Transport::Stdio {
                 command,
                 fighorse_home,
             } => format!(
-                "[mcp_servers.fighorse]\ncommand = \"{}\"\nargs = [\"mcp\", \"serve\", \"--transport\", \"stdio\"]\nenabled = true\nstartup_timeout_sec = 60\n\n[mcp_servers.fighorse.env]\nFIGHORSE_HOME = \"{}\"\nFIGHORSE_MCP_MODE = \"readonly\"\nFIGHORSE_MCP_LOCAL_WRITE = \"deny\"\nFIGHORSE_MCP_CODE_CONNECT = \"deny\"\n\n[mcp_servers.fighorse.tools.discover_fighorse]\napproval_mode = \"approve\"\n",
+                "[mcp_servers.fighorse]\ncommand = \"{}\"\nargs = [\"mcp\", \"serve\", \"--transport\", \"stdio\"]\nenabled = true\nstartup_timeout_sec = 60\n\n[mcp_servers.fighorse.env]\nFIGHORSE_HOME = \"{}\"\nFIGHORSE_MCP_MODE = \"readonly\"\nFIGHORSE_MCP_LOCAL_WRITE = \"deny\"\nFIGHORSE_MCP_CODE_CONNECT = \"deny\"\n\n[mcp_servers.fighorse.tools.discover_fighorse]\napproval_mode = \"approve\"\n\n[mcp_servers.fighorse.tools.get_resource_catalog]\napproval_mode = \"approve\"\n",
                 toml_escape(command),
                 toml_escape(&fighorse_home.to_string_lossy())
             ),
@@ -243,6 +243,7 @@ fn merge_codex(existing: &str, payload: &str, desired_url: Option<&str>) -> Resu
             current_url.as_deref() == Some(desired)
                 && !has_command
                 && codex_tool_approval(existing, "discover_fighorse") == Some("approve")
+                && codex_tool_approval(existing, "get_resource_catalog") == Some("approve")
         });
         if exact_payload || equivalent_http {
             return Ok(existing.to_string());
@@ -334,7 +335,42 @@ fn known_preapproval_codex_http(section: &str, desired_url: &str) -> bool {
     {
         return false;
     }
-    known_codex_http_fields(section)
+    enum Table {
+        Root,
+        ApprovedTool,
+    }
+
+    let mut table = Table::Root;
+    for line in section.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() || trimmed.starts_with('#') {
+            continue;
+        }
+        match trimmed {
+            "[mcp_servers.fighorse]" => {
+                table = Table::Root;
+                continue;
+            }
+            "[mcp_servers.fighorse.tools.discover_fighorse]"
+            | "[mcp_servers.fighorse.tools.get_resource_catalog]" => {
+                table = Table::ApprovedTool;
+                continue;
+            }
+            _ if trimmed.starts_with('[') && trimmed.ends_with(']') => return false,
+            _ => {}
+        }
+        let Some((key, value)) = trimmed.split_once('=') else {
+            return false;
+        };
+        let known = match table {
+            Table::Root => matches!(key.trim(), "url" | "enabled" | "startup_timeout_sec"),
+            Table::ApprovedTool => key.trim() == "approval_mode" && value.trim() == "\"approve\"",
+        };
+        if !known {
+            return false;
+        }
+    }
+    true
 }
 
 fn known_codex_http_fields(section: &str) -> bool {

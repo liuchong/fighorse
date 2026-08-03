@@ -47,8 +47,10 @@ fn readmes_publish_one_four_client_service_workflow() {
             "{path} omits Code Connect commands or safety defaults"
         );
         assert!(
-            text.contains("discover_fighorse") && text.contains("Codex"),
-            "{path} omits the Codex read-only discovery approval boundary"
+            text.contains("discover_fighorse")
+                && text.contains("get_resource_catalog")
+                && text.contains("Codex"),
+            "{path} omits a Codex read-only bootstrap approval boundary"
         );
         assert!(
             !text.contains("default_tools_approval_mode"),

@@ -78,7 +78,10 @@ manifest, and never removes unrelated files.
 - Cursor: `{"url":"http://127.0.0.1:9449/mcp"}`.
 - Kimi: `{"transport":"http","url":"http://127.0.0.1:9449/mcp"}`.
 - Claude: `{"type":"http","url":"http://127.0.0.1:9449/mcp"}`.
-- Codex: `[mcp_servers.fighorse]` with the URL.
+- Codex: `[mcp_servers.fighorse]` with the URL. Only the read-only
+  `discover_fighorse` and `get_resource_catalog` tools are pre-approved so
+  headless sessions can complete self-discovery and browser-link inventory;
+  every other tool retains Codex's normal approval behavior.
 
 Review artifacts and applied configurations are rendered from the same
 client payload function.

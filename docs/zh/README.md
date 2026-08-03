@@ -68,7 +68,7 @@ fighorse install client --client claude --apply
 
 服务安装是事务性的：先写入二进制和服务文件，等待 `/health`，在 `/mcp` 完成真实的 `initialize` 与 `tools/list` 握手，之后才写客户端配置与 skill。`~/.fighorse/install/manifest.json` 记录托管文件和 `desired_absent` 删除项，备份及迁移冲突保存在 `~/.fighorse/install/backups/`；`fighorse install rollback` 只恢复仍与 manifest 一致的托管文件及先前服务状态。
 
-四种原生 HTTP payload 分别是：Cursor `{"url":"http://127.0.0.1:9449/mcp"}`、Kimi `{"transport":"http","url":"http://127.0.0.1:9449/mcp"}`、Claude `{"type":"http","url":"http://127.0.0.1:9449/mcp"}`，Codex 使用 `[mcp_servers.fighorse]` 和同一 URL。Codex 配置只预批准只读的 `discover_fighorse`，让无交互会话能够完成自发现；其他 MCP 工具仍遵循 Codex 的正常审批规则。
+四种原生 HTTP payload 分别是：Cursor `{"url":"http://127.0.0.1:9449/mcp"}`、Kimi `{"transport":"http","url":"http://127.0.0.1:9449/mcp"}`、Claude `{"type":"http","url":"http://127.0.0.1:9449/mcp"}`，Codex 使用 `[mcp_servers.fighorse]` 和同一 URL。Codex 配置只预批准只读的 `discover_fighorse` 和 `get_resource_catalog`，让无交互会话能够完成自发现和浏览链接资源清单；其他 MCP 工具仍遵循 Codex 的正常审批规则。
 
 三处 canonical 目标是：Cursor/Kimi/Codex 共用 `~/.agents/skills/fighorse/SKILL.md`，Claude 使用 `~/.claude/skills/fighorse/SKILL.md`，Cursor 另用 `~/.cursor/rules/fighorse.mdc`。
 

@@ -5,3 +5,6 @@ startup_timeout_sec = 60
 
 [mcp_servers.fighorse.tools.discover_fighorse]
 approval_mode = "approve"
+
+[mcp_servers.fighorse.tools.get_resource_catalog]
+approval_mode = "approve"
