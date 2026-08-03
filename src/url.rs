@@ -98,6 +98,19 @@ impl ParsedUrl {
         }
     }
 
+    fn invalid_with_kind(input: &str, kind: Option<String>, error: &str) -> Self {
+        ParsedUrl {
+            valid: false,
+            input: input.to_string(),
+            file_key: None,
+            node_id: None,
+            raw_node_id: None,
+            kind,
+            embedded_url: None,
+            error: Some(error.to_string()),
+        }
+    }
+
     /// Serialize to the parsed-URL JSON shape.
     pub fn to_json(&self) -> Value {
         let mut map = serde_json::Map::new();
@@ -133,6 +146,21 @@ fn file_key_from_segments(segments: &[String]) -> Option<String> {
         }
     }
     None
+}
+
+fn is_figma_host(url: &url::Url) -> bool {
+    url.host_str()
+        .map(|host| host == "figma.com" || host.ends_with(".figma.com"))
+        .unwrap_or(false)
+}
+
+fn figma_browser_url_error(kind: Option<&str>) -> Option<&'static str> {
+    match kind {
+        Some("files") => Some(
+            "This is a Figma file browser or project URL. It does not include a design file key or selected frame node. Open the concrete Figma file and copy a link to the selected frame, component, or group, or pass a raw file key together with --node-id.",
+        ),
+        _ => None,
+    }
 }
 
 /// Parse a Figma URL or raw file key into its components.
@@ -197,7 +225,14 @@ pub fn parse_figma_url(input: &str) -> ParsedUrl {
             embedded_url: None,
             error: None,
         },
-        None => ParsedUrl::invalid(&raw, "Could not find Figma file key in URL"),
+        None => {
+            if is_figma_host(&parsed) {
+                if let Some(error) = figma_browser_url_error(kind.as_deref()) {
+                    return ParsedUrl::invalid_with_kind(&raw, kind, error);
+                }
+            }
+            ParsedUrl::invalid(&raw, "Could not find Figma file key in URL")
+        }
     }
 }
 
@@ -324,6 +359,21 @@ mod tests {
     fn parse_invalid_url() {
         let p = parse_figma_url("https://example.com/no-file-key");
         assert!(!p.valid);
+    }
+
+    #[test]
+    fn parse_figma_file_browser_url_explains_missing_design_target() {
+        let p = parse_figma_url("https://www.figma.com/files/project/123456/Mobile-App?fuid=abc");
+        assert!(!p.valid);
+        assert_eq!(p.kind.as_deref(), Some("files"));
+        assert!(p.file_key.is_none());
+        assert!(p.node_id.is_none());
+        assert!(
+            p.error
+                .as_deref()
+                .unwrap_or("")
+                .contains("does not include a design file key")
+        );
     }
 
     #[test]

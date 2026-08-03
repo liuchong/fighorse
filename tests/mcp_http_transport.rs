@@ -37,6 +37,7 @@ async fn start_server_with_policy(
 ) -> Server {
     let port = free_port();
     let home = temp_lock_path("http-home").parent().unwrap().to_path_buf();
+    let stderr_path = home.join("server.stderr.log");
     let mut command = Command::new(env!("CARGO_BIN_EXE_fighorse"));
     command
         .args([
@@ -56,7 +57,7 @@ async fn start_server_with_policy(
         .env_remove("FIGMA_API_KEY")
         .stdin(Stdio::null())
         .stdout(Stdio::null())
-        .stderr(Stdio::piped());
+        .stderr(Stdio::from(fs::File::create(&stderr_path).unwrap()));
     match lock_path {
         Some(path) => {
             command
@@ -67,9 +68,8 @@ async fn start_server_with_policy(
             command.env("FIGHORSE_MCP_ALLOW_MULTIPLE", "1");
         }
     }
-    let child = command.spawn().unwrap();
-    let server = Server {
-        child,
+    let mut server = Server {
+        child: command.spawn().unwrap(),
         base: format!("http://127.0.0.1:{port}"),
         home,
     };
@@ -85,7 +85,9 @@ async fn start_server_with_policy(
         }
         tokio::time::sleep(Duration::from_millis(25)).await;
     }
-    panic!("MCP HTTP server did not become ready");
+    let status = server.child.try_wait().unwrap();
+    let stderr = fs::read_to_string(&stderr_path).unwrap_or_default();
+    panic!("MCP HTTP server did not become ready; status={status:?}; stderr={stderr}");
 }
 
 async fn mcp_post(

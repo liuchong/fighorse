@@ -82,6 +82,44 @@ fn quickstart_keeps_cli_readiness_separate_from_optional_service_readiness() {
 }
 
 #[test]
+fn quickstart_explains_figma_project_links_are_not_design_targets() {
+    let _lock = process_env_lock();
+    let _env = EnvGuard::capture(&["FIGHORSE_HOME", "FIGMA_TOKEN", "FIGMA_API_KEY"]);
+    let root = temp_root("quickstart-project-link");
+    unsafe { std::env::set_var("FIGHORSE_HOME", &root) };
+    unsafe { std::env::remove_var("FIGMA_TOKEN") };
+    unsafe { std::env::remove_var("FIGMA_API_KEY") };
+
+    let report = discovery::quickstart(Some(
+        "https://www.figma.com/files/project/123456/Mobile-App",
+    ));
+    let figma_check = report["checks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|check| check["id"] == "figma_url")
+        .unwrap();
+    assert_eq!(figma_check["ok"], false);
+    assert!(
+        figma_check["message"]
+            .as_str()
+            .unwrap()
+            .contains("file browser or project URL")
+    );
+    assert!(
+        report["next_steps"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|step| step.as_str())
+            .any(|step| step.contains("Open the concrete Figma file"))
+    );
+    assert!(report["figma_url"]["file_key"].is_null());
+    assert_eq!(report["figma_url"]["kind"], "files");
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
 fn doctor_does_not_treat_an_active_lock_as_service_readiness() {
     let _lock = process_env_lock();
     let _env = EnvGuard::capture(&[

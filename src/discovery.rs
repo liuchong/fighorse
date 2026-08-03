@@ -249,6 +249,9 @@ pub fn quickstart(figma_url: Option<&str>) -> Value {
     let figma_url_message = match &parsed {
         None => "Paste a Figma frame, component, or group link to continue.".to_string(),
         Some(p) if p.valid => "Figma URL or file key parsed successfully.".to_string(),
+        Some(p) if p.kind.as_deref() == Some("files") => p.error.clone().unwrap_or_else(|| {
+            "This is a Figma file browser or project URL, not a design target.".to_string()
+        }),
         Some(p) => p.error.clone().unwrap_or_default(),
     };
     checks.push(json!({
@@ -294,6 +297,13 @@ pub fn quickstart(figma_url: Option<&str>) -> Value {
     }
     if !has_url {
         next_steps.push("Copy a link to a specific Figma frame, component, or group.".to_string());
+    }
+    if parsed
+        .as_ref()
+        .map(|p| !p.valid && p.kind.as_deref() == Some("files"))
+        .unwrap_or(false)
+    {
+        next_steps.push("Open the concrete Figma file from the browser/project page, select the frame/component/group, then copy a link with node-id. If the developer explicitly provided a file key, use it only together with the intended --node-id.".to_string());
     }
     if has_url && !exact_selection {
         next_steps.push("Narrow the input to an exact Figma selection with node-id.".to_string());
