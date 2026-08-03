@@ -1,15 +1,15 @@
 use fighorse::install::clients::{ClientKind, ClientSpec};
 use fighorse::install::model::{InstallPlan, InstallStep};
 use fighorse::install::service::{
-    activate_service, launchd_plist, rollback_service, systemd_unit, ServiceCommandRunner,
-    ServiceState,
+    ServiceCommandRunner, ServiceState, activate_service, launchd_plist, rollback_service,
+    systemd_unit,
 };
-use fighorse::install::skills::{migrate_legacy, GeneratedSkillTemplates};
+use fighorse::install::skills::{GeneratedSkillTemplates, migrate_legacy};
 use fighorse::install::transaction::{
-    load_manifest, rollback, verify_manifest, InstallTransaction, ManagedFile,
+    InstallTransaction, ManagedFile, load_manifest, rollback, verify_manifest,
 };
-use fighorse::install::{install_auth, install_client, SUPPORTED_CLIENTS};
-use serde_json::{json, Value};
+use fighorse::install::{SUPPORTED_CLIENTS, install_auth, install_client};
+use serde_json::{Value, json};
 use std::collections::VecDeque;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -246,10 +246,12 @@ fn known_legacy_skills_are_removed_verified_and_restored_by_rollback() {
             .count(),
         candidates.len()
     );
-    assert!(verify_manifest(&install_home)
-        .unwrap()
-        .iter()
-        .all(|check| check.ok));
+    assert!(
+        verify_manifest(&install_home)
+            .unwrap()
+            .iter()
+            .all(|check| check.ok)
+    );
 
     let mut repeated = InstallTransaction::new(&install_home).unwrap();
     let repeated_report = migrate_legacy(&mut repeated, &user_home, &templates).unwrap();
@@ -350,11 +352,13 @@ fn install_skill_apply_uses_canonical_targets_and_shared_migration() {
         String::from_utf8_lossy(&applied.stderr)
     );
     let output: Value = serde_json::from_slice(&applied.stdout).unwrap();
-    assert!(output["migration"]["removed"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .any(|path| path.as_str() == Some(legacy.to_str().unwrap())));
+    assert!(
+        output["migration"]["removed"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|path| path.as_str() == Some(legacy.to_str().unwrap()))
+    );
     assert!(!legacy.exists());
 
     let canonical = [
@@ -366,14 +370,18 @@ fn install_skill_apply_uses_canonical_targets_and_shared_migration() {
     assert_eq!(output["applied"].as_array().unwrap().len(), 3);
     assert!(!user_home.join(".cursor/skills/fighorse/SKILL.md").exists());
     assert!(!user_home.join(".kimi/skills/fighorse/SKILL.md").exists());
-    assert!(!user_home
-        .join(".config/agents/skills/fighorse/SKILL.md")
-        .exists());
-    assert!(load_manifest(&install_home)
-        .unwrap()
-        .managed_files
-        .iter()
-        .any(|file| file.path == legacy && file.desired_absent));
+    assert!(
+        !user_home
+            .join(".config/agents/skills/fighorse/SKILL.md")
+            .exists()
+    );
+    assert!(
+        load_manifest(&install_home)
+            .unwrap()
+            .managed_files
+            .iter()
+            .any(|file| file.path == legacy && file.desired_absent)
+    );
     let _ = fs::remove_dir_all(root);
 }
 
@@ -414,15 +422,19 @@ fn new_install_prunes_missing_present_entries_but_keeps_absence_contracts() {
         .commit(None)
         .unwrap();
     let manifest = load_manifest(&home).unwrap();
-    assert!(manifest
-        .managed_files
-        .iter()
-        .any(|file| file.path == present));
+    assert!(
+        manifest
+            .managed_files
+            .iter()
+            .any(|file| file.path == present)
+    );
     assert!(!manifest.managed_files.iter().any(|file| file.path == stale));
-    assert!(manifest
-        .managed_files
-        .iter()
-        .any(|file| file.path == retired && file.desired_absent));
+    assert!(
+        manifest
+            .managed_files
+            .iter()
+            .any(|file| file.path == retired && file.desired_absent)
+    );
     let _ = fs::remove_dir_all(root);
 }
 
@@ -542,14 +554,18 @@ fn failed_service_activation_unloads_a_fresh_service() {
     let rollback = rollback_service(&mut runner, &state);
 
     assert!(rollback.iter().all(|check| check.ok));
-    assert!(runner
-        .calls
-        .iter()
-        .any(|(_, args)| { args == &["--user", "disable", "fighorse-mcp.service",] }));
-    assert!(runner
-        .calls
-        .iter()
-        .any(|(_, args)| { args == &["--user", "stop", "fighorse-mcp.service",] }));
+    assert!(
+        runner
+            .calls
+            .iter()
+            .any(|(_, args)| { args == &["--user", "disable", "fighorse-mcp.service",] })
+    );
+    assert!(
+        runner
+            .calls
+            .iter()
+            .any(|(_, args)| { args == &["--user", "stop", "fighorse-mcp.service",] })
+    );
 }
 
 #[test]
@@ -714,10 +730,12 @@ fn cli_only_apply_uses_temp_home_without_service_or_client_side_effects() {
     assert!(!completed.contains(&serde_json::json!("clients")));
     assert!(target.exists());
     assert!(home.join("install/manifest.json").exists());
-    assert!(fs::read_dir(home.join("services"))
-        .unwrap()
-        .next()
-        .is_none());
+    assert!(
+        fs::read_dir(home.join("services"))
+            .unwrap()
+            .next()
+            .is_none()
+    );
     assert!(fs::read_dir(home.join("clients")).unwrap().next().is_none());
     let _ = fs::remove_dir_all(root);
 }

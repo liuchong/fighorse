@@ -4,7 +4,7 @@
 //! fighorse-home-dependent output-location guidance.
 
 use crate::config;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 /// Export directory policy.
 pub fn export_dirs() -> Value {

@@ -3,7 +3,7 @@
 use super::model::InstallCheck;
 use crate::error::Result;
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::path::PathBuf;
 use std::process::Command;
 
@@ -86,7 +86,7 @@ pub fn probe_service_state(
         other => {
             return Err(crate::error::Error::Usage(format!(
                 "Unsupported service manager: {other}. Expected launchd or systemd."
-            )))
+            )));
         }
     };
     Ok(ServiceState::captured(

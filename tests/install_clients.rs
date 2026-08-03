@@ -20,9 +20,11 @@ fn four_clients_render_native_http_payloads() {
         ClientSpec::new(ClientKind::Claude, ENDPOINT).json_payload(),
         json!({"type": "http", "url": ENDPOINT})
     );
-    assert!(ClientSpec::new(ClientKind::Codex, ENDPOINT)
-        .toml_payload()
-        .contains(&format!("url = \"{ENDPOINT}\"")));
+    assert!(
+        ClientSpec::new(ClientKind::Codex, ENDPOINT)
+            .toml_payload()
+            .contains(&format!("url = \"{ENDPOINT}\""))
+    );
 }
 
 #[test]

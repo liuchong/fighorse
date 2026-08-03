@@ -1,8 +1,8 @@
-use crate::code_connect::model::{CodeConnectDocument, ValidationReport, COMPATIBILITY_COMMIT};
+use crate::code_connect::model::{COMPATIBILITY_COMMIT, CodeConnectDocument, ValidationReport};
 use crate::error::{Error, Result};
 use crate::http;
 use crate::url as figma_url;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::collections::BTreeMap;
 
 fn protocol_incompatible(phase: &str, detail: &str) -> Error {

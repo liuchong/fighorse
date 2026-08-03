@@ -16,7 +16,7 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 #[tokio::test(flavor = "current_thread")]
 async fn http_client_contract() {
     let server = MockServer::start().await;
-    std::env::set_var("FIGHORSE_API_BASE_URL", server.uri());
+    unsafe { std::env::set_var("FIGHORSE_API_BASE_URL", server.uri()) };
 
     // POST: method, auth header, JSON body, JSON response.
     Mock::given(method("POST"))
@@ -75,5 +75,5 @@ async fn http_client_contract() {
     assert_eq!(post_req.headers.get("X-Figma-Token").unwrap(), "token");
     assert_eq!(std::str::from_utf8(&post_req.body).unwrap(), "{\"a\":1}");
 
-    std::env::remove_var("FIGHORSE_API_BASE_URL");
+    unsafe { std::env::remove_var("FIGHORSE_API_BASE_URL") };
 }

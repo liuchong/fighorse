@@ -6,7 +6,7 @@
 use crate::config;
 use crate::error::{Error, Result};
 use crate::guidance;
-use serde_json::{json, Map, Value};
+use serde_json::{Map, Value, json};
 use std::path::PathBuf;
 
 pub const RECORD_KIND: &str = "fighorse.experience.v1";
@@ -745,9 +745,9 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("fighorse-exp-{}", random_id()));
         std::fs::create_dir_all(&dir).unwrap();
         let store = dir.join("experience.jsonl");
-        std::env::set_var("FIGHORSE_EXPERIENCE_PATH", &store);
+        unsafe { std::env::set_var("FIGHORSE_EXPERIENCE_PATH", &store) };
         f(&store);
-        std::env::remove_var("FIGHORSE_EXPERIENCE_PATH");
+        unsafe { std::env::remove_var("FIGHORSE_EXPERIENCE_PATH") };
     }
 
     #[test]

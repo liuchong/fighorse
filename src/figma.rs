@@ -2,7 +2,7 @@
 //!
 //! Shared helpers for normalizing Figma REST responses.
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 /// Return the document/node payload from a file or file-nodes response.
 pub fn response_to_node(data: &Value) -> Value {

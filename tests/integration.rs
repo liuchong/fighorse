@@ -19,9 +19,9 @@
 use fighorse::api::files;
 use fighorse::config;
 use fighorse::experience::{self, Filters, ScopeOpts};
-use fighorse::product::design_package::{get_design_package, PackageOpts};
+use fighorse::product::design_package::{PackageOpts, get_design_package};
 use fighorse::transform::{compact, filter as tree_filter, tokens};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 /// Skip unless integration testing is explicitly enabled with a file key + token.
 fn integration_setup() -> Option<(String, String)> {
@@ -167,7 +167,7 @@ async fn design_package_integration() {
 #[ignore]
 async fn mcp_and_export_integration() {
     let (token, file_key) = require_integration!();
-    std::env::set_var("FIGMA_TOKEN", &token);
+    unsafe { std::env::set_var("FIGMA_TOKEN", &token) };
 
     // 1) tools/list includes the new 0.41.0 operations.
     let list = fighorse::mcp::server::dispatch(&json!({
@@ -242,7 +242,7 @@ async fn mcp_and_export_integration() {
 
     let _ = std::fs::remove_dir_all(&tmp);
     assert!(!tmp.exists(), "temp dir cleaned up");
-    std::env::remove_var("FIGMA_TOKEN");
+    unsafe { std::env::remove_var("FIGMA_TOKEN") };
 }
 
 /// Local experience store round-trip (no Figma API calls).
@@ -250,7 +250,7 @@ async fn mcp_and_export_integration() {
 #[ignore]
 async fn experience_store_integration() {
     let tmp = std::env::temp_dir().join(format!("fighorse-exp-int-{}", std::process::id()));
-    std::env::set_var("FIGHORSE_EXPERIENCE_PATH", tmp.join("exp.jsonl"));
+    unsafe { std::env::set_var("FIGHORSE_EXPERIENCE_PATH", tmp.join("exp.jsonl")) };
 
     let opts = ScopeOpts::default();
     let record = json!({
@@ -275,5 +275,5 @@ async fn experience_store_integration() {
     assert_eq!(listed["returned_count"], 1);
 
     let _ = std::fs::remove_dir_all(&tmp);
-    std::env::remove_var("FIGHORSE_EXPERIENCE_PATH");
+    unsafe { std::env::remove_var("FIGHORSE_EXPERIENCE_PATH") };
 }

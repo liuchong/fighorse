@@ -5,7 +5,7 @@
 use crate::experience::{self, Filters, ScopeOpts};
 use crate::guidance;
 use crate::url as figma_url;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 /// Build a visual audit payload.
 pub fn audit(

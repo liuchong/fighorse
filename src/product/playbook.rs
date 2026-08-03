@@ -5,7 +5,7 @@
 use crate::api::coverage;
 use crate::experience::{self, Filters, ScopeOpts};
 use crate::guidance;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 /// Build the project playbook payload.
 pub fn build(

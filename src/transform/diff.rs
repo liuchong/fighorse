@@ -3,7 +3,7 @@
 //! Returns a structural diff of nodes. Child ordering follows the new tree's
 //! child order, which is deterministic.
 
-use serde_json::{json, Map, Value};
+use serde_json::{Map, Value, json};
 
 fn node_signature(node: &Value) -> Value {
     let mut sig = Map::new();

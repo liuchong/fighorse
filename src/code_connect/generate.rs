@@ -83,11 +83,7 @@ fn camel_case(name: &str) -> String {
             }
         }
     }
-    if out.is_empty() {
-        "value".into()
-    } else {
-        out
-    }
+    if out.is_empty() { "value".into() } else { out }
 }
 
 fn kebab(value: &str) -> String {

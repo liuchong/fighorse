@@ -33,7 +33,7 @@ fn doc(node_id: &str) -> CodeConnectDocument {
 #[tokio::test(flavor = "current_thread")]
 async fn validates_previews_publishes_and_unpublishes_observed_protocol() {
     let server = MockServer::start().await;
-    std::env::set_var("FIGHORSE_API_BASE_URL", server.uri());
+    unsafe { std::env::set_var("FIGHORSE_API_BASE_URL", server.uri()) };
 
     Mock::given(method("GET"))
         .and(path("/v1/files/ABCDEF/nodes"))
@@ -119,7 +119,7 @@ async fn validates_previews_publishes_and_unpublishes_observed_protocol() {
     assert_eq!(deleted["meta"]["deleted_count"], 1);
 
     let incompatible_server = MockServer::start().await;
-    std::env::set_var("FIGHORSE_API_BASE_URL", incompatible_server.uri());
+    unsafe { std::env::set_var("FIGHORSE_API_BASE_URL", incompatible_server.uri()) };
 
     Mock::given(method("POST"))
         .and(path("/v1/code_connect"))
@@ -133,7 +133,7 @@ async fn validates_previews_publishes_and_unpublishes_observed_protocol() {
     let msg = err.to_string();
     assert!(msg.contains("protocol_incompatible"), "{msg}");
 
-    std::env::remove_var("FIGHORSE_API_BASE_URL");
+    unsafe { std::env::remove_var("FIGHORSE_API_BASE_URL") };
 }
 
 #[tokio::test(flavor = "current_thread")]

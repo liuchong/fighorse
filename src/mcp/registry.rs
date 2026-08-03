@@ -3,7 +3,7 @@
 //! Generated MCP registry for official Figma REST operations.
 
 use crate::api::coverage::{self, Operation};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 /// Build an official-operation tool definition.
 pub fn official_tool(op: &Operation) -> Value {

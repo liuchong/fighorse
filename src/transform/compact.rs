@@ -4,7 +4,7 @@
 //! never modified. Node maps use `serde_json`'s `preserve_order` feature so
 //! field insertion order follows the extractor pipeline.
 
-use serde_json::{json, Map, Value};
+use serde_json::{Map, Value, json};
 
 /// Rough token estimate for a JSON value.
 ///

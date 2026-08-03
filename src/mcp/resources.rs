@@ -5,7 +5,7 @@ use crate::discovery;
 use crate::error::{Error, Result};
 use crate::experience::{self, Filters, ScopeOpts};
 use crate::mcp::registry;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 /// List available resources.
 pub fn list_resources() -> Value {

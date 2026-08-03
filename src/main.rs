@@ -16,13 +16,13 @@ fn setup_proxy(proxy: &Option<String>) {
             .map(|v| v.is_empty())
             .unwrap_or(true)
         {
-            std::env::set_var("HTTP_PROXY", proxy_url);
+            unsafe { std::env::set_var("HTTP_PROXY", proxy_url) };
         }
         if std::env::var("HTTPS_PROXY")
             .map(|v| v.is_empty())
             .unwrap_or(true)
         {
-            std::env::set_var("HTTPS_PROXY", proxy_url);
+            unsafe { std::env::set_var("HTTPS_PROXY", proxy_url) };
         }
         eprintln!("Using proxy: {proxy_url}");
     }

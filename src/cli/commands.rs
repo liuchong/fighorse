@@ -16,7 +16,7 @@ use crate::api::{
     users as users_api, variables as variables_api, webhooks as webhooks_api,
 };
 use crate::code_connect::{
-    generate::{generate_template, GenerateRequest},
+    generate::{GenerateRequest, generate_template},
     model::CodeConnectDocument,
     project::load_project,
     template::parse_project,
@@ -27,7 +27,7 @@ use crate::export::{images as img_export, md as md_export};
 use crate::figma;
 use crate::transform::{compact, filter as tree_filter, schema, tokens};
 use crate::url as figma_url;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::path::Path;
 
 fn int_str(v: i64) -> String {
@@ -59,7 +59,9 @@ pub fn cmd_auth_login(args: &[String]) -> Result<()> {
             Ok(())
         }
         _ => {
-            eprintln!("Error: token required. Use `fighorse auth login --token <token>` or pipe token on stdin.");
+            eprintln!(
+                "Error: token required. Use `fighorse auth login --token <token>` or pipe token on stdin."
+            );
             std::process::exit(1);
         }
     }
@@ -97,10 +99,10 @@ fn atty_stdin() -> bool {
 
 #[cfg(unix)]
 unsafe fn libc_isatty(fd: i32) -> bool {
-    extern "C" {
+    unsafe extern "C" {
         fn isatty(fd: i32) -> i32;
     }
-    isatty(fd) == 1
+    unsafe { isatty(fd) == 1 }
 }
 
 // --- File commands ---
@@ -796,7 +798,9 @@ pub async fn cmd_figma_api_call(args: &[String]) -> Result<()> {
     let explain = flag_present(args, "--explain-for-ai");
 
     if api_operations::write_operation(&operation_id) && !flag_present(args, "--yes") {
-        eprintln!("Error: write operation requires --yes. Figma write APIs can mutate comments, variables, webhooks, or dev resources.");
+        eprintln!(
+            "Error: write operation requires --yes. Figma write APIs can mutate comments, variables, webhooks, or dev resources."
+        );
         std::process::exit(1);
     }
 

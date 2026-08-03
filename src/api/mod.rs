@@ -296,7 +296,7 @@ pub mod comments {
     use super::opt;
     use crate::error::Result;
     use crate::http;
-    use serde_json::{json, Value};
+    use serde_json::{Value, json};
 
     pub async fn get_comments(token: &str, file_key: &str, as_md: Option<&str>) -> Result<Value> {
         let path = format!("/v1/files/{}/comments", http::path_segment(file_key));
@@ -458,7 +458,7 @@ pub mod dev_resources {
     use super::opt;
     use crate::error::Result;
     use crate::http;
-    use serde_json::{json, Value};
+    use serde_json::{Value, json};
 
     pub async fn get_dev_resources(
         token: &str,
@@ -685,7 +685,7 @@ pub mod developer_logs {
     use super::opt;
     use crate::error::Result;
     use crate::http;
-    use serde_json::{json, Value};
+    use serde_json::{Value, json};
 
     #[allow(clippy::too_many_arguments)]
     pub async fn get_developer_logs(

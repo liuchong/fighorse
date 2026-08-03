@@ -1,6 +1,6 @@
 use fighorse::install::service::systemd_unit;
-use fighorse::install::transaction::{load_manifest, InstallTransaction};
-use serde_json::{json, Value};
+use fighorse::install::transaction::{InstallTransaction, load_manifest};
+use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use std::fs;
 use std::path::PathBuf;
@@ -34,7 +34,7 @@ fn write_executable(path: &std::path::Path, content: &str) {
 #[cfg(unix)]
 #[test]
 fn managed_files_preserve_modes_symlink_type_and_secure_installer_storage() {
-    use std::os::unix::fs::{symlink, PermissionsExt};
+    use std::os::unix::fs::{PermissionsExt, symlink};
 
     let root = temp_root("metadata");
     let install_home = root.join("home");
@@ -53,10 +53,12 @@ fn managed_files_preserve_modes_symlink_type_and_secure_installer_storage() {
         .unwrap();
     let symlink_write = transaction.write_managed(&link, b"link-after");
     assert!(symlink_write.is_err());
-    assert!(fs::symlink_metadata(&link)
-        .unwrap()
-        .file_type()
-        .is_symlink());
+    assert!(
+        fs::symlink_metadata(&link)
+            .unwrap()
+            .file_type()
+            .is_symlink()
+    );
     assert_eq!(fs::read_link(&link).unwrap(), link_target);
     transaction.remove_managed(&link).unwrap();
     let pending = transaction.rollback_pending();
@@ -64,10 +66,12 @@ fn managed_files_preserve_modes_symlink_type_and_secure_installer_storage() {
 
     assert_eq!(fs::read_to_string(&regular).unwrap(), "regular-before");
     assert_eq!(mode(&regular), 0o640);
-    assert!(fs::symlink_metadata(&link)
-        .unwrap()
-        .file_type()
-        .is_symlink());
+    assert!(
+        fs::symlink_metadata(&link)
+            .unwrap()
+            .file_type()
+            .is_symlink()
+    );
     assert_eq!(fs::read_link(&link).unwrap(), link_target);
     assert_eq!(fs::read_to_string(&link_target).unwrap(), "target-before");
 
@@ -80,13 +84,15 @@ fn managed_files_preserve_modes_symlink_type_and_secure_installer_storage() {
     assert_eq!(mode(&install_home.join("install/backups")), 0o700);
     assert_eq!(mode(backup), 0o600);
     assert_eq!(mode(&install_home.join("install/manifest.json")), 0o600);
-    assert!(fs::read_dir(install_home.join("install"))
-        .unwrap()
-        .all(|entry| !entry
+    assert!(
+        fs::read_dir(install_home.join("install"))
             .unwrap()
-            .file_name()
-            .to_string_lossy()
-            .contains(".tmp-")));
+            .all(|entry| !entry
+                .unwrap()
+                .file_name()
+                .to_string_lossy()
+                .contains(".tmp-"))
+    );
     let _ = fs::remove_dir_all(root);
 }
 
@@ -191,9 +197,11 @@ exit 0
         .unwrap();
     assert!(!output.status.success());
     assert!(!home.join("services/fighorse-mcp.service").exists());
-    assert!(!user_home
-        .join(".config/systemd/user/fighorse-mcp.service")
-        .exists());
+    assert!(
+        !user_home
+            .join(".config/systemd/user/fighorse-mcp.service")
+            .exists()
+    );
     let _ = fs::remove_dir_all(root);
 }
 
@@ -242,16 +250,20 @@ fn cli_only_install_manages_path_link_and_shared_skill_without_mcp_side_effects(
     assert_eq!(result["report"]["ok"], true, "{result}");
     assert!(link_dir.join("fighorse").exists());
     assert!(user_home.join(".agents/skills/fighorse/SKILL.md").is_file());
-    assert!(fs::read_dir(home.join("services"))
-        .unwrap()
-        .next()
-        .is_none());
+    assert!(
+        fs::read_dir(home.join("services"))
+            .unwrap()
+            .next()
+            .is_none()
+    );
     assert!(fs::read_dir(home.join("clients")).unwrap().next().is_none());
     let manifest = load_manifest(&home).unwrap();
-    assert!(manifest
-        .managed_files
-        .iter()
-        .any(|file| file.path == link_dir.join("fighorse")));
+    assert!(
+        manifest
+            .managed_files
+            .iter()
+            .any(|file| file.path == link_dir.join("fighorse"))
+    );
     let _ = fs::remove_dir_all(root);
 }
 
@@ -312,12 +324,16 @@ fn project_install_merges_user_content_and_failure_restores_everything() {
     assert!(merged.status.success());
     let merged_config: Value = serde_json::from_str(&fs::read_to_string(&config).unwrap()).unwrap();
     assert_eq!(merged_config["future"]["keep"], true);
-    assert!(fs::read_to_string(&ignore)
-        .unwrap()
-        .contains("user-ignore\n"));
-    assert!(fs::read_to_string(&readme)
-        .unwrap()
-        .contains("# User README"));
+    assert!(
+        fs::read_to_string(&ignore)
+            .unwrap()
+            .contains("user-ignore\n")
+    );
+    assert!(
+        fs::read_to_string(&readme)
+            .unwrap()
+            .contains("# User README")
+    );
     let _ = fs::remove_dir_all(root);
 }
 

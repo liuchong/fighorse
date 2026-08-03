@@ -1,4 +1,4 @@
-use fighorse::code_connect::generate::{generate_template, CodeComponentContext, GenerateRequest};
+use fighorse::code_connect::generate::{CodeComponentContext, GenerateRequest, generate_template};
 use fighorse::code_connect::model::{FigmaComponentContext, FigmaPropertyDefinition};
 use fighorse::code_connect::project::load_project;
 use fighorse::code_connect::template::parse_project;
@@ -54,7 +54,7 @@ export default {
         "// url=https://www.figma.com/design/BAD/Test?node-id=1-2\nexport default {}",
     );
 
-    std::env::remove_var("__FIGHORSE_TEST_SHOULD_NOT_RUN");
+    unsafe { std::env::remove_var("__FIGHORSE_TEST_SHOULD_NOT_RUN") };
     let project = load_project(&root, None).expect("load project");
     assert_eq!(project.files.len(), 1);
 
@@ -136,9 +136,11 @@ fn generator_maps_simple_props_and_blocks_ambiguous_input() {
     assert!(generated.template.contains("getString(\"Label\")"));
     assert!(generated.template.contains("getBoolean(\"Disabled\")"));
     assert!(generated.template.contains("getEnum(\"Size \\\"Mode\""));
-    assert!(generated
-        .template
-        .contains("\"Large \\\"Quoted\": \"large-quoted\""));
+    assert!(
+        generated
+            .template
+            .contains("\"Large \\\"Quoted\": \"large-quoted\"")
+    );
     assert!(generated.blocking_issues.is_empty());
 
     let ambiguous = FigmaComponentContext {
@@ -170,8 +172,10 @@ fn generator_maps_simple_props_and_blocks_ambiguous_input() {
         javascript: false,
     })
     .expect("ambiguous generation still returns a report");
-    assert!(generated
-        .blocking_issues
-        .iter()
-        .any(|issue| issue.contains("ambiguous")));
+    assert!(
+        generated
+            .blocking_issues
+            .iter()
+            .any(|issue| issue.contains("ambiguous"))
+    );
 }

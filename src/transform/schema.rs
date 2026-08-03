@@ -2,7 +2,7 @@
 //!
 //! Component schema inference from Figma component nodes.
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 /// Depth-first search for a node by id.
 pub fn find_node<'a>(node: &'a Value, node_id: &str) -> Option<&'a Value> {

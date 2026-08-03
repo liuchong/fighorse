@@ -9,7 +9,7 @@ use crate::figma;
 use crate::guidance;
 use crate::transform::{compact, tokens};
 use crate::url as figma_url;
-use serde_json::{json, Map, Value};
+use serde_json::{Map, Value, json};
 
 /// Resolved source coordinates for a design package request.
 pub struct Source {
@@ -171,9 +171,15 @@ fn asset_export_plan(
     let nid = node_id.unwrap_or("<node-id>");
 
     let mut cli_examples = vec![
-        Value::String(format!("fighorse image export {fk} --ids {nid} --format {render_format} --dir ./.fighorse/exports --manifest")),
-        Value::String(format!("fighorse component export {fk} --ids <component-node-id> --format {render_format} --dir ./assets/fighorse --manifest")),
-        Value::String(format!("fighorse asset download {fk} --dir ./assets/fighorse --manifest")),
+        Value::String(format!(
+            "fighorse image export {fk} --ids {nid} --format {render_format} --dir ./.fighorse/exports --manifest"
+        )),
+        Value::String(format!(
+            "fighorse component export {fk} --ids <component-node-id> --format {render_format} --dir ./assets/fighorse --manifest"
+        )),
+        Value::String(format!(
+            "fighorse asset download {fk} --dir ./assets/fighorse --manifest"
+        )),
     ];
     if platform_v == "unspecified" {
         cli_examples.push(Value::String("Ask the developer for the target platform before choosing final asset format or density rules.".into()));

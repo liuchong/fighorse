@@ -4,7 +4,7 @@
 //! wrappers, CLI, MCP, discovery, and tests aligned with the vendored Figma
 //! OpenAPI snapshot.
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 pub const OPENAPI_VERSION: &str = "0.41.0";
 

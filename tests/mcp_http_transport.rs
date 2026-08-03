@@ -1,6 +1,6 @@
 use futures_util::StreamExt;
 use reqwest::header::{ACCEPT, CONTENT_TYPE};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::fs;
 use std::net::TcpListener;
 use std::path::{Path, PathBuf};
@@ -200,9 +200,11 @@ async fn streamable_http_supports_independent_repeated_handshakes() {
         .await;
         assert!(listed.status().is_success());
         let listed = mcp_json(listed).await;
-        assert!(listed["result"]["tools"]
-            .as_array()
-            .is_some_and(|v| !v.is_empty()));
+        assert!(
+            listed["result"]["tools"]
+                .as_array()
+                .is_some_and(|v| !v.is_empty())
+        );
     }
 }
 
@@ -320,11 +322,13 @@ async fn official_http_handler_serves_resources_prompts_and_notifications() {
         .await,
     )
     .await;
-    assert!(resources["result"]["resources"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .any(|resource| resource["uri"] == "fighorse://coverage"));
+    assert!(
+        resources["result"]["resources"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|resource| resource["uri"] == "fighorse://coverage")
+    );
 
     let resource = mcp_json(
         mcp_post(
@@ -336,10 +340,12 @@ async fn official_http_handler_serves_resources_prompts_and_notifications() {
         .await,
     )
     .await;
-    assert!(resource["result"]["contents"][0]["text"]
-        .as_str()
-        .unwrap()
-        .contains("fighorse.api-coverage.v1"));
+    assert!(
+        resource["result"]["contents"][0]["text"]
+            .as_str()
+            .unwrap()
+            .contains("fighorse.api-coverage.v1")
+    );
 
     let prompts = mcp_json(
         mcp_post(
@@ -351,11 +357,13 @@ async fn official_http_handler_serves_resources_prompts_and_notifications() {
         .await,
     )
     .await;
-    assert!(prompts["result"]["prompts"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .any(|prompt| prompt["name"] == "fighorse_design_replication"));
+    assert!(
+        prompts["result"]["prompts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|prompt| prompt["name"] == "fighorse_design_replication")
+    );
 
     let prompt = mcp_json(
         mcp_post(
@@ -379,10 +387,12 @@ async fn official_http_handler_serves_resources_prompts_and_notifications() {
         .await,
     )
     .await;
-    assert!(prompt["result"]["messages"][0]["content"]["text"]
-        .as_str()
-        .unwrap()
-        .contains("record reusable lessons"));
+    assert!(
+        prompt["result"]["messages"][0]["content"]["text"]
+            .as_str()
+            .unwrap()
+            .contains("record reusable lessons")
+    );
 }
 
 #[tokio::test(flavor = "multi_thread")]

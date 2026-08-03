@@ -4,12 +4,12 @@ use crate::config;
 use crate::error::{Error, Result};
 use crate::mcp::{handler::FighorseHandler, resources, tools};
 use rmcp::{
-    transport::streamable_http_server::{
-        session::local::LocalSessionManager, StreamableHttpServerConfig, StreamableHttpService,
-    },
     ServiceExt,
+    transport::streamable_http_server::{
+        StreamableHttpServerConfig, StreamableHttpService, session::local::LocalSessionManager,
+    },
 };
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::path::PathBuf;
 use tokio_util::sync::CancellationToken;
 
@@ -39,7 +39,7 @@ fn active_pid(pid: Option<i64>) -> bool {
         Some(p) if p > 0 => {
             #[cfg(unix)]
             unsafe {
-                extern "C" {
+                unsafe extern "C" {
                     fn kill(pid: i32, sig: i32) -> i32;
                 }
                 kill(p as i32, 0) == 0 || std::io::Error::last_os_error().raw_os_error() != Some(3)
@@ -347,7 +347,7 @@ async fn normalize_successful_session_delete(
 }
 
 async fn serve_http(port: i64, host: Option<&str>, cors_origin: Option<&str>) -> Result<()> {
-    use axum::{middleware, response::IntoResponse, routing::get, Json, Router};
+    use axum::{Json, Router, middleware, response::IntoResponse, routing::get};
 
     let host = host.unwrap_or("127.0.0.1").to_string();
 
@@ -430,11 +430,11 @@ mod tests {
 
     #[tokio::test]
     async fn dispatch_tools_list() {
-        std::env::set_var("FIGHORSE_MCP_MODE", "readonly");
+        unsafe { std::env::set_var("FIGHORSE_MCP_MODE", "readonly") };
         let msg = json!({"jsonrpc": "2.0", "id": 2, "method": "tools/list"});
         let resp = dispatch(&msg).await.unwrap();
         assert!(resp["result"]["tools"].as_array().unwrap().len() > 10);
-        std::env::remove_var("FIGHORSE_MCP_MODE");
+        unsafe { std::env::remove_var("FIGHORSE_MCP_MODE") };
     }
 
     #[tokio::test]

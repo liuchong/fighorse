@@ -7,7 +7,7 @@ use crate::api::files;
 use crate::config;
 use crate::error::{Error, Result};
 use crate::http;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::io::Write;
 use std::path::{Component, Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};

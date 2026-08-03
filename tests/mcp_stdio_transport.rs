@@ -1,4 +1,4 @@
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::fs;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::path::PathBuf;
@@ -76,9 +76,11 @@ fn standard_stdio_round_trip_initializes_and_lists_tools() {
         "method": "tools/list",
         "params": {}
     }));
-    assert!(tools["result"]["tools"]
-        .as_array()
-        .is_some_and(|v| !v.is_empty()));
+    assert!(
+        tools["result"]["tools"]
+            .as_array()
+            .is_some_and(|v| !v.is_empty())
+    );
 }
 
 fn temp_lock_path() -> PathBuf {

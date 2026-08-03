@@ -6,7 +6,7 @@ use super::service::{self, ServiceCommandRunner, ServiceState};
 use crate::error::{Error, Result};
 use reqwest::header::{ACCEPT, CONTENT_TYPE};
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 use std::fs::OpenOptions;
@@ -705,7 +705,7 @@ async fn mcp_post(
             None => {
                 return Err(Error::Other(
                     "MCP SSE response contained no data event.".into(),
-                ))
+                ));
             }
         }
     } else {

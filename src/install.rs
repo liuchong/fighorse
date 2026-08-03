@@ -9,7 +9,7 @@ use crate::config;
 use crate::error::{Error, Result};
 use crate::experience::{self, ScopeOpts};
 use crate::guidance;
-use serde_json::{json, Map, Value};
+use serde_json::{Map, Value, json};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -544,7 +544,10 @@ pub fn install_binary(
         ])
     } else {
         json!([
-            format!("Run `fighorse install binary --apply --source <binary> --target {}` to install the CLI.", target.to_string_lossy()),
+            format!(
+                "Run `fighorse install binary --apply --source <binary> --target {}` to install the CLI.",
+                target.to_string_lossy()
+            ),
             "Use --link-dir or --link-dirs to add command links in PATH directories."
         ])
     };
@@ -613,7 +616,10 @@ pub fn install_home(home: Option<&str>) -> Result<Value> {
         dirs.push(mkdirp(&home.join(sub))?);
     }
     let readme = home.join("README.md");
-    write_text(&readme, "# fighorse Home\n\nThis directory stores local fighorse configuration, global experience, generated MCP client snippets, service files, skills, logs, runtime files, and exported assets.\n\n- Global experience: `experience/global.jsonl`\n- Project experience: `<project>/.fighorse/experience.jsonl` after `fighorse install project`\n- Override home with `FIGHORSE_HOME`.\n")?;
+    write_text(
+        &readme,
+        "# fighorse Home\n\nThis directory stores local fighorse configuration, global experience, generated MCP client snippets, service files, skills, logs, runtime files, and exported assets.\n\n- Global experience: `experience/global.jsonl`\n- Project experience: `<project>/.fighorse/experience.jsonl` after `fighorse install project`\n- Override home with `FIGHORSE_HOME`.\n",
+    )?;
 
     Ok(json!({
         "kind": "fighorse.install-home.v1",
@@ -2579,7 +2585,7 @@ fn active_pid(pid: Option<i64>) -> bool {
         Some(p) if p > 0 => {
             #[cfg(unix)]
             unsafe {
-                extern "C" {
+                unsafe extern "C" {
                     fn kill(pid: i32, sig: i32) -> i32;
                 }
                 kill(p as i32, 0) == 0 || std::io::Error::last_os_error().raw_os_error() != Some(3)
@@ -2841,9 +2847,11 @@ mod tests {
         let applied = result["applied"].as_object().unwrap();
         let links = applied["links"].as_array().unwrap();
         let skipped = applied["skipped_links"].as_array().unwrap();
-        assert!(links
-            .iter()
-            .any(|v| v.as_str().unwrap().contains("writable-bin")));
+        assert!(
+            links
+                .iter()
+                .any(|v| v.as_str().unwrap().contains("writable-bin"))
+        );
         assert!(
             skipped
                 .iter()
@@ -2940,11 +2948,12 @@ mod tests {
         assert!(PathBuf::from(target).is_absolute());
         assert_eq!(self_result["kind"], "fighorse.install-self.v1");
         assert_eq!(self_result["guide"]["kind"], "fighorse.install-guide.v1");
-        assert!(tmp
-            .join("skills")
-            .join("fighorse")
-            .join("SKILL.md")
-            .exists());
+        assert!(
+            tmp.join("skills")
+                .join("fighorse")
+                .join("SKILL.md")
+                .exists()
+        );
         let _ = std::fs::remove_dir_all(&tmp);
     }
 }

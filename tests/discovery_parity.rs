@@ -40,8 +40,8 @@ impl Drop for EnvGuard {
     fn drop(&mut self) {
         for (key, value) in &self.0 {
             match value {
-                Some(value) => std::env::set_var(key, value),
-                None => std::env::remove_var(key),
+                Some(value) => unsafe { std::env::set_var(key, value) },
+                None => unsafe { std::env::remove_var(key) },
             }
         }
     }
@@ -58,10 +58,10 @@ fn quickstart_keeps_cli_readiness_separate_from_optional_service_readiness() {
     ]);
     let root = temp_root("quickstart-discovery");
     let lock_path = root.join("isolated-mcp.lock");
-    std::env::set_var("FIGHORSE_HOME", &root);
-    std::env::set_var("FIGHORSE_MCP_LOCK_FILE", &lock_path);
-    std::env::remove_var("FIGMA_TOKEN");
-    std::env::remove_var("FIGMA_API_KEY");
+    unsafe { std::env::set_var("FIGHORSE_HOME", &root) };
+    unsafe { std::env::set_var("FIGHORSE_MCP_LOCK_FILE", &lock_path) };
+    unsafe { std::env::remove_var("FIGMA_TOKEN") };
+    unsafe { std::env::remove_var("FIGMA_API_KEY") };
 
     let report = discovery::quickstart(None);
     assert_eq!(report["install"]["default_mode"], "cli");
@@ -107,10 +107,10 @@ fn doctor_does_not_treat_an_active_lock_as_service_readiness() {
         .unwrap(),
     )
     .unwrap();
-    std::env::set_var("FIGHORSE_HOME", &root);
-    std::env::set_var("FIGHORSE_MCP_LOCK_FILE", &lock_path);
-    std::env::remove_var("FIGMA_TOKEN");
-    std::env::remove_var("FIGMA_API_KEY");
+    unsafe { std::env::set_var("FIGHORSE_HOME", &root) };
+    unsafe { std::env::set_var("FIGHORSE_MCP_LOCK_FILE", &lock_path) };
+    unsafe { std::env::remove_var("FIGMA_TOKEN") };
+    unsafe { std::env::remove_var("FIGMA_API_KEY") };
 
     let report = discovery::doctor();
     assert_eq!(report["mcp_service"]["owner_active"], true);
@@ -123,10 +123,12 @@ fn doctor_does_not_treat_an_active_lock_as_service_readiness() {
         .find(|check| check["id"] == "mcp_service")
         .unwrap();
     assert_eq!(service_check["ok"], false);
-    assert!(service_check["message"]
-        .as_str()
-        .unwrap()
-        .contains("not ready"));
+    assert!(
+        service_check["message"]
+            .as_str()
+            .unwrap()
+            .contains("not ready")
+    );
 
     let handshake = report["checks"]
         .as_array()
@@ -135,10 +137,12 @@ fn doctor_does_not_treat_an_active_lock_as_service_readiness() {
         .find(|check| check["id"] == "mcp_protocol")
         .unwrap();
     assert_eq!(handshake["ok"], false);
-    assert!(!handshake["message"]
-        .as_str()
-        .unwrap()
-        .contains("expected to"));
+    assert!(
+        !handshake["message"]
+            .as_str()
+            .unwrap()
+            .contains("expected to")
+    );
     let _ = fs::remove_dir_all(root);
 }
 
@@ -187,16 +191,18 @@ fn discovery_redacts_proxy_credentials() {
         "all_proxy",
     ]);
     let root = temp_root("proxy-redaction");
-    std::env::set_var("FIGHORSE_HOME", &root);
-    std::env::remove_var("FIGMA_TOKEN");
-    std::env::remove_var("FIGMA_API_KEY");
+    unsafe { std::env::set_var("FIGHORSE_HOME", &root) };
+    unsafe { std::env::remove_var("FIGMA_TOKEN") };
+    unsafe { std::env::remove_var("FIGMA_API_KEY") };
     for key in proxy_keys {
-        std::env::remove_var(key);
+        unsafe { std::env::remove_var(key) };
     }
-    std::env::set_var(
-        "HTTPS_PROXY",
-        "http://proxy-user:proxy-secret@127.0.0.1:8080/path?token=hidden",
-    );
+    unsafe {
+        std::env::set_var(
+            "HTTPS_PROXY",
+            "http://proxy-user:proxy-secret@127.0.0.1:8080/path?token=hidden",
+        )
+    };
 
     for report in [discovery::doctor(), discovery::quickstart(None)] {
         let text = serde_json::to_string(&report).unwrap();

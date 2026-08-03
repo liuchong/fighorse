@@ -17,7 +17,7 @@ struct BaseUrlGuard(Option<String>);
 impl BaseUrlGuard {
     fn set(url: &str) -> Self {
         let previous = std::env::var("FIGHORSE_API_BASE_URL").ok();
-        std::env::set_var("FIGHORSE_API_BASE_URL", url);
+        unsafe { std::env::set_var("FIGHORSE_API_BASE_URL", url) };
         Self(previous)
     }
 }
@@ -25,8 +25,8 @@ impl BaseUrlGuard {
 impl Drop for BaseUrlGuard {
     fn drop(&mut self) {
         match &self.0 {
-            Some(value) => std::env::set_var("FIGHORSE_API_BASE_URL", value),
-            None => std::env::remove_var("FIGHORSE_API_BASE_URL"),
+            Some(value) => unsafe { std::env::set_var("FIGHORSE_API_BASE_URL", value) },
+            None => unsafe { std::env::remove_var("FIGHORSE_API_BASE_URL") },
         }
     }
 }

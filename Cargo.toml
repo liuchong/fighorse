@@ -1,7 +1,7 @@
 [package]
 name = "fighorse"
-version = "0.0.1"
-edition = "2021"
+version = "0.0.2"
+edition = "2024"
 description = "Figma data Swiss Army knife, shaped for AI consumption"
 license-file = "LICENSE"
 rust-version = "1.86"

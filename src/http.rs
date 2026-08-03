@@ -189,11 +189,11 @@ mod tests {
 
     #[test]
     fn timeout_env_override() {
-        std::env::set_var("FIGHORSE_HTTP_TIMEOUT_MS", "42");
+        unsafe { std::env::set_var("FIGHORSE_HTTP_TIMEOUT_MS", "42") };
         assert_eq!(request_timeout_ms(), 42);
-        std::env::set_var("FIGHORSE_HTTP_TIMEOUT_MS", "0");
+        unsafe { std::env::set_var("FIGHORSE_HTTP_TIMEOUT_MS", "0") };
         assert_eq!(request_timeout_ms(), 120_000);
-        std::env::remove_var("FIGHORSE_HTTP_TIMEOUT_MS");
+        unsafe { std::env::remove_var("FIGHORSE_HTTP_TIMEOUT_MS") };
     }
 
     #[test]

@@ -1,9 +1,9 @@
 use crate::code_connect::model::{
-    CodeConnectDocument, CodeConnectProject, CodeConnectProjectConfig, TemplateData,
-    COMPATIBILITY_CLI_VERSION,
+    COMPATIBILITY_CLI_VERSION, CodeConnectDocument, CodeConnectProject, CodeConnectProjectConfig,
+    TemplateData,
 };
 use crate::error::{Error, Result};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::fs;
 use std::path::{Path, PathBuf};
 

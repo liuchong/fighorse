@@ -46,8 +46,8 @@ impl Drop for ProcessState {
         let _ = std::env::set_current_dir(&self.cwd);
         for (key, value) in &self.env {
             match value {
-                Some(value) => std::env::set_var(key, value),
-                None => std::env::remove_var(key),
+                Some(value) => unsafe { std::env::set_var(key, value) },
+                None => unsafe { std::env::remove_var(key) },
             }
         }
     }
@@ -63,8 +63,8 @@ async fn singleton_lock_rejects_active_owner_cleans_stale_and_allows_override() 
     let _state = ProcessState::capture(&["FIGHORSE_MCP_LOCK_FILE", "FIGHORSE_MCP_ALLOW_MULTIPLE"]);
     let root = temp_root("singleton");
     let lock_path = root.join("isolated.lock");
-    std::env::set_var("FIGHORSE_MCP_LOCK_FILE", &lock_path);
-    std::env::remove_var("FIGHORSE_MCP_ALLOW_MULTIPLE");
+    unsafe { std::env::set_var("FIGHORSE_MCP_LOCK_FILE", &lock_path) };
+    unsafe { std::env::remove_var("FIGHORSE_MCP_ALLOW_MULTIPLE") };
 
     let lock = server::acquire_singleton_lock("http", 9449)
         .unwrap()
@@ -85,10 +85,12 @@ async fn singleton_lock_rejects_active_owner_cleans_stale_and_allows_override() 
     assert_eq!(lock_json["pid"], std::process::id());
     drop(replacement);
 
-    std::env::set_var("FIGHORSE_MCP_ALLOW_MULTIPLE", "1");
-    assert!(server::acquire_singleton_lock("http", 9449)
-        .unwrap()
-        .is_none());
+    unsafe { std::env::set_var("FIGHORSE_MCP_ALLOW_MULTIPLE", "1") };
+    assert!(
+        server::acquire_singleton_lock("http", 9449)
+            .unwrap()
+            .is_none()
+    );
     assert!(!lock_path.exists(), "override must not create a lock file");
     let _ = fs::remove_dir_all(root);
 }
@@ -106,9 +108,9 @@ async fn mcp_export_policy_and_real_path_enforcement_are_independent() {
     ]);
     let project = temp_root("export-policy");
     std::env::set_current_dir(&project).unwrap();
-    std::env::set_var("FIGMA_TOKEN", "test-token");
-    std::env::set_var("FIGHORSE_MCP_MODE", "readonly");
-    std::env::set_var("FIGHORSE_MCP_LOCAL_WRITE", "deny");
+    unsafe { std::env::set_var("FIGMA_TOKEN", "test-token") };
+    unsafe { std::env::set_var("FIGHORSE_MCP_MODE", "readonly") };
+    unsafe { std::env::set_var("FIGHORSE_MCP_LOCAL_WRITE", "deny") };
 
     let denied = tools::call_tool(
         "export_images",
@@ -122,7 +124,7 @@ async fn mcp_export_policy_and_real_path_enforcement_are_independent() {
         "local export is not a Figma mutation"
     );
 
-    std::env::set_var("FIGHORSE_MCP_MODE", "write");
+    unsafe { std::env::set_var("FIGHORSE_MCP_MODE", "write") };
     let still_denied = tools::call_tool(
         "export_images",
         &json!({"file_key":"file","node_ids":"1:2","dest_dir":"./.fighorse/exports"}),
@@ -131,10 +133,10 @@ async fn mcp_export_policy_and_real_path_enforcement_are_independent() {
     assert_eq!(still_denied["isError"], true);
     assert!(result_text(&still_denied).contains("FIGHORSE_MCP_LOCAL_WRITE=allow"));
 
-    std::env::set_var("FIGHORSE_MCP_MODE", "readonly");
-    std::env::set_var("FIGHORSE_MCP_LOCAL_WRITE", "allow");
+    unsafe { std::env::set_var("FIGHORSE_MCP_MODE", "readonly") };
+    unsafe { std::env::set_var("FIGHORSE_MCP_LOCAL_WRITE", "allow") };
     let mock = MockServer::start().await;
-    std::env::set_var("FIGHORSE_API_BASE_URL", mock.uri());
+    unsafe { std::env::set_var("FIGHORSE_API_BASE_URL", mock.uri()) };
     Mock::given(method("GET"))
         .and(path("/v1/images/file"))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({"images": {}})))
@@ -216,11 +218,11 @@ async fn approved_relative_and_absolute_export_paths_reach_the_real_writer() {
     ]);
     let project = temp_root("export-success");
     std::env::set_current_dir(&project).unwrap();
-    std::env::set_var("FIGMA_TOKEN", "test-token");
-    std::env::set_var("FIGHORSE_MCP_MODE", "readonly");
-    std::env::set_var("FIGHORSE_MCP_LOCAL_WRITE", "allow");
+    unsafe { std::env::set_var("FIGMA_TOKEN", "test-token") };
+    unsafe { std::env::set_var("FIGHORSE_MCP_MODE", "readonly") };
+    unsafe { std::env::set_var("FIGHORSE_MCP_LOCAL_WRITE", "allow") };
     let mock = MockServer::start().await;
-    std::env::set_var("FIGHORSE_API_BASE_URL", mock.uri());
+    unsafe { std::env::set_var("FIGHORSE_API_BASE_URL", mock.uri()) };
     let image_url = format!("{}/asset", mock.uri());
 
     Mock::given(method("GET"))
@@ -262,11 +264,13 @@ async fn approved_relative_and_absolute_export_paths_reach_the_real_writer() {
         let manifest: serde_json::Value =
             serde_json::from_slice(&fs::read(real.join("manifest.json")).unwrap()).unwrap();
         assert_eq!(manifest["kind"], "fighorse.image_export");
-        assert!(manifest["entries"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|entry| entry["node_id"] == "1:2"));
+        assert!(
+            manifest["entries"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|entry| entry["node_id"] == "1:2")
+        );
         assert!(real.starts_with(fs::canonicalize(&project).unwrap()));
     }
 
@@ -301,19 +305,23 @@ async fn approved_relative_and_absolute_export_paths_reach_the_real_writer() {
             fs::read_to_string(outside_manifest).unwrap(),
             "do-not-overwrite"
         );
-        assert!(!fs::symlink_metadata(destination.join("1_2.png"))
-            .unwrap()
-            .file_type()
-            .is_symlink());
-        assert!(!fs::symlink_metadata(destination.join("manifest.json"))
-            .unwrap()
-            .file_type()
-            .is_symlink());
+        assert!(
+            !fs::symlink_metadata(destination.join("1_2.png"))
+                .unwrap()
+                .file_type()
+                .is_symlink()
+        );
+        assert!(
+            !fs::symlink_metadata(destination.join("manifest.json"))
+                .unwrap()
+                .file_type()
+                .is_symlink()
+        );
     }
 
     let service_home = project.join("service-home");
-    std::env::set_var("FIGHORSE_MCP_SERVICE", "1");
-    std::env::set_var("FIGHORSE_HOME", &service_home);
+    unsafe { std::env::set_var("FIGHORSE_MCP_SERVICE", "1") };
+    unsafe { std::env::set_var("FIGHORSE_HOME", &service_home) };
     let service_export = tools::call_tool(
         "export_images",
         &json!({"file_key":"file","node_ids":"1:2"}),

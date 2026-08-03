@@ -2,6 +2,7 @@
 
 use crate::mcp::{resources, tools};
 use rmcp::{
+    ErrorData as McpError, RoleServer, ServerHandler,
     model::{
         CallToolRequestParams, CallToolResult, GetPromptRequestParams, GetPromptResult,
         Implementation, ListPromptsResult, ListResourcesResult, ListToolsResult,
@@ -9,10 +10,9 @@ use rmcp::{
         ServerInfo,
     },
     service::RequestContext,
-    ErrorData as McpError, RoleServer, ServerHandler,
 };
 use serde::de::DeserializeOwned;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 const INSTRUCTIONS: &str = "Call discover_fighorse first. For Figma replication, ask when \
 platform or asset_format is missing, export assets with manifests, and record reusable lessons \

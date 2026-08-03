@@ -8,7 +8,7 @@ use crate::error::{Error, Result};
 use crate::experience;
 use crate::guidance;
 use crate::url as figma_url;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::net::{SocketAddr, TcpStream};
 use std::path::PathBuf;
 use std::time::Duration;
@@ -80,7 +80,7 @@ fn active_pid(pid: Option<i64>) -> bool {
         Some(p) if p > 0 => {
             #[cfg(unix)]
             unsafe {
-                extern "C" {
+                unsafe extern "C" {
                     fn kill(pid: i32, sig: i32) -> i32;
                 }
                 // kill(pid, 0): 0 => alive; -1 with ESRCH => dead.

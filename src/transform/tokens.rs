@@ -3,7 +3,7 @@
 //! Design token extraction: extracts colors, typography, spacing, and effects
 //! as design tokens and formats them to CSS / SCSS / Tailwind / JSON.
 
-use serde_json::{json, Map, Value};
+use serde_json::{Map, Value, json};
 
 fn clamp_channel(v: Option<f64>) -> i64 {
     let scaled = (v.unwrap_or(0.0) * 255.0).round() as i64;

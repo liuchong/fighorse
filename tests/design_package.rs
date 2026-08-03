@@ -3,7 +3,7 @@
 //! Builds a self-contained
 //! replication package from mocked file-nodes + images responses.
 
-use fighorse::product::design_package::{get_design_package, PackageOpts};
+use fighorse::product::design_package::{PackageOpts, get_design_package};
 use serde_json::json;
 use wiremock::matchers::{method, path_regex};
 use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -11,10 +11,10 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 #[tokio::test(flavor = "current_thread")]
 async fn design_package_from_figma_url() {
     let server = MockServer::start().await;
-    std::env::set_var("FIGHORSE_API_BASE_URL", server.uri());
+    unsafe { std::env::set_var("FIGHORSE_API_BASE_URL", server.uri()) };
     // Isolate the experience store so the package's learned_experience is empty.
     let exp = std::env::temp_dir().join(format!("fh-dp-{}.jsonl", std::process::id()));
-    std::env::set_var("FIGHORSE_EXPERIENCE_PATH", &exp);
+    unsafe { std::env::set_var("FIGHORSE_EXPERIENCE_PATH", &exp) };
 
     let mock_node = json!({
         "id": "1:2",
@@ -68,34 +68,44 @@ async fn design_package_from_figma_url() {
     assert_eq!(pkg["source"]["node_id"], "1:2");
     assert_eq!(pkg["implementation_target"]["platform"], "android-compose");
     assert_eq!(pkg["implementation_target"]["asset_format"], "png");
-    assert!(pkg["implementation_target"]["rules"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .any(|r| r.as_str().unwrap_or("").contains("Jetpack Compose")));
-    assert!(!pkg["fidelity_workflow"]["attention_checks"]
-        .as_array()
-        .unwrap()
-        .is_empty());
-    assert!(pkg["asset_export_plan"]["mcp_tools"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .any(|t| t["tool"] == "export_component"));
+    assert!(
+        pkg["implementation_target"]["rules"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|r| r.as_str().unwrap_or("").contains("Jetpack Compose"))
+    );
+    assert!(
+        !pkg["fidelity_workflow"]["attention_checks"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+    assert!(
+        pkg["asset_export_plan"]["mcp_tools"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|t| t["tool"] == "export_component")
+    );
     assert_eq!(pkg["ai_contract"]["kind"], "fighorse.ai-contract.v1");
-    assert!(pkg["asset_export_plan"]["cli_examples"][0]
-        .as_str()
-        .unwrap()
-        .contains(".fighorse/exports"));
+    assert!(
+        pkg["asset_export_plan"]["cli_examples"][0]
+            .as_str()
+            .unwrap()
+            .contains(".fighorse/exports")
+    );
     assert_eq!(
         pkg["learned_experience"]["kind"],
         "fighorse.learned-guidance.v1"
     );
-    assert!(pkg["next_tools"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .any(|t| t["tool"] == "record_experience"));
+    assert!(
+        pkg["next_tools"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|t| t["tool"] == "record_experience")
+    );
     assert_eq!(pkg["target"]["name"], "Hero Card");
     assert_eq!(
         pkg["screenshots"]["images"]["1:2"],
@@ -106,7 +116,7 @@ async fn design_package_from_figma_url() {
     assert_eq!(pkg["diagnostics"]["screenshots"]["count"], 1);
     assert_eq!(pkg["diagnostics"]["context_truncated"], false);
 
-    std::env::remove_var("FIGHORSE_API_BASE_URL");
-    std::env::remove_var("FIGHORSE_EXPERIENCE_PATH");
+    unsafe { std::env::remove_var("FIGHORSE_API_BASE_URL") };
+    unsafe { std::env::remove_var("FIGHORSE_EXPERIENCE_PATH") };
     let _ = std::fs::remove_file(&exp);
 }

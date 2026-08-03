@@ -22,7 +22,7 @@ use crate::mcp::{policy, registry};
 use crate::product::{design_package, playbook, visual_audit};
 use crate::transform::{compact, tokens};
 use crate::url as figma_url;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::collections::HashSet;
 
 const MISSING_TOKEN_MESSAGE: &str = "fighorse needs a Figma Personal Access Token before calling Figma APIs. Run `fighorse auth login --token <FIGMA_TOKEN>` or set FIGMA_TOKEN, then call check_fighorse_ready again.";
@@ -1095,7 +1095,7 @@ mod tests {
 
     #[test]
     fn list_tools_readonly_excludes_write() {
-        std::env::set_var("FIGHORSE_MCP_MODE", "readonly");
+        unsafe { std::env::set_var("FIGHORSE_MCP_MODE", "readonly") };
         let tools = list_tools();
         let names: HashSet<String> = tools["tools"]
             .as_array()
@@ -1109,6 +1109,6 @@ mod tests {
         // Write tools absent in readonly.
         assert!(!names.contains("post_comment"));
         assert!(!names.contains("figma_post_comment"));
-        std::env::remove_var("FIGHORSE_MCP_MODE");
+        unsafe { std::env::remove_var("FIGHORSE_MCP_MODE") };
     }
 }
