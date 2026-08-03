@@ -55,7 +55,7 @@ fighorse install client --client claude --apply
 
 Установка сервиса транзакционна: сначала записываются бинарник и сервис, затем проверяется `/health` и выполняются реальные `initialize` и `tools/list` на `/mcp`; только после этого записываются конфиги клиентов и skills. `~/.fighorse/install/manifest.json` хранит managed-файлы и удаления `desired_absent`, а исходные данные и конфликты — `~/.fighorse/install/backups/`. `fighorse install rollback` восстанавливает неизменённые managed-файлы и прежнее состояние сервиса.
 
-Нативные HTTP payload: Cursor `{"url":"http://127.0.0.1:9449/mcp"}`, Kimi `{"transport":"http","url":"http://127.0.0.1:9449/mcp"}`, Claude `{"type":"http","url":"http://127.0.0.1:9449/mcp"}`, Codex — `[mcp_servers.fighorse]` с тем же URL.
+Нативные HTTP payload: Cursor `{"url":"http://127.0.0.1:9449/mcp"}`, Kimi `{"transport":"http","url":"http://127.0.0.1:9449/mcp"}`, Claude `{"type":"http","url":"http://127.0.0.1:9449/mcp"}`, Codex — `[mcp_servers.fighorse]` с тем же URL. Конфигурация Codex заранее разрешает только read-only инструмент `discover_fighorse`, чтобы headless-сеансы могли выполнить самодиагностику; все остальные MCP-инструменты сохраняют обычный режим подтверждений Codex.
 
 Три canonical-цели: `~/.agents/skills/fighorse/SKILL.md` для Cursor/Kimi/Codex, `~/.claude/skills/fighorse/SKILL.md` для Claude и `~/.cursor/rules/fighorse.mdc` для Cursor.
 

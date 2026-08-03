@@ -138,14 +138,14 @@ impl ClientSpec {
     pub fn toml_payload(&self) -> String {
         match &self.transport {
             Transport::Http => format!(
-                "[mcp_servers.fighorse]\nurl = \"{}\"\nenabled = true\nstartup_timeout_sec = 60\n",
+                "[mcp_servers.fighorse]\nurl = \"{}\"\nenabled = true\nstartup_timeout_sec = 60\n\n[mcp_servers.fighorse.tools.discover_fighorse]\napproval_mode = \"approve\"\n",
                 toml_escape(&self.url)
             ),
             Transport::Stdio {
                 command,
                 fighorse_home,
             } => format!(
-                "[mcp_servers.fighorse]\ncommand = \"{}\"\nargs = [\"mcp\", \"serve\", \"--transport\", \"stdio\"]\nenabled = true\nstartup_timeout_sec = 60\n\n[mcp_servers.fighorse.env]\nFIGHORSE_HOME = \"{}\"\nFIGHORSE_MCP_MODE = \"readonly\"\nFIGHORSE_MCP_LOCAL_WRITE = \"deny\"\nFIGHORSE_MCP_CODE_CONNECT = \"deny\"\n",
+                "[mcp_servers.fighorse]\ncommand = \"{}\"\nargs = [\"mcp\", \"serve\", \"--transport\", \"stdio\"]\nenabled = true\nstartup_timeout_sec = 60\n\n[mcp_servers.fighorse.env]\nFIGHORSE_HOME = \"{}\"\nFIGHORSE_MCP_MODE = \"readonly\"\nFIGHORSE_MCP_LOCAL_WRITE = \"deny\"\nFIGHORSE_MCP_CODE_CONNECT = \"deny\"\n\n[mcp_servers.fighorse.tools.discover_fighorse]\napproval_mode = \"approve\"\n",
                 toml_escape(command),
                 toml_escape(&fighorse_home.to_string_lossy())
             ),
@@ -239,12 +239,17 @@ fn merge_codex(existing: &str, payload: &str, desired_url: Option<&str>) -> Resu
         let exact_payload = current.trim() == payload.trim();
         let current_url = toml_string_assignment(current, "url");
         let has_command = toml_string_assignment(current, "command").is_some();
-        let equivalent_http = desired_url
-            .is_some_and(|desired| current_url.as_deref() == Some(desired) && !has_command);
+        let equivalent_http = desired_url.is_some_and(|desired| {
+            current_url.as_deref() == Some(desired)
+                && !has_command
+                && codex_tool_approval(existing, "discover_fighorse") == Some("approve")
+        });
         if exact_payload || equivalent_http {
             return Ok(existing.to_string());
         }
-        if known_legacy_codex_fighorse(current, current_url.as_deref()) {
+        let preapproval_http =
+            desired_url.is_some_and(|desired| known_preapproval_codex_http(current, desired));
+        if known_legacy_codex_fighorse(current, current_url.as_deref()) || preapproval_http {
             return Ok(format!(
                 "{}{}{}",
                 &existing[..start],
@@ -265,7 +270,6 @@ fn merge_codex(existing: &str, payload: &str, desired_url: Option<&str>) -> Resu
 
 fn codex_fighorse_section(existing: &str) -> Option<(usize, usize)> {
     const HEADER: &str = "[mcp_servers.fighorse]";
-    const ENV_HEADER: &str = "[mcp_servers.fighorse.env]";
     let mut start = None;
     let mut offset = 0;
     for line in existing.split_inclusive('\n') {
@@ -273,7 +277,10 @@ fn codex_fighorse_section(existing: &str) -> Option<(usize, usize)> {
         match start {
             None if trimmed == HEADER => start = Some(offset),
             Some(section_start)
-                if trimmed.starts_with('[') && trimmed.ends_with(']') && trimmed != ENV_HEADER =>
+                if trimmed.starts_with('[')
+                    && trimmed.ends_with(']')
+                    && trimmed != HEADER
+                    && !trimmed.starts_with("[mcp_servers.fighorse.") =>
             {
                 return Some((section_start, offset));
             }
@@ -311,13 +318,100 @@ fn known_legacy_codex_fighorse(section: &str, url: Option<&str>) -> bool {
                 | "http://127.0.0.1:9449/messages"
                 | "http://localhost:9449/messages"
         )
-    );
+    ) && known_codex_http_fields(section);
     let legacy_stdio = toml_string_assignment(section, "command")
         .is_some_and(|command| command.to_ascii_lowercase().contains("fighorse"))
         && section.contains("args")
         && section.contains("\"mcp\"")
-        && section.contains("\"serve\"");
+        && section.contains("\"serve\"")
+        && known_codex_stdio_fields(section);
     legacy_url || legacy_stdio
+}
+
+fn known_preapproval_codex_http(section: &str, desired_url: &str) -> bool {
+    if toml_string_assignment(section, "url").as_deref() != Some(desired_url)
+        || toml_string_assignment(section, "command").is_some()
+    {
+        return false;
+    }
+    known_codex_http_fields(section)
+}
+
+fn known_codex_http_fields(section: &str) -> bool {
+    section.lines().all(|line| {
+        let trimmed = line.trim();
+        if trimmed.is_empty() || trimmed.starts_with('#') || trimmed == "[mcp_servers.fighorse]" {
+            return true;
+        }
+        trimmed
+            .split_once('=')
+            .map(|(key, _)| matches!(key.trim(), "url" | "enabled" | "startup_timeout_sec"))
+            .unwrap_or(false)
+    })
+}
+
+fn known_codex_stdio_fields(section: &str) -> bool {
+    enum Table {
+        Root,
+        Env,
+    }
+
+    let mut table = Table::Root;
+    for line in section.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() || trimmed.starts_with('#') {
+            continue;
+        }
+        match trimmed {
+            "[mcp_servers.fighorse]" => {
+                table = Table::Root;
+                continue;
+            }
+            "[mcp_servers.fighorse.env]" => {
+                table = Table::Env;
+                continue;
+            }
+            _ if trimmed.starts_with('[') && trimmed.ends_with(']') => return false,
+            _ => {}
+        }
+        let Some((key, _)) = trimmed.split_once('=') else {
+            return false;
+        };
+        let known = match table {
+            Table::Root => matches!(
+                key.trim(),
+                "command" | "args" | "enabled" | "startup_timeout_sec"
+            ),
+            Table::Env => matches!(
+                key.trim(),
+                "FIGHORSE_HOME"
+                    | "FIGHORSE_MCP_MODE"
+                    | "FIGHORSE_MCP_LOCAL_WRITE"
+                    | "FIGHORSE_MCP_CODE_CONNECT"
+            ),
+        };
+        if !known {
+            return false;
+        }
+    }
+    true
+}
+
+fn codex_tool_approval<'a>(config: &'a str, tool: &str) -> Option<&'a str> {
+    let header = format!("[mcp_servers.fighorse.tools.{tool}]");
+    let section = config.split_once(&header)?.1;
+    let section = section
+        .split_once("\n[")
+        .map(|(current, _)| current)
+        .unwrap_or(section);
+    section.lines().find_map(|line| {
+        let (key, value) = line.trim().split_once('=')?;
+        if key.trim() != "approval_mode" {
+            return None;
+        }
+        let value = value.trim();
+        value.strip_prefix('"')?.strip_suffix('"')
+    })
 }
 
 fn toml_escape(value: &str) -> String {

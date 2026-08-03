@@ -46,6 +46,14 @@ fn readmes_publish_one_four_client_service_workflow() {
             text.contains("code-connect generate") && text.contains("FIGHORSE_MCP_CODE_CONNECT"),
             "{path} omits Code Connect commands or safety defaults"
         );
+        assert!(
+            text.contains("discover_fighorse") && text.contains("Codex"),
+            "{path} omits the Codex read-only discovery approval boundary"
+        );
+        assert!(
+            !text.contains("default_tools_approval_mode"),
+            "{path} must not recommend approving every Codex MCP tool"
+        );
     }
 }
 
