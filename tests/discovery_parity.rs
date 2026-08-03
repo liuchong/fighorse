@@ -159,9 +159,8 @@ fn quickstart_explains_figma_project_links_are_not_design_targets() {
     unsafe { std::env::remove_var("FIGMA_TOKEN") };
     unsafe { std::env::remove_var("FIGMA_API_KEY") };
 
-    let report = discovery::quickstart(Some(
-        "https://www.figma.com/files/project/123456/Mobile-App",
-    ));
+    let report =
+        discovery::quickstart(Some("https://www.figma.com/files/browser-root-placeholder"));
     let figma_check = report["checks"]
         .as_array()
         .unwrap()
@@ -173,7 +172,7 @@ fn quickstart_explains_figma_project_links_are_not_design_targets() {
         figma_check["message"]
             .as_str()
             .unwrap()
-            .contains("file browser or project URL")
+            .contains("cannot discover team IDs")
     );
     assert!(
         report["next_steps"]
@@ -181,10 +180,46 @@ fn quickstart_explains_figma_project_links_are_not_design_targets() {
             .unwrap()
             .iter()
             .filter_map(|step| step.as_str())
-            .any(|step| step.contains("Open the concrete Figma file"))
+            .any(|step| step.contains("Open a Figma team page"))
     );
     assert!(report["figma_url"]["file_key"].is_null());
     assert_eq!(report["figma_url"]["kind"], "files");
+    assert_eq!(
+        report["figma_url"]["browser_root_id"],
+        "browser-root-placeholder"
+    );
+    assert!(report["figma_url"]["team_id"].is_null());
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn quickstart_explains_team_browser_enumeration_permissions() {
+    let _lock = process_env_lock();
+    let _env = EnvGuard::capture(&["FIGHORSE_HOME", "FIGMA_TOKEN", "FIGMA_API_KEY"]);
+    let root = temp_root("quickstart-team-link");
+    unsafe { std::env::set_var("FIGHORSE_HOME", &root) };
+    unsafe { std::env::remove_var("FIGMA_TOKEN") };
+    unsafe { std::env::remove_var("FIGMA_API_KEY") };
+
+    let report = discovery::quickstart(Some(
+        "https://www.figma.com/files/browser-root-placeholder/team/team-id-placeholder",
+    ));
+    assert_eq!(report["figma_url"]["team_id"], "team-id-placeholder");
+    let steps = report["next_steps"].as_array().unwrap();
+    assert!(
+        steps
+            .iter()
+            .filter_map(|step| step.as_str())
+            .any(|step| step.contains("projects list <team-id>")),
+        "{report}"
+    );
+    assert!(
+        steps
+            .iter()
+            .filter_map(|step| step.as_str())
+            .any(|step| step.contains("projects:read") && step.contains("403")),
+        "{report}"
+    );
     let _ = fs::remove_dir_all(root);
 }
 

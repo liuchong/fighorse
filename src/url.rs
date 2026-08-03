@@ -80,6 +80,8 @@ pub struct ParsedUrl {
     pub node_id: Option<String>,
     pub raw_node_id: Option<String>,
     pub kind: Option<String>,
+    pub browser_root_id: Option<String>,
+    pub team_id: Option<String>,
     pub embedded_url: Option<String>,
     pub error: Option<String>,
 }
@@ -93,6 +95,8 @@ impl ParsedUrl {
             node_id: None,
             raw_node_id: None,
             kind: None,
+            browser_root_id: None,
+            team_id: None,
             embedded_url: None,
             error: Some(error.to_string()),
         }
@@ -106,6 +110,8 @@ impl ParsedUrl {
             node_id: None,
             raw_node_id: None,
             kind,
+            browser_root_id: None,
+            team_id: None,
             embedded_url: None,
             error: Some(error.to_string()),
         }
@@ -118,6 +124,15 @@ impl ParsedUrl {
         map.insert("input".into(), Value::String(self.input.clone()));
         if let Some(k) = &self.kind {
             map.insert("kind".into(), Value::String(k.clone()));
+        }
+        if let Some(browser_root_id) = &self.browser_root_id {
+            map.insert(
+                "browser_root_id".into(),
+                Value::String(browser_root_id.clone()),
+            );
+        }
+        if let Some(team_id) = &self.team_id {
+            map.insert("team_id".into(), Value::String(team_id.clone()));
         }
         if let Some(fk) = &self.file_key {
             map.insert("file_key".into(), Value::String(fk.clone()));
@@ -154,10 +169,20 @@ fn is_figma_host(url: &url::Url) -> bool {
         .unwrap_or(false)
 }
 
-fn figma_browser_url_error(kind: Option<&str>) -> Option<&'static str> {
+fn segment_after(segments: &[String], marker: &str) -> Option<String> {
+    segments
+        .windows(2)
+        .find(|pair| pair[0] == marker)
+        .map(|pair| pair[1].clone())
+}
+
+fn figma_browser_url_error(kind: Option<&str>, team_id: Option<&str>) -> Option<&'static str> {
     match kind {
+        Some("files") if team_id.is_some() => Some(
+            "This is a Figma team browser URL, not a design target. It includes a team ID but no design file key or selected node. To enumerate all visible design files, run `fighorse projects list <team-id>`, then `fighorse project files <project-id>` for every project. The Projects API requires the `projects:read` scope and may require Figma Projects endpoint approval; HTTP 403 means the token lacks the required scope or approval, or its user cannot access the team.",
+        ),
         Some("files") => Some(
-            "This is a Figma file browser or project URL. It does not include a design file key or selected frame node. Open the concrete Figma file and copy a link to the selected frame, component, or group, or pass a raw file key together with --node-id.",
+            "This is a Figma file browser root or project URL, not a design target. The identifier after `/files/` is not a team ID, and the public REST API cannot discover team IDs from this page. Open a Figma team page and copy a URL containing `/team/<team-id>`, or open the concrete Figma file and copy a link to the selected frame, component, or group.",
         ),
         _ => None,
     }
@@ -179,6 +204,8 @@ pub fn parse_figma_url(input: &str) -> ParsedUrl {
             node_id: None,
             raw_node_id: None,
             kind: Some("file_key".to_string()),
+            browser_root_id: None,
+            team_id: None,
             embedded_url: None,
             error: None,
         };
@@ -213,6 +240,15 @@ pub fn parse_figma_url(input: &str) -> ParsedUrl {
         .find(|(k, _)| k == "node-id")
         .map(|(_, v)| v.to_string());
     let kind = segments.first().cloned();
+    let browser_root_id = if kind.as_deref() == Some("files") {
+        segments
+            .get(1)
+            .filter(|segment| !matches!(segment.as_str(), "project" | "team"))
+            .cloned()
+    } else {
+        None
+    };
+    let team_id = segment_after(&segments, "team");
 
     match file_key {
         Some(fk) => ParsedUrl {
@@ -222,13 +258,18 @@ pub fn parse_figma_url(input: &str) -> ParsedUrl {
             node_id: raw_node_id.as_deref().map(normalize_node_id),
             raw_node_id,
             kind,
+            browser_root_id,
+            team_id,
             embedded_url: None,
             error: None,
         },
         None => {
             if is_figma_host(&parsed) {
-                if let Some(error) = figma_browser_url_error(kind.as_deref()) {
-                    return ParsedUrl::invalid_with_kind(&raw, kind, error);
+                if let Some(error) = figma_browser_url_error(kind.as_deref(), team_id.as_deref()) {
+                    let mut invalid = ParsedUrl::invalid_with_kind(&raw, kind, error);
+                    invalid.browser_root_id = browser_root_id;
+                    invalid.team_id = team_id;
+                    return invalid;
                 }
             }
             ParsedUrl::invalid(&raw, "Could not find Figma file key in URL")
@@ -363,17 +404,41 @@ mod tests {
 
     #[test]
     fn parse_figma_file_browser_url_explains_missing_design_target() {
-        let p = parse_figma_url("https://www.figma.com/files/project/123456/Mobile-App?fuid=abc");
+        let p = parse_figma_url("https://www.figma.com/files/browser-root-placeholder");
         assert!(!p.valid);
         assert_eq!(p.kind.as_deref(), Some("files"));
+        assert_eq!(
+            p.browser_root_id.as_deref(),
+            Some("browser-root-placeholder")
+        );
+        assert!(p.team_id.is_none());
         assert!(p.file_key.is_none());
         assert!(p.node_id.is_none());
         assert!(
             p.error
                 .as_deref()
                 .unwrap_or("")
-                .contains("does not include a design file key")
+                .contains("cannot discover team IDs")
         );
+    }
+
+    #[test]
+    fn parse_figma_team_browser_url_extracts_enumeration_context() {
+        let p = parse_figma_url(
+            "https://www.figma.com/files/browser-root-placeholder/team/team-id-placeholder",
+        );
+        assert!(!p.valid);
+        assert_eq!(p.kind.as_deref(), Some("files"));
+        assert_eq!(
+            p.browser_root_id.as_deref(),
+            Some("browser-root-placeholder")
+        );
+        assert_eq!(p.team_id.as_deref(), Some("team-id-placeholder"));
+        let error = p.error.as_deref().unwrap_or("");
+        assert!(error.contains("projects list <team-id>"), "{error}");
+        assert!(error.contains("projects:read"), "{error}");
+        assert!(error.contains("403"), "{error}");
+        assert_eq!(p.to_json()["team_id"].as_str(), Some("team-id-placeholder"));
     }
 
     #[test]

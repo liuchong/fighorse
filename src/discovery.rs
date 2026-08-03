@@ -181,6 +181,8 @@ pub fn setup_guidance() -> Value {
             "must_check_first": ["discover_fighorse", "check_fighorse_ready"],
             "if_auth_missing": "Do not call Figma API tools yet. Tell the user: fighorse needs a Figma Personal Access Token. Run `fighorse auth login --token <FIGMA_TOKEN>` or set FIGMA_TOKEN, then retry.",
             "if_url_missing": "Ask the user to paste a specific Figma frame/group/component link, not a full canvas link.",
+            "if_browser_root_url": "A `/files/<browser-root>` URL cannot discover team IDs through the public REST API. Ask for a URL containing `/team/<team-id>` or a concrete file/selection URL.",
+            "if_team_browser_url": "Extract `team_id`, call get_team_projects, then get_project_files for every project. This requires `projects:read` and may require Figma Projects endpoint approval; HTTP 403 can also mean the token user cannot access the team.",
             "if_platform_or_asset_format_missing": "Ask the user for target platform/framework and preferred asset format before implementation.",
             "after_user_fixes_setup": "Call check_fighorse_ready again, then parse_figma_url and get_design_package."
         }
@@ -298,12 +300,17 @@ pub fn quickstart(figma_url: Option<&str>) -> Value {
     if !has_url {
         next_steps.push("Copy a link to a specific Figma frame, component, or group.".to_string());
     }
-    if parsed
+    if let Some(browser) = parsed
         .as_ref()
-        .map(|p| !p.valid && p.kind.as_deref() == Some("files"))
-        .unwrap_or(false)
+        .filter(|p| !p.valid && p.kind.as_deref() == Some("files"))
     {
-        next_steps.push("Open the concrete Figma file from the browser/project page, select the frame/component/group, then copy a link with node-id. If the developer explicitly provided a file key, use it only together with the intended --node-id.".to_string());
+        if browser.team_id.is_some() {
+            next_steps.push("To enumerate visible files from this team browser URL, run `fighorse projects list <team-id>`, then `fighorse project files <project-id>` for every returned project.".to_string());
+            next_steps.push("Team/project enumeration requires the `projects:read` token scope and may require Figma Projects endpoint approval. HTTP 403 also occurs when the token user cannot access the team.".to_string());
+        } else {
+            next_steps.push("Open a Figma team page and copy a URL containing `/team/<team-id>`; the public REST API cannot discover team IDs from a `/files/<browser-root>` page.".to_string());
+        }
+        next_steps.push("For implementation, open the concrete Figma file, select the frame/component/group, then copy a link with node-id.".to_string());
     }
     if has_url && !exact_selection {
         next_steps.push("Narrow the input to an exact Figma selection with node-id.".to_string());
@@ -601,7 +608,7 @@ pub fn manifest() -> Value {
             {"step": 1, "tool": "discover_fighorse", "reason": "Learn available tools and contracts without external instructions."},
             {"step": 2, "tool": "check_fighorse_ready", "reason": "Verify local setup. If auth.has_token is false, prompt the user to run fighorse auth login --token <FIGMA_TOKEN> before calling Figma APIs."},
             {"step": 3, "tool": "list_experiences", "reason": "Load reusable local lessons before repeating known layout, typography, asset, or platform mistakes."},
-            {"step": 4, "tool": "parse_figma_url", "reason": "Extract file_key and node_id from a pasted Figma URL when needed."},
+            {"step": 4, "tool": "parse_figma_url", "reason": "Extract file_key/node_id from a design URL, or team_id from a team browser URL. `/files/<browser-root>` alone cannot discover teams; team enumeration requires `projects:read` and may require Figma Projects endpoint approval."},
             {"step": 5, "tool": "get_design_package", "reason": "Fetch compact structure, screenshots, tokens, platform guidance, learned experience, asset export plan, and implementation hints in one call."},
             {"step": 6, "action": "If the target is a CANVAS/page/user flow or contains many children, narrow to exact frame/screen nodes before coding.", "reason": "Whole-flow pages are context for navigation, not a single UI surface to implement directly."},
             {"step": 7, "action": "Ask the developer for missing platform/framework or asset format before implementation.", "reason": "Platform and asset format change typography, density, vector/raster export, and build-pipeline choices."},

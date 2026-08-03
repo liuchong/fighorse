@@ -310,6 +310,9 @@ Comments:
 Projects:
   projects list <team-id>                       List team projects
   project files <project-id>                    List project files
+  Parse /files/.../team/<team-id> with `url parse`; enumeration requires projects:read
+  and may require Figma Projects endpoint approval. /files/<browser-root> alone
+  cannot be used to discover team IDs through the public REST API.
 
 Users:
   me                                            Get current user

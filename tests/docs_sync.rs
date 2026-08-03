@@ -201,6 +201,17 @@ fn ai_facing_sources_use_four_clients_and_canonical_targets() {
     assert!(skill.contains("tools/list"));
     assert!(agents.contains("reconnect the MCP client"));
     assert!(agents.contains("tools/list"));
+    for (path, text) in [
+        ("src/discovery.rs", discovery.as_str()),
+        ("src/install/skill.md", skill.as_str()),
+        ("src/install/agents.md", agents.as_str()),
+        ("src/main.rs", sources[0].1.as_str()),
+    ] {
+        assert!(
+            text.contains("projects:read") && text.contains("team"),
+            "{path} omits Figma team-browser permission guidance"
+        );
+    }
     assert!(read("src/main.rs").contains("cursor|codex|kimi|claude"));
     assert!(read("src/experience.rs").contains("cursor|codex|kimi|claude"));
     for target in [
