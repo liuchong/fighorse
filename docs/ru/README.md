@@ -24,6 +24,20 @@ fighorse quickstart
 
 В Figma скопируйте ссылку на конкретный фрейм, компонент или группу, которую хотите изучить. Избегайте начинать со всей страницы/холста, если только вы не исследуете.
 
+Чтобы перед выбором файла получить каталог всех доступных ресурсов команды
+или проекта, используйте команду только для чтения:
+
+```bash
+fighorse resource catalog "https://www.figma.com/files/<root>/team/<team-id>"
+```
+
+В MCP ей соответствует `get_resource_catalog`. Отчёт содержит проекты, файлы,
+ветки и библиотеки команды, а состояние задаётся как `ready`, `partial` или
+`blocked`. Для проектов нужен `projects:read`, для библиотек —
+`team_library_content:read`, для опциональной проверки
+`--probe-file-access` — `file_content:read`. По ссылке
+`/files/<browser-root>` публичный REST API не может определить команду.
+
 ```bash
 fighorse quickstart "https://www.figma.com/design/<fileKey>/<name>?node-id=<node-id>"
 ```

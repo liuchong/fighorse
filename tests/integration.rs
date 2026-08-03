@@ -8,6 +8,8 @@
 //! Run serially to respect Figma's rate limit:
 //!   FIGMA_INTEGRATION_TESTS=1 FIGMA_TEST_FILE_KEY=<key> \
 //!     cargo test --test integration -- --ignored --test-threads=1
+//!   FIGMA_INTEGRATION_TESTS=1 FIGMA_TEST_TEAM_URL=<team-url> \
+//!     cargo test --test integration resource_catalog -- --ignored --test-threads=1
 //!
 //! No Figma data is ever written to committed files: assertions check structural
 //! properties only, and any downloaded assets go to a temp dir cleaned up at the
@@ -20,6 +22,7 @@ use fighorse::api::files;
 use fighorse::config;
 use fighorse::experience::{self, Filters, ScopeOpts};
 use fighorse::product::design_package::{PackageOpts, get_design_package};
+use fighorse::product::resource_catalog::{CatalogOpts, get_resource_catalog};
 use fighorse::transform::{compact, filter as tree_filter, tokens};
 use serde_json::{Value, json};
 
@@ -49,6 +52,25 @@ macro_rules! require_integration {
             }
         }
     };
+}
+
+fn catalog_integration_setup() -> Option<(String, String)> {
+    if std::env::var("FIGMA_INTEGRATION_TESTS").as_deref() != Ok("1") {
+        return None;
+    }
+    let team_url = std::env::var("FIGMA_TEST_TEAM_URL").ok()?;
+    let token = config::load_config()
+        .token
+        .filter(|token| !token.is_empty())
+        .or_else(|| {
+            std::env::var("FIGMA_TOKEN")
+                .ok()
+                .filter(|token| !token.is_empty())
+        })?;
+    if team_url.is_empty() {
+        return None;
+    }
+    Some((token, team_url))
 }
 
 /// Find the first FRAME/COMPONENT node id in a document tree (runtime discovery).
@@ -160,6 +182,42 @@ async fn design_package_integration() {
         "has learned_experience"
     );
     assert!(pkg.get("next_tools").is_some(), "has next_tools");
+}
+
+/// Team browser URL -> all projects/files/libraries + one depth-1 file probe.
+#[tokio::test(flavor = "current_thread")]
+#[ignore]
+async fn resource_catalog_integration() {
+    let Some((token, team_url)) = catalog_integration_setup() else {
+        eprintln!("skipping (set FIGMA_INTEGRATION_TESTS=1 FIGMA_TEST_TEAM_URL=<team-url>)");
+        return;
+    };
+    let outcome = get_resource_catalog(
+        &token,
+        CatalogOpts {
+            figma_url: Some(&team_url),
+            include_libraries: true,
+            probe_file_access: true,
+            max_probes: 1,
+            ..CatalogOpts::default()
+        },
+    )
+    .await
+    .expect("resource catalog");
+
+    assert!(!outcome.blocked, "catalog unexpectedly blocked");
+    assert_eq!(outcome.report["kind"], "fighorse.resource-catalog.v1");
+    assert_eq!(outcome.report["auth_probe"]["ok"], true);
+    assert!(
+        outcome.report["summary"]["projects"].as_u64().unwrap_or(0) > 0,
+        "catalog must contain a project"
+    );
+    assert!(
+        outcome.report["summary"]["files"].as_u64().unwrap_or(0) > 0,
+        "catalog must contain a file"
+    );
+    assert_eq!(outcome.report["summary"]["probed_files"], 1);
+    assert_eq!(outcome.report["summary"]["readable_files"], 1);
 }
 
 /// MCP dispatch + real Figma call + image export. ~3 API calls.

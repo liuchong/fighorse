@@ -82,6 +82,7 @@ pub struct ParsedUrl {
     pub kind: Option<String>,
     pub browser_root_id: Option<String>,
     pub team_id: Option<String>,
+    pub project_id: Option<String>,
     pub embedded_url: Option<String>,
     pub error: Option<String>,
 }
@@ -97,6 +98,7 @@ impl ParsedUrl {
             kind: None,
             browser_root_id: None,
             team_id: None,
+            project_id: None,
             embedded_url: None,
             error: Some(error.to_string()),
         }
@@ -112,6 +114,7 @@ impl ParsedUrl {
             kind,
             browser_root_id: None,
             team_id: None,
+            project_id: None,
             embedded_url: None,
             error: Some(error.to_string()),
         }
@@ -133,6 +136,9 @@ impl ParsedUrl {
         }
         if let Some(team_id) = &self.team_id {
             map.insert("team_id".into(), Value::String(team_id.clone()));
+        }
+        if let Some(project_id) = &self.project_id {
+            map.insert("project_id".into(), Value::String(project_id.clone()));
         }
         if let Some(fk) = &self.file_key {
             map.insert("file_key".into(), Value::String(fk.clone()));
@@ -176,10 +182,17 @@ fn segment_after(segments: &[String], marker: &str) -> Option<String> {
         .map(|pair| pair[1].clone())
 }
 
-fn figma_browser_url_error(kind: Option<&str>, team_id: Option<&str>) -> Option<&'static str> {
+fn figma_browser_url_error(
+    kind: Option<&str>,
+    team_id: Option<&str>,
+    project_id: Option<&str>,
+) -> Option<&'static str> {
     match kind {
+        _ if project_id.is_some() => Some(
+            "This is a Figma project browser URL, not a design target. It includes a project ID but no design file key or selected node. Use `fighorse resource catalog <figma-url>` to enumerate its files, then open a concrete file or selection.",
+        ),
         Some("files") if team_id.is_some() => Some(
-            "This is a Figma team browser URL, not a design target. It includes a team ID but no design file key or selected node. To enumerate all visible design files, run `fighorse projects list <team-id>`, then `fighorse project files <project-id>` for every project. The Projects API requires the `projects:read` scope and may require Figma Projects endpoint approval; HTTP 403 means the token lacks the required scope or approval, or its user cannot access the team.",
+            "This is a Figma team browser URL, not a design target. It includes a team ID but no design file key or selected node. Use `fighorse resource catalog <figma-url>` to enumerate visible projects and files. The Projects API requires the `projects:read` scope and may require Figma Projects endpoint approval; HTTP 403 means the token lacks the required scope or approval, or its user cannot access the team.",
         ),
         Some("files") => Some(
             "This is a Figma file browser root or project URL, not a design target. The identifier after `/files/` is not a team ID, and the public REST API cannot discover team IDs from this page. Open a Figma team page and copy a URL containing `/team/<team-id>`, or open the concrete Figma file and copy a link to the selected frame, component, or group.",
@@ -206,6 +219,7 @@ pub fn parse_figma_url(input: &str) -> ParsedUrl {
             kind: Some("file_key".to_string()),
             browser_root_id: None,
             team_id: None,
+            project_id: None,
             embedded_url: None,
             error: None,
         };
@@ -249,6 +263,11 @@ pub fn parse_figma_url(input: &str) -> ParsedUrl {
         None
     };
     let team_id = segment_after(&segments, "team");
+    let project_id = match kind.as_deref() {
+        Some("project") => segments.get(1).cloned(),
+        Some("files") => segment_after(&segments, "project"),
+        _ => None,
+    };
 
     match file_key {
         Some(fk) => ParsedUrl {
@@ -260,15 +279,21 @@ pub fn parse_figma_url(input: &str) -> ParsedUrl {
             kind,
             browser_root_id,
             team_id,
+            project_id,
             embedded_url: None,
             error: None,
         },
         None => {
             if is_figma_host(&parsed) {
-                if let Some(error) = figma_browser_url_error(kind.as_deref(), team_id.as_deref()) {
+                if let Some(error) = figma_browser_url_error(
+                    kind.as_deref(),
+                    team_id.as_deref(),
+                    project_id.as_deref(),
+                ) {
                     let mut invalid = ParsedUrl::invalid_with_kind(&raw, kind, error);
                     invalid.browser_root_id = browser_root_id;
                     invalid.team_id = team_id;
+                    invalid.project_id = project_id;
                     return invalid;
                 }
             }
@@ -435,10 +460,46 @@ mod tests {
         );
         assert_eq!(p.team_id.as_deref(), Some("team-id-placeholder"));
         let error = p.error.as_deref().unwrap_or("");
-        assert!(error.contains("projects list <team-id>"), "{error}");
+        assert!(error.contains("resource catalog"), "{error}");
         assert!(error.contains("projects:read"), "{error}");
         assert!(error.contains("403"), "{error}");
         assert_eq!(p.to_json()["team_id"].as_str(), Some("team-id-placeholder"));
+    }
+
+    #[test]
+    fn parse_official_project_url_extracts_project_id() {
+        let p = parse_figma_url("https://www.figma.com/project/project-id-placeholder/Product");
+        assert!(!p.valid);
+        assert_eq!(p.kind.as_deref(), Some("project"));
+        assert_eq!(p.project_id.as_deref(), Some("project-id-placeholder"));
+        assert_eq!(
+            p.to_json()["project_id"].as_str(),
+            Some("project-id-placeholder")
+        );
+    }
+
+    #[test]
+    fn parse_legacy_files_project_url_extracts_project_id() {
+        let p =
+            parse_figma_url("https://www.figma.com/files/project/project-id-placeholder/Product");
+        assert!(!p.valid);
+        assert_eq!(p.kind.as_deref(), Some("files"));
+        assert_eq!(p.project_id.as_deref(), Some("project-id-placeholder"));
+        assert!(p.browser_root_id.is_none());
+    }
+
+    #[test]
+    fn parse_nested_files_project_url_extracts_project_id() {
+        let p = parse_figma_url(
+            "https://www.figma.com/files/browser-root-placeholder/project/project-id-placeholder/Project",
+        );
+        assert!(!p.valid);
+        assert_eq!(p.kind.as_deref(), Some("files"));
+        assert_eq!(p.project_id.as_deref(), Some("project-id-placeholder"));
+        assert_eq!(
+            p.browser_root_id.as_deref(),
+            Some("browser-root-placeholder")
+        );
     }
 
     #[test]

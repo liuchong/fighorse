@@ -25,6 +25,32 @@ pub enum Error {
     Other(String),
 }
 
+impl Error {
+    /// Return the Figma HTTP status for structured diagnostics.
+    pub fn figma_status(&self) -> Option<u16> {
+        match self {
+            Error::Figma { status, .. } => Some(*status),
+            _ => None,
+        }
+    }
+
+    /// Return only Figma's documented human-readable error fields.
+    ///
+    /// Arbitrary response bodies are deliberately excluded because they can
+    /// contain private upstream details that should not be copied into shared
+    /// diagnostics.
+    pub fn figma_message(&self) -> Option<&str> {
+        match self {
+            Error::Figma { body, .. } => body
+                .get("message")
+                .or_else(|| body.get("err"))
+                .and_then(|value| value.as_str())
+                .filter(|message| !message.trim().is_empty()),
+            _ => None,
+        }
+    }
+}
+
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -33,7 +59,13 @@ impl fmt::Display for Error {
                 status,
                 status_text,
                 ..
-            } => write!(f, "Figma API error: {status} {status_text}"),
+            } => {
+                write!(f, "Figma API error: {status} {status_text}")?;
+                if let Some(message) = self.figma_message() {
+                    write!(f, ": {message}")?;
+                }
+                Ok(())
+            }
             Error::Timeout(ms) => write!(f, "Figma API request timed out after {ms}ms"),
             Error::Json(e) => write!(f, "{e}"),
             Error::Io(e) => write!(f, "{e}"),

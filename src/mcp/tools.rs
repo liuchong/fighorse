@@ -19,7 +19,7 @@ use crate::experience::{self, Filters, ScopeOpts};
 use crate::export::images as img_export;
 use crate::figma;
 use crate::mcp::{policy, registry};
-use crate::product::{design_package, playbook, visual_audit};
+use crate::product::{design_package, playbook, resource_catalog, visual_audit};
 use crate::transform::{compact, tokens};
 use crate::url as figma_url;
 use serde_json::{Value, json};
@@ -125,6 +125,14 @@ fn arg_f64(args: &Value, key: &str) -> Option<f64> {
 
 fn arg_bool(args: &Value, key: &str) -> Option<bool> {
     args.get(key).and_then(|v| v.as_bool())
+}
+
+fn strict_bool(args: &Value, key: &str, default: bool) -> Result<bool> {
+    match args.get(key) {
+        None => Ok(default),
+        Some(Value::Bool(value)) => Ok(*value),
+        Some(_) => Err(Error::Usage(format!("{key} must be a boolean"))),
+    }
 }
 
 fn int_str(v: Option<i64>) -> Option<String> {
@@ -252,6 +260,7 @@ async fn handle_tool(name: &str, args: &Value) -> Value {
             }
         }
         "get_design_package" => handle_design_package(args).await,
+        "get_resource_catalog" => handle_resource_catalog(args).await,
         "visual_audit" => success(&visual_audit::audit(
             arg_str(args, "figma_url"),
             arg_str(args, "screenshot_path"),
@@ -939,6 +948,49 @@ async fn handle_design_package(args: &Value) -> Value {
         asset_format: arg_str(args, "asset_format"),
     };
     handle(design_package::get_design_package(&token, opts).await)
+}
+
+async fn handle_resource_catalog(args: &Value) -> Value {
+    let max_probes = match args.get("max_probes") {
+        Some(_) => match arg_i64(args, "max_probes") {
+            Some(value) => value,
+            None => return error("max_probes must be an integer"),
+        },
+        None => 25,
+    };
+    if max_probes < 0 {
+        return error("max_probes must be zero or greater");
+    }
+    let include_libraries = match strict_bool(args, "include_libraries", true) {
+        Ok(value) => value,
+        Err(err) => return error(&err.to_string()),
+    };
+    let probe_file_access = match strict_bool(args, "probe_file_access", false) {
+        Ok(value) => value,
+        Err(err) => return error(&err.to_string()),
+    };
+    let opts = resource_catalog::CatalogOpts {
+        figma_url: arg_str(args, "figma_url"),
+        team_id: arg_str(args, "team_id"),
+        project_id: arg_str(args, "project_id"),
+        include_libraries,
+        branch_data: true,
+        probe_file_access,
+        max_probes: max_probes as usize,
+    };
+    match resource_catalog::local_catalog_outcome(&opts) {
+        Ok(Some(outcome)) => return success(&outcome.report),
+        Ok(None) => {}
+        Err(err) => return error(&err.to_string()),
+    }
+    let token = match get_token() {
+        Ok(token) => token,
+        Err(err) => return error(&err.to_string()),
+    };
+    match resource_catalog::get_resource_catalog(&token, opts).await {
+        Ok(outcome) => success(&outcome.report),
+        Err(error_value) => error(&error_value.to_string()),
+    }
 }
 
 async fn handle_file_compact(args: &Value) -> Value {

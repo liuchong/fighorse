@@ -108,6 +108,61 @@ fn localized_guides_cover_payloads_transaction_and_skill_targets() {
 }
 
 #[test]
+fn resource_catalog_contract_is_synchronized_across_user_and_ai_surfaces() {
+    let mut readmes = vec![("README.md".to_string(), read("README.md"))];
+    readmes.extend(localized("README.md"));
+    for (path, text) in readmes {
+        assert!(
+            text.contains("resource catalog")
+                || text.contains("资源目录")
+                || text.contains("каталог"),
+            "{path} omits the resource catalog command"
+        );
+        assert!(
+            text.contains("get_resource_catalog"),
+            "{path} omits the MCP catalog tool"
+        );
+    }
+
+    for name in ["user-guide.md", "ai-client-guide.md", "design.md"] {
+        for (path, text) in localized(name) {
+            assert!(
+                text.contains("get_resource_catalog") || name == "design.md",
+                "{path} omits the shared catalog entry point"
+            );
+            if name != "design.md" {
+                assert!(
+                    text.contains("partial") && text.contains("blocked"),
+                    "{path} omits catalog status behavior"
+                );
+            }
+        }
+    }
+    for (path, text) in localized("design.md") {
+        assert!(
+            text.contains("50"),
+            "{path} has not been calibrated to the current operation registry"
+        );
+    }
+
+    for path in [
+        "src/main.rs",
+        "src/discovery.rs",
+        "src/install/skill.md",
+        "src/install/agents.md",
+        "src/mcp/tools_extra.json",
+        "docs/specs/resource-catalog-contract.md",
+        ".agents/experience/figma-browser-url-boundaries.md",
+    ] {
+        let text = read(path);
+        assert!(
+            text.contains("get_resource_catalog") || text.contains("resource catalog"),
+            "{path} omits the resource catalog contract"
+        );
+    }
+}
+
+#[test]
 fn docs_distinguish_streamable_http_event_streams_from_legacy_sse() {
     let mut paths = vec!["README.md".to_string()];
     for language in ["en", "zh", "ru"] {

@@ -137,6 +137,12 @@ fn discovery_tool_visibility_matches_mcp_tools_list() {
         );
     }
     assert!(readonly_names.contains("preview_code_connect"));
+    assert!(readonly_names.contains("get_resource_catalog"));
+    assert!(
+        readonly
+            .iter()
+            .any(|value| value.as_str() == Some("get_resource_catalog"))
+    );
     assert!(!readonly_names.contains("publish_code_connect"));
 
     unsafe { std::env::set_var("FIGHORSE_MCP_MODE", "write") };

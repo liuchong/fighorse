@@ -79,6 +79,7 @@ async fn async_main() -> ExitCode {
         (Some("smoke"), _) => finish(commands::cmd_smoke(&rest1).await),
         (Some("url"), Some("parse")) => finish(commands::cmd_url_parse(&rest2)),
         (Some("design"), Some("package")) => finish(commands::cmd_design_package(&rest2).await),
+        (Some("resource"), Some("catalog")) => finish(commands::cmd_resource_catalog(&rest2).await),
         (Some("mcp"), Some("config")) => finish(commands::cmd_mcp_config(&rest2)),
         (Some("figma-api"), Some("coverage")) => finish(commands::cmd_figma_api_coverage(&rest2)),
         (Some("figma"), Some("api")) => finish(commands::cmd_figma_api_call(&rest2).await),
@@ -236,6 +237,7 @@ Self Discovery and AI Replication:
   smoke <figma-url>                            Verify real Figma access and design package readiness
   url parse <figma-url>                        Parse file_key and node_id
   design package <figma-url> [--platform P] [--asset-format F]  Build AI replication package
+  resource catalog <team-or-project-url> [--probe-file-access]  Enumerate accessible design resources
   mcp config [--client C] [--transport T]      Emit MCP client config
   figma-api coverage [--format json|md]        Report official Figma REST OpenAPI coverage
   figma api <operationId> --params JSON [--body JSON|--body-file P] [--yes]  Call any covered REST operation
@@ -308,10 +310,15 @@ Comments:
   comments delete <file-key> <comment-id>       Delete comment
 
 Projects:
+  resource catalog <figma-url> [--team-id ID|--project-id ID] [--no-libraries]
+                   [--probe-file-access] [--max-probes N] [--output P]
+                                                Build a read-only project/file/library catalog
   projects list <team-id>                       List team projects
   project files <project-id>                    List project files
-  Parse /files/.../team/<team-id> with `url parse`; enumeration requires projects:read
-  and may require Figma Projects endpoint approval. /files/<browser-root> alone
+  Team/project enumeration requires projects:read; libraries require
+  team_library_content:read; optional depth-1 probes require file_content:read.
+  Parse /files/.../team/<team-id> with `url parse`; enumeration may require
+  Figma Projects endpoint approval. /files/<browser-root> alone
   cannot be used to discover team IDs through the public REST API.
 
 Users:

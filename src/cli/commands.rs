@@ -1121,6 +1121,50 @@ pub async fn cmd_design_package(args: &[String]) -> Result<()> {
     print_data(&data, output.as_deref())
 }
 
+pub async fn cmd_resource_catalog(args: &[String]) -> Result<()> {
+    let flags = parse_flags(
+        args,
+        &["--team-id", "--project-id", "--max-probes", "--output"],
+    );
+    let max_probes = match flags.get("max_probes") {
+        Some(value) => value.parse::<i64>().map_err(|_| {
+            crate::error::Error::Usage("--max-probes must be an integer".to_string())
+        })?,
+        None => 25,
+    };
+    if max_probes < 0 {
+        return Err(crate::error::Error::Usage(
+            "--max-probes must be zero or greater".to_string(),
+        ));
+    }
+    let input = flags.arg(0).map(String::from);
+    let opts = crate::product::resource_catalog::CatalogOpts {
+        figma_url: input.as_deref(),
+        team_id: flags.get("team_id"),
+        project_id: flags.get("project_id"),
+        include_libraries: !flag_present(args, "--no-libraries"),
+        branch_data: true,
+        probe_file_access: flag_present(args, "--probe-file-access"),
+        max_probes: max_probes as usize,
+    };
+    if let Some(outcome) = crate::product::resource_catalog::local_catalog_outcome(&opts)? {
+        print_data(&outcome.report, flags.get("output"))?;
+        return Err(crate::error::Error::Other(
+            "resource catalog is blocked; see the JSON diagnostics".to_string(),
+        ));
+    }
+    let token = require_token();
+    let outcome = crate::product::resource_catalog::get_resource_catalog(&token, opts).await?;
+    print_data(&outcome.report, flags.get("output"))?;
+    if outcome.blocked {
+        Err(crate::error::Error::Other(
+            "resource catalog is blocked; see the JSON diagnostics".to_string(),
+        ))
+    } else {
+        Ok(())
+    }
+}
+
 pub async fn cmd_smoke(args: &[String]) -> Result<()> {
     let token = require_token();
     let flags = parse_flags(args, &["--output"]);

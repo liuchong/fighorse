@@ -24,6 +24,19 @@ fighorse quickstart
 
 在 Figma 中，复制你想查看的确切 frame、component 或 group 的链接。除非你在探索，否则不要从整个 page/canvas 开始。
 
+如果要先查看整个团队或项目中当前令牌可访问的资源，再选择具体文件，
+使用只读资源目录：
+
+```bash
+fighorse resource catalog "https://www.figma.com/files/<root>/team/<team-id>"
+```
+
+MCP 中对应 `get_resource_catalog`。结果包含项目、文件、分支、团队设计库，
+并用 `ready`、`partial`、`blocked` 明确表示完整、部分成功或受阻。
+项目枚举需要 `projects:read`，设计库需要 `team_library_content:read`，
+可选的 `--probe-file-access` 深度 1 探测需要 `file_content:read`。
+只有 `/files/<browser-root>` 的链接无法通过公共 REST API 反查团队。
+
 ```bash
 fighorse quickstart "https://www.figma.com/design/<fileKey>/<name>?node-id=<node-id>"
 ```

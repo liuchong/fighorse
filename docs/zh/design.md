@@ -25,6 +25,12 @@ fighorse 的目标是提供一个白盒数据管道，具有三个渐进层次�
 - 工具中立访问：CLI 优先，MCP 作为适配器，可安装的 skill/rule 用于 AI 客户端。
 - 反馈记忆：本地经验存储，使视觉调试经验被复用。
 
+资源目录是产品层聚合器，不是新的爬虫或数据存储。来源解析严格区分团队、
+项目、browser-root 和具体设计 URL；CLI 与 MCP 调用同一个异步函数。
+它先做不回传身份信息的用户验证探测，保留项目、设计库和文件探测的部分
+成功结果，只输出有界的结构化诊断。它不缓存、不批量下载，也不绕过 Figma
+scope 和团队访问权。
+
 ## 核心原则：CLI 内核，MCP 外壳
 
 CLI 是主要产品边界。MCP 向 AI 工具暴露相同的能力，但应保持轻量。
@@ -32,7 +38,7 @@ CLI 是主要产品边界。MCP 向 AI 工具暴露相同的能力，但应保�
 ```text
 Figma REST API
   -> API 模块 + OpenAPI 操作注册表
-  -> 产品层：compact/filter/tokens/assets/design-package/visual-audit/playbook
+  -> 产品层：compact/filter/tokens/assets/resource-catalog/design-package/visual-audit/playbook
   -> CLI 输出、文件、manifest
   -> MCP 工具/资源/prompt、AI 客户端、脚本、CI
 ```
@@ -65,7 +71,7 @@ L2 和 L3 是主要差异化因素。fighorse 不仅仅是包装 REST 端点；�
 
 ## 完整 REST 覆盖
 
-fighorse 为公共 Figma REST 快照维护一个显式的 OpenAPI 操作注册表。注册表当前跟踪 48 个操作，并被以下使用：
+fighorse 为公共 Figma REST 快照维护一个显式的 OpenAPI 操作注册表。注册表当前跟踪 50 个操作，并被以下使用：
 
 - `src/fighorse/api` 中的 API 包装器。
 - 通用 CLI 调度：`fighorse figma api <operationId> --params '{...}'`。

@@ -4,6 +4,27 @@
 
 Use the CLI when you want reproducible commands, scripts, CI, or quick inspection. Use the MCP service when an AI coding tool should call fighorse directly.
 
+## Team and Project Resource Catalog
+
+Use `fighorse resource catalog <figma-url>` or MCP
+`get_resource_catalog` for a read-only inventory before selecting a concrete
+design file. Team URLs enumerate every visible project and its files with
+branch metadata; team components, component sets, and styles are included by
+default. Project URLs enumerate that project directly.
+
+Use `--no-libraries` to avoid team-library requests. Use
+`--probe-file-access [--max-probes N]` only when depth-1 content checks are
+needed; the report records readability and page count, never the raw document
+tree. `--max-probes 0` explicitly removes the bound. `--output` is the only
+catalog write path, and its private names and keys must not be committed.
+
+The report is `ready`, `partial`, or `blocked`. A valid identity followed by
+Projects HTTP 403 can mean missing `projects:read`, Projects limited-access
+eligibility, or missing team access. Library and probe access additionally
+need `team_library_content:read` and `file_content:read`. A
+`/files/<browser-root>` URL cannot be converted into a team ID through the
+public REST API and is blocked without a network request.
+
 ## Install From Source
 
 For the fastest path, see [Quickstart](quickstart.md). The default install mode is CLI-only and does not start MCP service processes.

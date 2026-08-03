@@ -2,6 +2,14 @@
 
 本指南面向通过 MCP 或 CLI 使用 fighorse 的 AI 编程工具和 agent。契约很简单：先发现，缺少产品假设时询问，带 manifest 导出资产，运行视觉反馈循环，并记录可复用的经验。
 
+## 浏览链接分流
+
+用户给出团队或项目浏览链接时，先调用只读 `get_resource_catalog`，不要
+要求用户逐个打开文件。保留其 `ready`、`partial`、`blocked` 诊断，让
+用户选定具体文件后再调用 `get_design_package`。不得把
+`/files/<browser-root>` 当作团队 ID，也不得把目录中的 ID、名称、key、
+URL 或私有内容写入可复用经验。
+
 ## 客户端设置
 
 尽可能使用安装器：

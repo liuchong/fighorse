@@ -1,0 +1,12 @@
+{
+  "name": "Design System",
+  "files": [
+    {
+      "key": "file-b",
+      "name": "Library",
+      "thumbnail_url": "https://example.invalid/file-b.png",
+      "last_modified": "2026-08-02T00:00:00Z",
+      "branches": []
+    }
+  ]
+}

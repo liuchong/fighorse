@@ -25,6 +25,13 @@ The pipeline provides:
 - Tool-neutral access: CLI first, MCP as an adapter, installable skills/rules for AI clients.
 - Feedback memory: local experience storage so visual debugging lessons are reused.
 
+The resource catalog is a product-layer aggregator, not a new crawler or data
+store. Source resolution distinguishes team, project, browser-root, and
+concrete design URLs. The same async function backs CLI and MCP, performs an
+anonymous identity probe, preserves partial project/library/probe results, and
+emits only bounded structured diagnostics. It does not cache, bulk-download,
+or bypass Figma scopes and team access.
+
 ## Core Principle: CLI Kernel, MCP Shell
 
 The CLI is the primary product boundary. MCP exposes the same capabilities to AI tools but should stay thin.
@@ -32,7 +39,7 @@ The CLI is the primary product boundary. MCP exposes the same capabilities to AI
 ```text
 Figma REST API
   -> API modules + OpenAPI operation registry
-  -> product layer: compact/filter/tokens/assets/design-package/visual-audit/playbook
+  -> product layer: compact/filter/tokens/assets/resource-catalog/design-package/visual-audit/playbook
   -> CLI output, files, manifests
   -> MCP tools/resources/prompts, AI clients, scripts, CI
 ```
@@ -65,7 +72,7 @@ L2 and L3 are the main differentiators. fighorse does not merely wrap REST endpo
 
 ## Full REST Coverage
 
-fighorse maintains an explicit OpenAPI operation registry for the public Figma REST snapshot. The registry currently tracks 48 operations and is used by:
+fighorse maintains an explicit OpenAPI operation registry for the public Figma REST snapshot. The registry currently tracks 50 operations and is used by:
 
 - API wrappers in `src/fighorse/api`.
 - Generic CLI dispatch: `fighorse figma api <operationId> --params '{...}'`.

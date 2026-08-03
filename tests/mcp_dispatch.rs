@@ -5,11 +5,12 @@
 
 use fighorse::mcp::server::dispatch;
 use serde_json::json;
-use wiremock::matchers::{method, path_regex};
+use wiremock::matchers::{method, path, path_regex};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 #[tokio::test(flavor = "current_thread")]
 async fn mcp_dispatch_end_to_end() {
+    let previous_home = std::env::var("FIGHORSE_HOME").ok();
     unsafe { std::env::set_var("FIGHORSE_MCP_MODE", "readonly") };
     unsafe { std::env::set_var("FIGMA_TOKEN", "test-token") };
     let server = MockServer::start().await;
@@ -19,6 +20,19 @@ async fn mcp_dispatch_end_to_end() {
         .and(path_regex(r"^/v1/files/[^/]+$"))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({
             "document": {"id": "0:0", "name": "Doc", "type": "DOCUMENT"}
+        })))
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/v1/me"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"id":"user-placeholder"})))
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/v1/projects/project-placeholder/files"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "name": "Project",
+            "files": [{"key":"file-placeholder","name":"File","branches":[]}]
         })))
         .mount(&server)
         .await;
@@ -45,7 +59,23 @@ async fn mcp_dispatch_end_to_end() {
         .collect();
     assert!(names.contains(&"get_file".to_string()));
     assert!(names.contains(&"figma_get_file".to_string()));
+    assert!(names.contains(&"get_resource_catalog".to_string()));
     assert!(!names.contains(&"post_comment".to_string()));
+    let catalog_schema = list["result"]["tools"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|tool| tool["name"] == "get_resource_catalog")
+        .unwrap();
+    assert_eq!(
+        catalog_schema["inputSchema"]["properties"]["max_probes"]["type"],
+        "integer"
+    );
+    assert!(
+        catalog_schema["inputSchema"]["properties"]
+            .get("branch_data")
+            .is_none()
+    );
 
     // Policy: a write tool is rejected in readonly.
     let write_attempt = dispatch(&json!({"jsonrpc":"2.0","id":3,"method":"tools/call",
@@ -76,14 +106,79 @@ async fn mcp_dispatch_end_to_end() {
     let tree_text = tree["result"]["content"][0]["text"].as_str().unwrap();
     assert!(tree_text.contains("\"type\": \"DOCUMENT\""));
 
+    // Resource catalog is readonly and routes through the shared product layer.
+    let catalog = dispatch(&json!({"jsonrpc":"2.0","id":6,"method":"tools/call",
+    "params":{"name":"get_resource_catalog","arguments":{
+        "figma_url":"https://www.figma.com/project/project-placeholder/Project",
+        "include_libraries":false
+    }}}))
+    .await
+    .unwrap();
+    let catalog_text = catalog["result"]["content"][0]["text"].as_str().unwrap();
+    assert!(catalog_text.contains("fighorse.resource-catalog.v1"));
+    assert!(catalog_text.contains("\"status\": \"ready\""));
+
+    let malformed = dispatch(&json!({"jsonrpc":"2.0","id":7,"method":"tools/call",
+    "params":{"name":"get_resource_catalog","arguments":{
+        "figma_url":"https://www.figma.com/project/project-placeholder/Project",
+        "max_probes":1.5
+    }}}))
+    .await
+    .unwrap();
+    assert_eq!(malformed["result"]["isError"], true);
+    assert!(
+        malformed["result"]["content"][0]["text"]
+            .as_str()
+            .unwrap()
+            .contains("integer")
+    );
+    let malformed_bool = dispatch(&json!({"jsonrpc":"2.0","id":8,"method":"tools/call",
+    "params":{"name":"get_resource_catalog","arguments":{
+        "figma_url":"https://www.figma.com/project/project-placeholder/Project",
+        "include_libraries":"false"
+    }}}))
+    .await
+    .unwrap();
+    assert_eq!(malformed_bool["result"]["isError"], true);
+    assert!(
+        malformed_bool["result"]["content"][0]["text"]
+            .as_str()
+            .unwrap()
+            .contains("boolean")
+    );
+
+    unsafe { std::env::remove_var("FIGMA_TOKEN") };
+    unsafe {
+        std::env::set_var(
+            "FIGHORSE_HOME",
+            std::env::temp_dir().join("fighorse-mcp-browser-root-no-token"),
+        )
+    };
+    let browser_root = dispatch(&json!({"jsonrpc":"2.0","id":9,"method":"tools/call",
+    "params":{"name":"get_resource_catalog","arguments":{
+        "figma_url":"https://www.figma.com/files/browser-root-placeholder"
+    }}}))
+    .await
+    .unwrap();
+    assert!(browser_root["result"].get("isError").is_none());
+    assert!(
+        browser_root["result"]["content"][0]["text"]
+            .as_str()
+            .unwrap()
+            .contains("\"status\": \"blocked\"")
+    );
+
     // Unknown method → error with id.
-    let bad = dispatch(&json!({"jsonrpc":"2.0","id":6,"method":"no/such"}))
+    let bad = dispatch(&json!({"jsonrpc":"2.0","id":10,"method":"no/such"}))
         .await
         .unwrap();
     assert_eq!(bad["error"]["code"], -32601);
 
     unsafe { std::env::remove_var("FIGHORSE_API_BASE_URL") };
-    unsafe { std::env::remove_var("FIGMA_TOKEN") };
+    match previous_home {
+        Some(home) => unsafe { std::env::set_var("FIGHORSE_HOME", home) },
+        None => unsafe { std::env::remove_var("FIGHORSE_HOME") },
+    }
     unsafe { std::env::remove_var("FIGHORSE_MCP_MODE") };
 }
 

@@ -1,0 +1,13 @@
+{
+  "name": "Example Team",
+  "projects": [
+    {
+      "id": "project-a",
+      "name": "Product"
+    },
+    {
+      "id": "project-b",
+      "name": "Design System"
+    }
+  ]
+}

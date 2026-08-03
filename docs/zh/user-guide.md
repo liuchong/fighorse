@@ -4,6 +4,26 @@
 
 当你需要可复现的命令、脚本、CI 或快速检查时，使用 CLI。当 AI 编程工具应该直接调用 fighorse 时，使用 MCP 服务。
 
+## 团队与项目资源目录
+
+在选择具体设计文件之前，可使用
+`fighorse resource catalog <figma-url>` 或 MCP
+`get_resource_catalog` 做只读盘点。团队链接会枚举所有可见项目、文件和
+分支，并默认读取团队组件、组件集和样式；项目链接只枚举对应项目。
+
+`--no-libraries` 可跳过团队设计库请求。只有确实需要确认文件内容权限时，
+才使用 `--probe-file-access [--max-probes N]`；它固定做深度 1 探测，只记录
+可读状态和页面数，不返回原始文档树。`--max-probes 0` 表示用户明确取消
+数量上限。目录默认只写 stdout，只有 `--output` 会写文件；输出包含私有
+名称和 key，不得提交。
+
+报告状态为 `ready`、`partial` 或 `blocked`。身份验证成功后 Projects
+接口仍返回 HTTP 403，可能是缺少 `projects:read`、Projects 限制接口资格
+或团队访问权，不能武断归因。设计库与文件探测还分别需要
+`team_library_content:read` 和 `file_content:read`。只有
+`/files/<browser-root>` 的链接无法通过公共 REST API 反查团队，命令会在
+不发网络请求的情况下返回 `blocked`。
+
 ## 从源码安装
 
 最快的路径见[快速开始](quickstart.md)。默认安装模式是仅 CLI，不启动 MCP 服务进程。

@@ -24,6 +24,20 @@ fighorse quickstart
 
 In Figma, copy a link to the exact frame, component, or group you want to inspect. Avoid starting from a whole page/canvas unless you are exploring.
 
+To inventory a whole accessible team or project before choosing a file, use
+the read-only resource catalog:
+
+```bash
+fighorse resource catalog "https://www.figma.com/files/<root>/team/<team-id>"
+```
+
+MCP exposes the same report as `get_resource_catalog`: projects, files,
+branches, team libraries, and `ready`/`partial`/`blocked` diagnostics.
+Enumeration needs `projects:read`; libraries need
+`team_library_content:read`; optional `--probe-file-access` needs
+`file_content:read`. `/files/<browser-root>` alone cannot reveal a team through
+the public REST API.
+
 ```bash
 fighorse quickstart "https://www.figma.com/design/<fileKey>/<name>?node-id=<node-id>"
 ```

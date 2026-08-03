@@ -2,6 +2,15 @@
 
 This guide is for AI coding tools and agents that use fighorse through MCP or CLI. The contract is simple: discover first, ask when product assumptions are missing, export assets with manifests, run a visual feedback loop, and record reusable lessons.
 
+## Browser-Link Routing
+
+When the user supplies a team or project browser URL, call readonly
+`get_resource_catalog` before asking them to open every file. Preserve its
+`ready`/`partial`/`blocked` diagnostics and let the user select a concrete file
+before calling `get_design_package`. Do not treat `/files/<browser-root>` as a
+team ID, and do not record catalog IDs, names, keys, URLs, or private content
+as reusable experience.
+
 ## Client Setup
 
 Use the installer when possible:

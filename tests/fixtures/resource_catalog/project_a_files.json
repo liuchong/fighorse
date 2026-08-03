@@ -1,0 +1,17 @@
+{
+  "name": "Product",
+  "files": [
+    {
+      "key": "file-a",
+      "name": "Application",
+      "thumbnail_url": "https://example.invalid/file-a.png",
+      "last_modified": "2026-08-01T00:00:00Z",
+      "branches": [
+        {
+          "key": "branch-a",
+          "name": "Exploration"
+        }
+      ]
+    }
+  ]
+}
