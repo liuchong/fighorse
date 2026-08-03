@@ -150,7 +150,7 @@ fn initialize_result(params: &Value) -> Value {
     json!({
         "protocolVersion": requested,
         "capabilities": {"tools": {}, "resources": {}, "prompts": {}},
-        "serverInfo": {"name": "fighorse", "version": "0.1.0"},
+        "serverInfo": {"name": "fighorse", "version": env!("CARGO_PKG_VERSION")},
         "instructions": "Call discover_fighorse first. For Figma replication, ask when platform or asset_format is missing, export assets with manifests, and record reusable lessons after visual fixes."
     })
 }

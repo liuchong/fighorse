@@ -13,7 +13,7 @@ use std::net::{SocketAddr, TcpStream};
 use std::path::PathBuf;
 use std::time::Duration;
 
-pub const VERSION: &str = "0.1.0";
+pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 fn path_dirs() -> Vec<String> {
     let sep = if cfg!(windows) { ';' } else { ':' };
@@ -629,6 +629,52 @@ pub fn manifest() -> Value {
             "code_connect_egress": {"env": "FIGHORSE_MCP_CODE_CONNECT=allow", "default": "deny unless explicitly enabled", "reason": "preview/publish sends Code Connect template code to Figma"},
             "default_mode": "readonly",
             "write_mode": "Set FIGHORSE_MCP_MODE=write only when the AI client is allowed to mutate Figma resources.",
+            "tool_visibility": {
+                "readonly": [
+                    "discover_fighorse",
+                    "check_fighorse_ready",
+                    "parse_figma_url",
+                    "get_replicate_workflow",
+                    "get_experience_schema",
+                    "list_experiences",
+                    "record_experience",
+                    "get_design_package",
+                    "get_design_context",
+                    "get_screenshot",
+                    "export_images",
+                    "export_component",
+                    "download_image_fills",
+                    "get_tokens",
+                    "visual_audit",
+                    "get_project_playbook",
+                    "parse_code_connect_template",
+                    "validate_code_connect",
+                    "preview_code_connect"
+                ],
+                "write_mode": [
+                    "post_comment",
+                    "delete_comment",
+                    "post_comment_reaction",
+                    "delete_comment_reaction",
+                    "post_variables",
+                    "post_dev_resources",
+                    "put_dev_resources",
+                    "create_dev_resource",
+                    "delete_dev_resource",
+                    "publish_code_connect",
+                    "unpublish_code_connect",
+                    "create_webhook",
+                    "update_webhook",
+                    "delete_webhook"
+                ],
+                "code_connect_egress": {
+                    "env": "FIGHORSE_MCP_CODE_CONNECT=allow",
+                    "readonly_visible": ["parse_code_connect_template", "validate_code_connect", "preview_code_connect"],
+                    "write_visible_when_FIGHORSE_MCP_MODE_write": ["publish_code_connect", "unpublish_code_connect"],
+                    "note": "preview/publish send Code Connect template code to Figma; keep the env unset unless the user allows this egress."
+                },
+                "client_cache": "After upgrading fighorse or restarting the shared HTTP service, reconnect the MCP client and request tools/list again before deciding that a tool is unavailable."
+            },
             "self_discovery_tools": ["discover_fighorse", "check_fighorse_ready", "parse_figma_url", "get_replicate_workflow", "get_experience_schema", "list_experiences"],
             "learning_tools": ["get_experience_schema", "list_experiences", "record_experience"],
             "replication_tools": ["get_design_package", "get_design_context", "get_screenshot", "export_images", "export_component", "download_image_fills", "get_tokens", "visual_audit", "get_project_playbook"],

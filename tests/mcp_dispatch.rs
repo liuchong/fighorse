@@ -28,6 +28,10 @@ async fn mcp_dispatch_end_to_end() {
         .await
         .unwrap();
     assert_eq!(init["result"]["serverInfo"]["name"], "fighorse");
+    assert_eq!(
+        init["result"]["serverInfo"]["version"],
+        env!("CARGO_PKG_VERSION")
+    );
 
     // tools/list — readonly excludes write tools.
     let list = dispatch(&json!({"jsonrpc":"2.0","id":2,"method":"tools/list"}))

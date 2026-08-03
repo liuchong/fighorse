@@ -18,6 +18,7 @@ Figma API calls require a Figma Personal Access Token. Before calling Figma API 
 3. Call `fighorse experience summary --platform <platform> --asset-format <format>` or MCP `list_experiences` before implementation.
 4. If platform or asset format is missing, ask the developer before choosing.
 5. For exact public Figma REST API work, use `fighorse figma-api coverage --format json` or MCP resource `fighorse://coverage` to see the covered OpenAPI operations.
+6. If an expected tool is missing after install, upgrade, or service restart, reconnect the MCP client and request `tools/list` again before deciding the feature is unavailable; clients can cache old tool lists for an active session.
 
 ## Replication
 
@@ -29,7 +30,7 @@ When the task needs a low-level Figma endpoint, call generated MCP tools named `
 
 ## Code Connect
 
-For modern Code Connect template workflows, use fighorse directly: CLI `fighorse code-connect generate|parse|validate|preview|publish|unpublish` or MCP `parse_code_connect_template`, `validate_code_connect`, `preview_code_connect`, `publish_code_connect`, and `unpublish_code_connect`. AI clients should read the target code repository with their own file tools and pass explicit component context; fighorse MCP does not scan or execute project code. MCP preview/publish sends template code to Figma and requires `FIGHORSE_MCP_CODE_CONNECT=allow`; publish/unpublish also requires `FIGHORSE_MCP_MODE=write`. Automatic Code Connect mapping discovery remains a Figma product capability; use the official Figma Remote MCP for that.
+For modern Code Connect template workflows, use fighorse directly: CLI `fighorse code-connect generate|parse|validate|preview|publish|unpublish` or MCP `parse_code_connect_template`, `validate_code_connect`, `preview_code_connect`, `publish_code_connect`, and `unpublish_code_connect`. AI clients should read the target code repository with their own file tools and pass explicit component context; fighorse MCP does not scan or execute project code. MCP readonly mode exposes parse, validate, and preview tools; publish/unpublish appear only when `FIGHORSE_MCP_MODE=write`. MCP preview/publish sends template code to Figma and requires `FIGHORSE_MCP_CODE_CONNECT=allow`; publish/unpublish also requires `FIGHORSE_MCP_MODE=write`. Automatic Code Connect mapping discovery remains a Figma product capability; use the official Figma Remote MCP for that.
 
 ## MCP Process Model
 

@@ -189,6 +189,10 @@ fn ai_facing_sources_use_four_clients_and_canonical_targets() {
     assert!(install.contains("FIGHORSE_MCP_CODE_CONNECT"));
     assert!(skill.contains("FIGHORSE_MCP_CODE_CONNECT"));
     assert!(agents.contains("FIGHORSE_MCP_CODE_CONNECT"));
+    assert!(skill.contains("reconnect the MCP client"));
+    assert!(skill.contains("tools/list"));
+    assert!(agents.contains("reconnect the MCP client"));
+    assert!(agents.contains("tools/list"));
     assert!(read("src/main.rs").contains("cursor|codex|kimi|claude"));
     assert!(read("src/experience.rs").contains("cursor|codex|kimi|claude"));
     for target in [

@@ -1,5 +1,7 @@
 use fighorse::discovery;
+use fighorse::mcp::tools;
 use serde_json::json;
+use std::collections::HashSet;
 use std::fs;
 use std::net::TcpListener;
 use std::path::PathBuf;
@@ -47,6 +49,15 @@ impl Drop for EnvGuard {
     }
 }
 
+fn tool_names() -> HashSet<String> {
+    tools::list_tools()["tools"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|tool| tool["name"].as_str().map(String::from))
+        .collect()
+}
+
 #[test]
 fn quickstart_keeps_cli_readiness_separate_from_optional_service_readiness() {
     let _lock = process_env_lock();
@@ -79,6 +90,64 @@ fn quickstart_keeps_cli_readiness_separate_from_optional_service_readiness() {
     );
     assert!(!lock_path.exists());
     let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn discovery_versions_follow_crate_version() {
+    let _lock = process_env_lock();
+    let _env = EnvGuard::capture(&["FIGHORSE_HOME", "FIGMA_TOKEN", "FIGMA_API_KEY"]);
+    let root = temp_root("version-discovery");
+    unsafe { std::env::set_var("FIGHORSE_HOME", &root) };
+    unsafe { std::env::remove_var("FIGMA_TOKEN") };
+    unsafe { std::env::remove_var("FIGMA_API_KEY") };
+
+    let manifest = discovery::manifest();
+    let doctor = discovery::doctor();
+    assert_eq!(manifest["version"], env!("CARGO_PKG_VERSION"));
+    assert_eq!(doctor["runtime"]["version"], env!("CARGO_PKG_VERSION"));
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn discovery_tool_visibility_matches_mcp_tools_list() {
+    let _lock = process_env_lock();
+    let _env = EnvGuard::capture(&["FIGHORSE_MCP_MODE"]);
+    unsafe { std::env::set_var("FIGHORSE_MCP_MODE", "readonly") };
+
+    let manifest = discovery::manifest();
+    let visibility = &manifest["mcp"]["tool_visibility"];
+    let readonly = visibility["readonly"]
+        .as_array()
+        .expect("readonly visibility tools");
+    let write_mode = visibility["write_mode"]
+        .as_array()
+        .expect("write-mode visibility tools");
+
+    let readonly_names = tool_names();
+    for tool in readonly.iter().filter_map(|value| value.as_str()) {
+        assert!(
+            readonly_names.contains(tool),
+            "readonly tools/list omits {tool}"
+        );
+    }
+    for tool in write_mode.iter().filter_map(|value| value.as_str()) {
+        assert!(
+            !readonly_names.contains(tool),
+            "readonly tools/list exposes write-only tool {tool}"
+        );
+    }
+    assert!(readonly_names.contains("preview_code_connect"));
+    assert!(!readonly_names.contains("publish_code_connect"));
+
+    unsafe { std::env::set_var("FIGHORSE_MCP_MODE", "write") };
+    let write_names = tool_names();
+    for tool in write_mode.iter().filter_map(|value| value.as_str()) {
+        assert!(write_names.contains(tool), "write tools/list omits {tool}");
+    }
+    assert_eq!(
+        visibility["code_connect_egress"]["env"],
+        "FIGHORSE_MCP_CODE_CONNECT=allow"
+    );
 }
 
 #[test]
