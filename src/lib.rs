@@ -5,6 +5,7 @@
 
 pub mod api;
 pub mod cli;
+pub mod code_connect;
 pub mod config;
 pub mod discovery;
 pub mod error;

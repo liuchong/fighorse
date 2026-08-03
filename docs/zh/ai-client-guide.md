@@ -41,7 +41,7 @@ fighorse mcp config --client opencode --transport http
 }
 ```
 
-**为什么两者都要？** fighorse 处理设计到代码的读取工作流（设计包、资产导出、视觉审计、经验学习）。官方 Figma Remote MCP 处理公共 REST 未暴露的产品专属能力：原生 canvas 写入、Code to Canvas、Code Connect 自动映射、FigJam 生成和 Make 资源。它们互补，可以在同一客户端中共存。
+**为什么两者都要？** fighorse 处理设计到代码的读取工作流（设计包、资产导出、视觉审计、经验学习）和现代 Code Connect 模板工作流。官方 Figma Remote MCP 处理公共 REST 未暴露的产品专属能力：原生 canvas 写入、Code to Canvas、Code Connect 自动映射、FigJam 生成和 Make 资源。它们互补，可以在同一客户端中共存。
 
 - 官方 Remote MCP：`https://mcp.figma.com/mcp` — OAuth 认证，beta 期间免费，未来将按使用量付费。
 - 席位要求：共享文件的写入需要 Full seat；Dev seat 在草稿之外是只读的。
@@ -117,6 +117,16 @@ PNG 只是最安全的 Figma 节点渲染回退。它不是默认的产品决策
 
 需要精确的 OpenAPI 对等性时使用生成的官方 REST 工具。这些工具命名为 `figma_<operation_id_in_snake_case>`，例如 `figma_get_file`、`figma_get_developer_logs`、`figma_put_webhook` 和 `figma_post_variables`。在只读 MCP 模式下，生成的 Figma 写入工具被隐藏和阻止；只有当开发者明确允许 Figma 修改时，才设置 `FIGHORSE_MCP_MODE=write`。
 
+只有当用户要把代码组件连接到 Figma Dev Mode 时才使用 Code Connect 工具：
+
+- `parse_code_connect_template`：检查已提供的 Code Connect documents。
+- `validate_code_connect`：确认目标 Figma 节点是组件或组件集。
+- `preview_code_connect`：把模板代码发给 Figma 做真实片段渲染；需要 `FIGHORSE_MCP_CODE_CONNECT=allow`。
+- `publish_code_connect`：发布映射；需要 `FIGHORSE_MCP_CODE_CONNECT=allow` 和 `FIGHORSE_MCP_MODE=write`。
+- `unpublish_code_connect`：删除精确的 node+label 映射；需要同样两个开关。
+
+生成模板时，AI 客户端应使用自己的文件工具读取目标代码仓库，再把明确的组件上下文交给 CLI `fighorse code-connect generate`。fighorse 不通过 MCP 扫描或执行用户代码仓库。
+
 支持 MCP 资源和 prompt 的客户端还可以读取：
 
 - `fighorse://capabilities`
@@ -143,6 +153,10 @@ fighorse visual audit "<figma-url>" --screenshot <app-screenshot-path> --platfor
 fighorse project playbook --platform <platform> --asset-format <asset-format>
 fighorse figma-api coverage --format json
 fighorse figma api getFile --params '{"file_key":"<file_key>","depth":1}'
+fighorse code-connect generate "<figma-component-url>" --context code-context.json
+fighorse code-connect parse --dir .
+fighorse code-connect preview --documents docs.json
+fighorse code-connect publish --documents docs.json --dry-run
 ```
 
 ## 本地写入策略
@@ -153,6 +167,8 @@ MCP Figma 写入模式和本地文件系统写入模式是独立的。
 - `FIGHORSE_MCP_MODE=write`：暴露已实现的 Figma 写入工具。
 - `FIGHORSE_MCP_LOCAL_WRITE=deny`：默认；阻止本地导出工具。
 - `FIGHORSE_MCP_LOCAL_WRITE=allow`：在批准的根目录内允许本地导出工具。
+- `FIGHORSE_MCP_CODE_CONNECT=deny`：默认；MCP 不能把 Code Connect 模板代码发送给 Figma。
+- `FIGHORSE_MCP_CODE_CONNECT=allow`：允许 Code Connect preview/publish 把模板代码发给 Figma。
 
 批准的根目录：
 

@@ -146,11 +146,12 @@ fighorse 在追加式 JSONL 存储中保留可复用的经验：
 
 ## 安全边界
 
-fighorse 分离三个安全域：
+fighorse 分离四个安全域：
 
 - Figma 读取访问：需要令牌，是正常操作模式。
 - Figma 写入访问：除非 `FIGHORSE_MCP_MODE=write`，否则禁用。
 - 本地文件系统写入：在 MCP 中除非 `FIGHORSE_MCP_LOCAL_WRITE=allow`，否则禁用。
+- Code Connect 模板代码外发：在 MCP 中除非 `FIGHORSE_MCP_CODE_CONNECT=allow`，否则禁用。
 
 本地文件导出仍限制在批准的根目录：
 
@@ -158,7 +159,7 @@ fighorse 分离三个安全域：
 - `./assets/fighorse`
 - `~/.fighorse/exports`
 
-这种分离很重要，因为下载本地截图或图片 fill 远不如修改 Figma 敏感，但仍需要路径验证。用户明确控制两个域。
+这种分离很重要，因为下载本地截图或图片 fill 远不如修改 Figma 敏感，而 Code Connect preview/publish 会把项目模板代码发送给 Figma。用户明确控制每个域。
 
 默认 MCP 适配器是 official Rust `rmcp` 2.2 `StreamableHttpService` 与 `LocalSessionManager`。它提供互相独立的 stateful session，在分发前校验 Host 和 Origin，按标准 Streamable HTTP 返回 JSON 或 event-stream response，并在 SIGINT/SIGTERM 时 graceful shutdown。`/mcp` 的 event stream 不是 legacy SSE transport；`/sse` 和 `/messages` 不再服务，`--transport sse` 明确失败。显式兼容模式使用标准 rmcp stdio，不存在私有 frame 协议。
 
@@ -187,13 +188,13 @@ Canonical 三目标是 `~/.agents/skills/fighorse/SKILL.md`（Cursor/Kimi/Codex�
 
 fighorse 借鉴现有工具的经验，同时选择不同的边界。
 
-官方 Figma MCP 是规定性的和深度集成的。它可以暴露 Code Connect、Code to Canvas 和设计系统搜索，但其行为不透明，与 Figma 的产品表面绑定。
+官方 Figma MCP 是规定性的和深度集成的。它可以暴露 Code to Canvas、自动 Code Connect 映射和设计系统搜索，但其行为不透明，与 Figma 的产品表面绑定。
 
 Framelink 风格的 MCP 是描述性的和轻量的。它为 AI 提供版式和样式事实，而非生成的代码结构。这避免了用当前代码库可能不想要的框架决策"污染"上下文。
 
-fighorse 默认为描述性路径：事实优于生成代码。当显式启用时，它仍然可以暴露更丰富的 Figma 元数据和可写端点，但主要工作流是"精确上下文输入，项目原生实现输出"。
+fighorse 默认为描述性路径：事实优于生成代码。当显式启用时，它仍然可以暴露更丰富的 Figma 元数据、现代 Code Connect 模板工作流和可写端点，但主要工作流是"精确上下文输入，项目原生实现输出"。
 
-公共 REST OpenAPI 中不存在的官方专属产品表面被标记为公共 REST 不支持，而非静默近似。示例包括原生 canvas 修改、Code to Canvas、自动 Code Connect 映射发现、Make 资源和 FigJam 生成。fighorse 可能提供开放式替代方案，如用户维护的组件映射或通用资源摄取，但它不应假装实现私有 Figma 产品 API。
+公共 REST OpenAPI 中不存在的官方专属产品表面被标记为公共 REST 不支持，而非静默近似。示例包括原生 canvas 修改、Code to Canvas、自动 Code Connect 映射发现、Make 资源和 FigJam 生成。fighorse 的 Code Connect 支持是独立的现代模板兼容层，使用观察到的 preview/publish/delete 服务协议；它不声称实现 Figma 产品内的自动映射。
 
 ## 数据保真度
 
@@ -229,7 +230,7 @@ Figma REST API 数据通常对实现事实是规范忠实的：
 
 fighorse 不旨在成为通用代码生成器。代码应由 AI agent 使用目标仓库的现有模式生成。
 
-它也不旨在替代 Figma 自己的产品集成。对于 Code Connect、Code to Canvas、FigJam 生成或原生 Figma 修改工作流，官方 MCP 仍然是合适的。
+它也不旨在替代 Figma 自己的产品集成。对于自动 Code Connect 映射、Code to Canvas、FigJam 生成或原生 Figma 修改工作流，官方 MCP 仍然是合适的。
 
 持久的产品边界是上下文和资产管道：获取、精简、解释、导出、验证和学习。
 

@@ -5,12 +5,13 @@
 //! JSON objects; errors set `isError: true`.
 
 use crate::api::{
-    activity_logs as activity_logs_api, analytics as analytics_api, comments as comments_api,
-    components as components_api, dev_resources as dev_resources_api,
-    developer_logs as developer_logs_api, files as files_api, oembed as oembed_api, operations,
-    payments as payments_api, projects as projects_api, styles as styles_api, users as users_api,
-    variables as variables_api, webhooks as webhooks_api,
+    activity_logs as activity_logs_api, analytics as analytics_api,
+    code_connect as code_connect_api, comments as comments_api, components as components_api,
+    dev_resources as dev_resources_api, developer_logs as developer_logs_api, files as files_api,
+    oembed as oembed_api, operations, payments as payments_api, projects as projects_api,
+    styles as styles_api, users as users_api, variables as variables_api, webhooks as webhooks_api,
 };
+use crate::code_connect::model::CodeConnectDocument;
 use crate::config;
 use crate::discovery;
 use crate::error::{Error, Result};
@@ -75,6 +76,31 @@ fn handle(result: Result<Value>) -> Value {
         Ok(data) => success(&data),
         Err(e) => error(&e.to_string()),
     }
+}
+
+fn code_connect_documents(args: &Value) -> Result<Vec<CodeConnectDocument>> {
+    serde_json::from_value(args.get("documents").cloned().unwrap_or(json!([]))).map_err(Error::from)
+}
+
+fn code_connect_nodes(args: &Value) -> Result<Vec<(String, String)>> {
+    let nodes = args
+        .get("nodes")
+        .and_then(|v| v.as_array())
+        .ok_or_else(|| Error::Usage("nodes array required".into()))?;
+    let mut out = Vec::new();
+    for node in nodes {
+        let figma_node = node
+            .get("figmaNode")
+            .or_else(|| node.get("figma_node"))
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| Error::Usage("nodes[].figmaNode required".into()))?;
+        let label = node
+            .get("label")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| Error::Usage("nodes[].label required".into()))?;
+        out.push((figma_node.to_string(), label.to_string()));
+    }
+    Ok(out)
 }
 
 fn arg_str<'a>(args: &'a Value, key: &str) -> Option<&'a str> {
@@ -238,6 +264,85 @@ async fn handle_tool(name: &str, args: &Value) -> Value {
             arg_str(args, "asset_format"),
             arg_str(args, "project_dir"),
         )),
+        "parse_code_connect_template" => match code_connect_documents(args) {
+            Ok(docs) => success(&json!({"documents": docs})),
+            Err(e) => error(&e.to_string()),
+        },
+        "validate_code_connect" => {
+            let token = match get_token() {
+                Ok(t) => t,
+                Err(e) => return error(&e.to_string()),
+            };
+            match code_connect_documents(args) {
+                Ok(docs) => handle(
+                    code_connect_api::validate_documents(&token, &docs)
+                        .await
+                        .map(|report| serde_json::to_value(report).unwrap_or(json!({}))),
+                ),
+                Err(e) => error(&e.to_string()),
+            }
+        }
+        "preview_code_connect" => {
+            let token = match get_token() {
+                Ok(t) => t,
+                Err(e) => return error(&e.to_string()),
+            };
+            match code_connect_documents(args) {
+                Ok(docs) => handle(
+                    code_connect_api::preview_documents(
+                        &token,
+                        &docs,
+                        args.get("render_combinations").cloned(),
+                    )
+                    .await,
+                ),
+                Err(e) => error(&e.to_string()),
+            }
+        }
+        "publish_code_connect" => {
+            if !arg_bool(args, "yes").unwrap_or(false) {
+                return error(
+                    "publish_code_connect requires yes=true after reviewing the publish plan",
+                );
+            }
+            let token = match get_token() {
+                Ok(t) => t,
+                Err(e) => return error(&e.to_string()),
+            };
+            match code_connect_documents(args) {
+                Ok(docs) => handle(
+                    code_connect_api::publish_documents(
+                        &token,
+                        &docs,
+                        arg_bool(args, "force").unwrap_or(false),
+                        None,
+                    )
+                    .await,
+                ),
+                Err(e) => error(&e.to_string()),
+            }
+        }
+        "unpublish_code_connect" => {
+            if !arg_bool(args, "yes").unwrap_or(false) {
+                return error(
+                    "unpublish_code_connect requires yes=true after reviewing the delete plan",
+                );
+            }
+            let token = match get_token() {
+                Ok(t) => t,
+                Err(e) => return error(&e.to_string()),
+            };
+            match code_connect_nodes(args) {
+                Ok(nodes) => {
+                    let borrowed: Vec<(&str, &str)> = nodes
+                        .iter()
+                        .map(|(figma_node, label)| (figma_node.as_str(), label.as_str()))
+                        .collect();
+                    handle(code_connect_api::unpublish_documents(&token, &borrowed).await)
+                }
+                Err(e) => error(&e.to_string()),
+            }
+        }
 
         // --- Files ---
         "get_file" => handle(

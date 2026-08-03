@@ -10,10 +10,16 @@ use super::{
     write_output,
 };
 use crate::api::{
-    comments as comments_api, components as components_api, coverage as api_coverage,
-    dev_resources as dev_resources_api, files as files_api, operations as api_operations,
-    projects as projects_api, styles as styles_api, users as users_api, variables as variables_api,
-    webhooks as webhooks_api,
+    code_connect as code_connect_api, comments as comments_api, components as components_api,
+    coverage as api_coverage, dev_resources as dev_resources_api, files as files_api,
+    operations as api_operations, projects as projects_api, styles as styles_api,
+    users as users_api, variables as variables_api, webhooks as webhooks_api,
+};
+use crate::code_connect::{
+    generate::{generate_template, GenerateRequest},
+    model::CodeConnectDocument,
+    project::load_project,
+    template::parse_project,
 };
 use crate::config;
 use crate::error::Result;
@@ -22,6 +28,7 @@ use crate::figma;
 use crate::transform::{compact, filter as tree_filter, schema, tokens};
 use crate::url as figma_url;
 use serde_json::{json, Value};
+use std::path::Path;
 
 fn int_str(v: i64) -> String {
     v.to_string()
@@ -802,6 +809,180 @@ pub async fn cmd_figma_api_call(args: &[String]) -> Result<()> {
     } else {
         print_data(&data, flags.get("output"))
     }
+}
+
+fn read_json_value(source: &str) -> Result<Value> {
+    let raw = if source == "-" {
+        read_stdin()
+    } else {
+        std::fs::read_to_string(source)?
+    };
+    Ok(serde_json::from_str(&raw)?)
+}
+
+fn code_connect_project_docs(
+    dir: Option<&str>,
+    config_path: Option<&str>,
+    file: Option<&str>,
+) -> Result<Vec<CodeConnectDocument>> {
+    let root = dir
+        .map(std::path::PathBuf::from)
+        .unwrap_or(std::env::current_dir()?);
+    let mut project = load_project(&root, config_path.map(Path::new))?;
+    if let Some(file) = file {
+        let path = Path::new(file);
+        let path = if path.is_absolute() {
+            path.to_path_buf()
+        } else {
+            root.join(path)
+        };
+        project.files = vec![path];
+    }
+    parse_project(&project)
+}
+
+fn code_connect_docs_from_flags(flags: &super::args::Flags) -> Result<Vec<CodeConnectDocument>> {
+    if let Some(source) = flags.get("documents") {
+        let value = read_json_value(source)?;
+        return Ok(serde_json::from_value(value)?);
+    }
+    code_connect_project_docs(flags.get("dir"), flags.get("config"), flags.get("file"))
+}
+
+pub async fn cmd_code_connect_generate(args: &[String]) -> Result<()> {
+    let flags = parse_flags(args, &["--context", "--output", "--label", "--javascript"]);
+    let figma_url = require_arg(&flags.rest, 0, "figma-url").to_string();
+    let context_path = require_value(flags.get("context"), "--context");
+    let mut value = read_json_value(&context_path)?;
+    if value.get("figma").is_none() {
+        value["figma"] = json!({"figma_node": figma_url});
+    }
+    let mut request: GenerateRequest = serde_json::from_value(value)?;
+    request.figma.figma_node = figma_url;
+    if let Some(label) = flags.get("label") {
+        request.label = Some(label.to_string());
+    }
+    request.javascript = flag_present(args, "--javascript");
+    let generated = generate_template(&request)?;
+    if let Some(output) = flags.get("output") {
+        if Path::new(output).exists() {
+            return Err(crate::error::Error::Usage(format!(
+                "Output file already exists: {output}"
+            )));
+        }
+        write_output(&generated.template, Some(output))?;
+        print_data(
+            &json!({
+                "file": output,
+                "blocking_issues": generated.blocking_issues,
+                "warnings": generated.warnings
+            }),
+            None,
+        )
+    } else {
+        print_data(&serde_json::to_value(generated)?, None)
+    }
+}
+
+pub fn cmd_code_connect_parse(args: &[String]) -> Result<()> {
+    let flags = parse_flags(args, &["--dir", "--config", "--file", "--output"]);
+    let docs = code_connect_project_docs(flags.get("dir"), flags.get("config"), flags.get("file"))?;
+    print_data(&serde_json::to_value(docs)?, flags.get("output"))
+}
+
+pub async fn cmd_code_connect_validate(args: &[String]) -> Result<()> {
+    let token = require_token();
+    let flags = parse_flags(
+        args,
+        &["--dir", "--config", "--file", "--documents", "--output"],
+    );
+    let docs = code_connect_docs_from_flags(&flags)?;
+    let report = code_connect_api::validate_documents(&token, &docs).await?;
+    print_data(&serde_json::to_value(report)?, flags.get("output"))
+}
+
+pub async fn cmd_code_connect_preview(args: &[String]) -> Result<()> {
+    let token = require_token();
+    let flags = parse_flags(
+        args,
+        &["--dir", "--config", "--file", "--documents", "--output"],
+    );
+    let docs = code_connect_docs_from_flags(&flags)?;
+    let data = code_connect_api::preview_documents(&token, &docs, None).await?;
+    print_data(&data, flags.get("output"))
+}
+
+pub async fn cmd_code_connect_publish(args: &[String]) -> Result<()> {
+    let flags = parse_flags(
+        args,
+        &[
+            "--dir",
+            "--config",
+            "--file",
+            "--documents",
+            "--output",
+            "--batch-size",
+        ],
+    );
+    let docs = code_connect_docs_from_flags(&flags)?;
+    if flag_present(args, "--dry-run") {
+        return print_data(
+            &json!({"dry_run": true, "documents": docs.iter().map(|d| json!({"figmaNode": d.figma_node, "label": d.label, "component": d.component})).collect::<Vec<_>>()}),
+            flags.get("output"),
+        );
+    }
+    if !flag_present(args, "--yes") {
+        return Err(crate::error::Error::Usage(
+            "code-connect publish requires --yes after reviewing --dry-run output".into(),
+        ));
+    }
+    let token = require_token();
+    let batch_size = flags
+        .get("batch_size")
+        .and_then(|v| v.parse::<usize>().ok());
+    let data = code_connect_api::publish_documents(
+        &token,
+        &docs,
+        flag_present(args, "--force"),
+        batch_size,
+    )
+    .await?;
+    print_data(&data, flags.get("output"))
+}
+
+pub async fn cmd_code_connect_unpublish(args: &[String]) -> Result<()> {
+    let flags = parse_flags(
+        args,
+        &[
+            "--dir", "--config", "--file", "--node", "--label", "--output",
+        ],
+    );
+    let nodes: Vec<(String, String)> = if let Some(node) = flags.get("node") {
+        let label = require_value(flags.get("label"), "--label");
+        vec![(node.to_string(), label)]
+    } else {
+        let docs =
+            code_connect_project_docs(flags.get("dir"), flags.get("config"), flags.get("file"))?;
+        docs.into_iter().map(|d| (d.figma_node, d.label)).collect()
+    };
+    if flag_present(args, "--dry-run") {
+        return print_data(
+            &json!({"dry_run": true, "nodes": nodes.iter().map(|(figma_node, label)| json!({"figmaNode": figma_node, "label": label})).collect::<Vec<_>>()}),
+            flags.get("output"),
+        );
+    }
+    if !flag_present(args, "--yes") {
+        return Err(crate::error::Error::Usage(
+            "code-connect unpublish requires --yes after reviewing --dry-run output".into(),
+        ));
+    }
+    let token = require_token();
+    let borrowed: Vec<(&str, &str)> = nodes
+        .iter()
+        .map(|(figma_node, label)| (figma_node.as_str(), label.as_str()))
+        .collect();
+    let data = code_connect_api::unpublish_documents(&token, &borrowed).await?;
+    print_data(&data, flags.get("output"))
 }
 
 /// Format a float without a trailing `.0` for integers.

@@ -405,7 +405,7 @@ pub fn launchd_plist(command: &str, port: i64, home: &str, allow_local_write: bo
   <key>ProgramArguments</key>
   <array><string>{command}</string><string>mcp</string><string>serve</string><string>--transport</string><string>http</string><string>--host</string><string>127.0.0.1</string><string>--port</string><string>{port}</string></array>
   <key>EnvironmentVariables</key>
-  <dict><key>FIGHORSE_HOME</key><string>{home}</string><key>FIGHORSE_MCP_MODE</key><string>readonly</string><key>FIGHORSE_MCP_LOCAL_WRITE</key><string>{local_write}</string><key>FIGHORSE_MCP_SERVICE</key><string>true</string></dict>
+  <dict><key>FIGHORSE_HOME</key><string>{home}</string><key>FIGHORSE_MCP_MODE</key><string>readonly</string><key>FIGHORSE_MCP_LOCAL_WRITE</key><string>{local_write}</string><key>FIGHORSE_MCP_CODE_CONNECT</key><string>deny</string><key>FIGHORSE_MCP_SERVICE</key><string>true</string></dict>
   <key>WorkingDirectory</key><string>{home}</string>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><true/>
@@ -431,6 +431,7 @@ Description=fighorse MCP service\n\
 Environment=\"FIGHORSE_HOME={home_value}\"\n\
 Environment=\"FIGHORSE_MCP_MODE=readonly\"\n\
 Environment=\"FIGHORSE_MCP_LOCAL_WRITE={local_write}\"\n\
+Environment=\"FIGHORSE_MCP_CODE_CONNECT=deny\"\n\
 Environment=\"FIGHORSE_MCP_SERVICE=true\"\n\
 ExecStart={command} mcp serve --transport http --host 127.0.0.1 --port {port}\n\
 Restart=always\n\

@@ -106,7 +106,19 @@ Canonical 三目标为 Cursor/Kimi/Codex 的 `~/.agents/skills/fighorse/SKILL.md
 
 legacy `/sse` 与 `/messages` 不再提供，`--transport sse` 会失败并引导改用 HTTP。`/mcp` 返回 `text/event-stream` 是标准 Streamable HTTP 响应协商，不是 legacy SSE transport。新安装默认拒绝 local write。
 
-## 7. 如何向你的 AI Agent 提问
+## 7. 可选：Code Connect
+
+对于现代 Code Connect 模板：
+
+```bash
+fighorse code-connect generate "<figma-component-url>" --context code-context.json
+fighorse code-connect parse --dir .
+fighorse code-connect publish --documents docs.json --dry-run
+```
+
+只有在检查 dry-run 输出后才使用 `--yes`。MCP preview/publish 还需要 `FIGHORSE_MCP_CODE_CONNECT=allow`；publish/unpublish 需要 `FIGHORSE_MCP_MODE=write`。
+
+## 8. 如何向你的 AI Agent 提问
 
 MCP 连接后，粘贴一个具体的 Figma frame 链接并询问：
 

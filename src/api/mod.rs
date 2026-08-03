@@ -4,6 +4,7 @@
 //! parameters accept `Option<&str>`; `None` maps to a JSON `null` which the URL
 //! builder omits.
 
+pub mod code_connect;
 pub mod coverage;
 pub mod operations;
 

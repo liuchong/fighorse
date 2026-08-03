@@ -222,6 +222,30 @@ Fresh service and explicit stdio configs use `FIGHORSE_MCP_LOCAL_WRITE=deny`. Mi
 
 Normal CLI commands such as `fighorse file get`, `fighorse design package`, and `fighorse image export` are one-shot processes. They are allowed to start each time, do not start the MCP service, do not bind ports, do not take the MCP singleton lock, and should exit after output is written. Figma HTTP calls and image downloads use `FIGHORSE_HTTP_TIMEOUT_MS` with a default of `120000`, and `SIGINT`/`SIGTERM` abort in-flight requests before exiting. `fighorse install --default --apply` defaults to CLI-only setup; use `fighorse install --default --mode service --apply` or `fighorse install service --apply` only when you explicitly want fighorse to configure or kickstart a long-running MCP service.
 
+## Code Connect
+
+fighorse supports modern parserless Code Connect templates without Node.js or
+the official Code Connect CLI.
+
+```bash
+fighorse code-connect generate "<figma-component-url>" --context code-context.json
+fighorse code-connect parse --dir .
+fighorse code-connect validate --documents docs.json
+fighorse code-connect preview --documents docs.json
+fighorse code-connect publish --documents docs.json --dry-run
+fighorse code-connect publish --documents docs.json --yes --force
+fighorse code-connect unpublish --node "<figma-component-url>" --label React --dry-run
+```
+
+AI clients should read the target code repository through their own file tools
+and pass only explicit component context to `generate`. fighorse parses
+`.figma.ts`, `.figma.js`, and `.figma.batch.json` locally without executing
+template code. Preview sends template code to Figma for real Dev Mode rendering.
+Publish and unpublish mutate remote Code Connect mappings.
+
+Automatic Code Connect mapping discovery remains a Figma product capability;
+use the official Figma Remote MCP when you need automatic mapping in Figma.
+
 ## Safety Modes
 
 Figma write tools are hidden unless enabled:
@@ -237,6 +261,15 @@ FIGHORSE_MCP_LOCAL_WRITE=allow fighorse mcp serve --transport http
 ```
 
 Even with local write enabled, export paths are validated and must stay under `./.fighorse/exports`, `./assets/fighorse`, or `~/.fighorse/exports`.
+
+Code Connect template egress is controlled separately:
+
+```bash
+FIGHORSE_MCP_CODE_CONNECT=allow fighorse mcp serve --transport http
+```
+
+MCP preview/publish requires `FIGHORSE_MCP_CODE_CONNECT=allow`; publish and
+unpublish also require `FIGHORSE_MCP_MODE=write`.
 
 ## Experience Store
 

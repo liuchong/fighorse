@@ -21,8 +21,20 @@ pub fn local_write_tool(name: &str) -> bool {
     local_write_tool_names().contains(name)
 }
 
+pub fn code_connect_egress_tool(name: &str) -> bool {
+    matches!(
+        name,
+        "preview_code_connect" | "publish_code_connect" | "unpublish_code_connect"
+    )
+}
+
 /// Return a policy violation message for `name`, or None if allowed.
 pub fn violation(legacy_write_names: &HashSet<String>, name: &str) -> Option<String> {
+    if code_connect_egress_tool(name) && !config::mcp_code_connect_enabled() {
+        return Some(format!(
+            "Tool {name} can send Code Connect template code to Figma and requires FIGHORSE_MCP_CODE_CONNECT=allow."
+        ));
+    }
     if write_tool(legacy_write_names, name) && !config::mcp_write_enabled() {
         return Some(format!(
             "Tool {name} is disabled in readonly mode. Set FIGHORSE_MCP_MODE=write to enable Figma write tools."

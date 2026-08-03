@@ -80,3 +80,35 @@ async fn mcp_dispatch_end_to_end() {
     std::env::remove_var("FIGMA_TOKEN");
     std::env::remove_var("FIGHORSE_MCP_MODE");
 }
+
+#[tokio::test(flavor = "current_thread")]
+async fn code_connect_mcp_requires_explicit_egress_and_write_mode() {
+    std::env::set_var("FIGMA_TOKEN", "test-token");
+    std::env::set_var("FIGHORSE_MCP_MODE", "readonly");
+    std::env::set_var("FIGHORSE_MCP_CODE_CONNECT", "deny");
+
+    let preview_attempt = dispatch(&json!({"jsonrpc":"2.0","id":1,"method":"tools/call",
+        "params":{"name":"preview_code_connect","arguments":{"documents":[]}}}))
+    .await
+    .unwrap();
+    assert_eq!(preview_attempt["result"]["isError"], true);
+    assert!(preview_attempt["result"]["content"][0]["text"]
+        .as_str()
+        .unwrap()
+        .contains("FIGHORSE_MCP_CODE_CONNECT"));
+
+    std::env::set_var("FIGHORSE_MCP_CODE_CONNECT", "allow");
+    let publish_attempt = dispatch(&json!({"jsonrpc":"2.0","id":2,"method":"tools/call",
+        "params":{"name":"publish_code_connect","arguments":{"documents":[],"yes":true}}}))
+    .await
+    .unwrap();
+    assert_eq!(publish_attempt["result"]["isError"], true);
+    assert!(publish_attempt["result"]["content"][0]["text"]
+        .as_str()
+        .unwrap()
+        .contains("readonly mode"));
+
+    std::env::remove_var("FIGHORSE_MCP_CODE_CONNECT");
+    std::env::remove_var("FIGHORSE_MCP_MODE");
+    std::env::remove_var("FIGMA_TOKEN");
+}

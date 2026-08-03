@@ -473,6 +473,21 @@ pub fn official_mcp_only_capabilities() -> Value {
     ])
 }
 
+/// Native Code Connect compatibility exposed by fighorse outside public REST coverage.
+pub fn code_connect_compatibility_capabilities() -> Value {
+    json!([
+        {"capability": "code_connect_template_generate",
+         "status": "native-observed-private-protocol",
+         "reason": "fighorse can generate modern parserless Code Connect templates from explicit AI-supplied code context and Figma component schema."},
+        {"capability": "code_connect_template_parse",
+         "status": "native-local",
+         "reason": "fighorse parses .figma.ts/.figma.js/.figma.batch.json without executing template code."},
+        {"capability": "code_connect_preview_publish_unpublish",
+         "status": "native-observed-private-protocol",
+         "reason": "fighorse calls Figma's observed Code Connect preview, publish, and delete service endpoints with protocol drift detection."}
+    ])
+}
+
 /// Look up an operation by its operationId.
 pub fn operation_by_id(operation_id: &str) -> Option<Operation> {
     official_operations()
@@ -583,6 +598,7 @@ pub fn coverage_report() -> Value {
         "summary": operation_summary(),
         "operations": operations,
         "official_mcp_only": official_mcp_only_capabilities(),
+        "code_connect_compatibility": code_connect_compatibility_capabilities(),
         "ai_guidance": {
             "use": "Use this report to verify REST parity before relying on low-level Figma tools.",
             "next_step": "If any operation is not covered, update fighorse.api operations, MCP tools, CLI dispatch, discovery, and tests together."
@@ -626,6 +642,22 @@ pub fn coverage_report_markdown(report: &Value) -> String {
         })
         .unwrap_or_default();
     out.push_str(&ops.join("\n"));
+
+    out.push_str("\n\n## Native Code Connect Compatibility\n\n");
+    let compat: Vec<String> = report["code_connect_compatibility"]
+        .as_array()
+        .map(|arr| {
+            arr.iter()
+                .map(|c| {
+                    let cap = c["capability"].as_str().unwrap_or("");
+                    let status = c["status"].as_str().unwrap_or("");
+                    let reason = c["reason"].as_str().unwrap_or("");
+                    format!("- `{cap}` status=`{status}`: {reason}")
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    out.push_str(&compat.join("\n"));
 
     out.push_str("\n\n## Official MCP Product-Only Capabilities\n\n");
     let caps: Vec<String> = report["official_mcp_only"]

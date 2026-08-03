@@ -313,6 +313,7 @@ fn mcp_stdio_config(command: &str, home: Option<&str>) -> Value {
         "env": {
             "FIGHORSE_MCP_MODE": "readonly",
             "FIGHORSE_MCP_LOCAL_WRITE": "deny",
+            "FIGHORSE_MCP_CODE_CONNECT": "deny",
             "FIGHORSE_HOME": fighorse_home(home).to_string_lossy()
         }
     })
@@ -344,7 +345,7 @@ fn codex_toml(server: &Value, command: &str, home: Option<&str>) -> String {
         )
     } else {
         format!(
-            "[mcp_servers.fighorse]\ncommand = \"{command}\"\nargs = [\"mcp\", \"serve\", \"--transport\", \"stdio\"]\nenabled = true\nstartup_timeout_sec = 60\n\n[mcp_servers.fighorse.env]\nFIGHORSE_MCP_MODE = \"readonly\"\nFIGHORSE_MCP_LOCAL_WRITE = \"deny\"\nFIGHORSE_HOME = \"{}\"\n",
+            "[mcp_servers.fighorse]\ncommand = \"{command}\"\nargs = [\"mcp\", \"serve\", \"--transport\", \"stdio\"]\nenabled = true\nstartup_timeout_sec = 60\n\n[mcp_servers.fighorse.env]\nFIGHORSE_MCP_MODE = \"readonly\"\nFIGHORSE_MCP_LOCAL_WRITE = \"deny\"\nFIGHORSE_MCP_CODE_CONNECT = \"deny\"\nFIGHORSE_HOME = \"{}\"\n",
             fighorse_home(home).to_string_lossy()
         )
     }

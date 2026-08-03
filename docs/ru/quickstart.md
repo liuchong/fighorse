@@ -106,7 +106,19 @@ Canonical-цели: `~/.agents/skills/fighorse/SKILL.md` для Cursor/Kimi/Code
 
 Legacy `/sse` и `/messages` не обслуживаются, а `--transport sse` завершается ошибкой с переходом на HTTP. `text/event-stream` от `/mcp` — стандартный Streamable HTTP response, а не legacy SSE transport. Новая установка запрещает local write.
 
-## 7. Что спросить у вашего AI-агента
+## 7. Дополнительно: Code Connect
+
+Для современных Code Connect templates:
+
+```bash
+fighorse code-connect generate "<figma-component-url>" --context code-context.json
+fighorse code-connect parse --dir .
+fighorse code-connect publish --documents docs.json --dry-run
+```
+
+Используйте `--yes` только после проверки dry-run output. MCP preview/publish также требует `FIGHORSE_MCP_CODE_CONNECT=allow`; publish/unpublish требует `FIGHORSE_MCP_MODE=write`.
+
+## 8. Что спросить у вашего AI-агента
 
 После подключения MCP вставьте конкретную ссылку на фрейм Figma и спросите:
 

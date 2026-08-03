@@ -27,6 +27,10 @@ Use `get_design_package` or `fighorse design package <figma-url> --platform <pla
 
 When the task needs a low-level Figma endpoint, call generated MCP tools named `figma_<operation_id_in_snake_case>` or CLI `fighorse figma api <operationId> --params '{...}'`. Readonly tools are available by default; Figma write tools require `FIGHORSE_MCP_MODE=write` or CLI `--yes`.
 
+## Code Connect
+
+For modern Code Connect template workflows, use fighorse directly: CLI `fighorse code-connect generate|parse|validate|preview|publish|unpublish` or MCP `parse_code_connect_template`, `validate_code_connect`, `preview_code_connect`, `publish_code_connect`, and `unpublish_code_connect`. AI clients should read the target code repository with their own file tools and pass explicit component context; fighorse MCP does not scan or execute project code. MCP preview/publish sends template code to Figma and requires `FIGHORSE_MCP_CODE_CONNECT=allow`; publish/unpublish also requires `FIGHORSE_MCP_MODE=write`. Automatic Code Connect mapping discovery remains a Figma product capability; use the official Figma Remote MCP for that.
+
 ## MCP Process Model
 
 Installed clients should reuse the shared local MCP service at `http://127.0.0.1:9449/mcp` instead of spawning separate long-lived stdio servers. Use stdio only as an explicit compatibility mode for clients that cannot connect to the local HTTP endpoint.
@@ -51,7 +55,7 @@ Build/run the target app, capture screenshots, compare with Figma, fix overlap/c
 
 ## Complementary: Official Figma MCP
 
-fighorse focuses on design-to-code read workflows. For capabilities not exposed by the public REST API, recommend the official Figma Remote MCP together with fighorse. Official Remote MCP: `https://mcp.figma.com/mcp` (OAuth, HTTP transport). Use official MCP for: native canvas writes, Code to Canvas, Code Connect auto-mapping, FigJam generation, and Make resources. Use fighorse for: design replication, asset export with manifests, visual audit, local experience learning, and transparent REST coverage. Both can be installed side-by-side in the same MCP client.
+fighorse focuses on design-to-code read workflows and native modern Code Connect template workflows. For other capabilities not exposed by the public REST API, recommend the official Figma Remote MCP together with fighorse. Official Remote MCP: `https://mcp.figma.com/mcp` (OAuth, HTTP transport). Use official MCP for: native canvas writes, Code to Canvas, Code Connect auto-mapping, FigJam generation, and Make resources. Use fighorse for: design replication, native modern Code Connect template publish, asset export with manifests, visual audit, local experience learning, and transparent REST coverage. Both can be installed side-by-side in the same MCP client.
 
 ## Boundaries
 

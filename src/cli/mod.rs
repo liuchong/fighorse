@@ -51,7 +51,7 @@ pub fn require_token() -> String {
     match cfg.token {
         Some(t) if !t.trim().is_empty() => t,
         _ => {
-            eprintln!("Error: FIGMA_TOKEN or FIGMA_API_KEY environment variable required");
+            eprintln!("Error: FIGMA_TOKEN, FIGMA_ACCESS_TOKEN, or FIGMA_API_KEY environment variable required");
             std::process::exit(1);
         }
     }

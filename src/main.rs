@@ -82,6 +82,22 @@ async fn async_main() -> ExitCode {
         (Some("mcp"), Some("config")) => finish(commands::cmd_mcp_config(&rest2)),
         (Some("figma-api"), Some("coverage")) => finish(commands::cmd_figma_api_coverage(&rest2)),
         (Some("figma"), Some("api")) => finish(commands::cmd_figma_api_call(&rest2).await),
+        (Some("code-connect"), Some("generate")) => {
+            finish(commands::cmd_code_connect_generate(&rest2).await)
+        }
+        (Some("code-connect"), Some("parse")) => finish(commands::cmd_code_connect_parse(&rest2)),
+        (Some("code-connect"), Some("validate")) => {
+            finish(commands::cmd_code_connect_validate(&rest2).await)
+        }
+        (Some("code-connect"), Some("preview")) => {
+            finish(commands::cmd_code_connect_preview(&rest2).await)
+        }
+        (Some("code-connect"), Some("publish")) => {
+            finish(commands::cmd_code_connect_publish(&rest2).await)
+        }
+        (Some("code-connect"), Some("unpublish")) => {
+            finish(commands::cmd_code_connect_unpublish(&rest2).await)
+        }
         (Some("visual"), Some("audit")) => finish(commands::cmd_visual_audit(&rest2)),
         (Some("project"), Some("playbook")) => finish(commands::cmd_project_playbook(&rest2)),
 
@@ -223,6 +239,12 @@ Self Discovery and AI Replication:
   mcp config [--client C] [--transport T]      Emit MCP client config
   figma-api coverage [--format json|md]        Report official Figma REST OpenAPI coverage
   figma api <operationId> --params JSON [--body JSON|--body-file P] [--yes]  Call any covered REST operation
+  code-connect generate <figma-url> --context P [--output P]  Generate a modern parserless Code Connect template
+  code-connect parse [--dir D|--file P]         Parse local .figma.ts/.figma.js documents without executing them
+  code-connect validate [--documents P|--dir D] Validate Code Connect documents against Figma nodes
+  code-connect preview [--documents P|--dir D]  Render snippets through Figma's observed preview protocol
+  code-connect publish [--documents P|--dir D] --dry-run|--yes [--force]  Publish mappings to Figma Dev Mode
+  code-connect unpublish (--node URL --label L|--dir D) --dry-run|--yes  Remove Code Connect mappings
   visual audit <figma-url> [--screenshot P]    Produce AI-ready visual fidelity audit guidance
   project playbook [--platform P]              Produce project-level fighorse AI playbook
 
@@ -334,6 +356,7 @@ Environment:
   FIGHORSE_HOME  Default: ~/.fighorse
   FIGHORSE_MCP_MODE  MCP safety mode: readonly (default) or write
   FIGHORSE_MCP_LOCAL_WRITE  Set to allow for MCP local asset exports inside approved roots
+  FIGHORSE_MCP_CODE_CONNECT  Set to allow before MCP preview/publish sends Code Connect templates to Figma
   FIGHORSE_MCP_ALLOW_MULTIPLE  Set to 1 only for development when bypassing the MCP singleton lock
   FIGHORSE_HTTP_TIMEOUT_MS  Figma REST request timeout, default 120000
   FIGHORSE_EXPERIENCE_PATH  Override local experience JSONL store

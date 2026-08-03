@@ -214,6 +214,24 @@ Canonical-цели: `~/.agents/skills/fighorse/SKILL.md` для Cursor/Kimi/Code
 
 Обычные CLI-команды, такие как `fighorse file get`, `fighorse design package` и `fighorse image export`, являются одноразовыми процессами. Им разрешается запускаться каждый раз, они не запускают MCP-сервис, не привязывают порты, не берут MCP singleton-лок и должны выходить после записи вывода. Figma HTTP-вызовы и загрузки изображений используют `FIGHORSE_HTTP_TIMEOUT_MS` с дефолтом `120000`, а `SIGINT`/`SIGTERM` прерывают выполняющиеся запросы перед выходом. `fighorse install --default --apply` по умолчанию настраивает только CLI; используйте `fighorse install --default --mode service --apply` или `fighorse install service --apply` только когда явно хотите, чтобы fighorse настроил или запустил долгоживущий MCP-сервис.
 
+## Code Connect
+
+fighorse нативно поддерживает современные parserless-шаблоны Code Connect без Node.js и без official Code Connect CLI.
+
+```bash
+fighorse code-connect generate "<figma-component-url>" --context code-context.json
+fighorse code-connect parse --dir .
+fighorse code-connect validate --documents docs.json
+fighorse code-connect preview --documents docs.json
+fighorse code-connect publish --documents docs.json --dry-run
+fighorse code-connect publish --documents docs.json --yes --force
+fighorse code-connect unpublish --node "<figma-component-url>" --label React --dry-run
+```
+
+AI-клиенты должны читать целевой репозиторий своими файловыми инструментами и передавать в `generate` только явный контекст компонента. fighorse локально парсит `.figma.ts`, `.figma.js` и `.figma.batch.json`, но не выполняет код шаблона. Preview отправляет код шаблона в Figma для реального Dev Mode rendering. Publish и unpublish меняют удаленные Code Connect mappings.
+
+Automatic Code Connect mapping discovery остается возможностью продукта Figma; используйте official Figma Remote MCP для automatic mapping внутри Figma.
+
 ## Режимы безопасности
 
 Инструменты записи Figma скрыты, если не включены:
@@ -229,6 +247,14 @@ FIGHORSE_MCP_LOCAL_WRITE=allow fighorse mcp serve --transport http
 ```
 
 Даже при включенной локальной записи пути экспорта валидируются и должны оставаться в пределах `./.fighorse/exports`, `./assets/fighorse` или `~/.fighorse/exports`.
+
+Отправка Code Connect template code контролируется отдельно:
+
+```bash
+FIGHORSE_MCP_CODE_CONNECT=allow fighorse mcp serve --transport http
+```
+
+MCP preview/publish требует `FIGHORSE_MCP_CODE_CONNECT=allow`; publish и unpublish также требуют `FIGHORSE_MCP_MODE=write`.
 
 ## Хранилище опыта
 

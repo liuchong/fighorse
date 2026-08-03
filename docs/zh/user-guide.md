@@ -213,6 +213,24 @@ Canonical 三目标为 `~/.agents/skills/fighorse/SKILL.md`（Cursor/Kimi/Codex�
 
 正常的 CLI 命令如 `fighorse file get`、`fighorse design package` 和 `fighorse image export` 都是一次性进程。它们每次允许启动，不启动 MCP 服务，不绑定端口，不占用 MCP 单例锁，输出写入后应退出。Figma HTTP 调用和图片下载使用默认 `120000` 毫秒的 `FIGHORSE_HTTP_TIMEOUT_MS`，`SIGINT`/`SIGTERM` 在退出前中止正在进行的请求。`fighorse install --default --apply` 默认仅设置 CLI；只有当你明确希望 fighorse 配置或启动长驻 MCP 服务时，才使用 `fighorse install --default --mode service --apply` 或 `fighorse install service --apply`。
 
+## Code Connect
+
+fighorse 原生支持现代无本地执行模板的 Code Connect 文件，不需要 Node.js，也不包装官方 Code Connect CLI。
+
+```bash
+fighorse code-connect generate "<figma-component-url>" --context code-context.json
+fighorse code-connect parse --dir .
+fighorse code-connect validate --documents docs.json
+fighorse code-connect preview --documents docs.json
+fighorse code-connect publish --documents docs.json --dry-run
+fighorse code-connect publish --documents docs.json --yes --force
+fighorse code-connect unpublish --node "<figma-component-url>" --label React --dry-run
+```
+
+AI 客户端应使用自己的文件权限读取目标代码仓库，并只把明确的组件上下文传给 `generate`。fighorse 本地解析 `.figma.ts`、`.figma.js` 和 `.figma.batch.json`，但不执行模板代码。preview 会把模板代码发送给 Figma 做真实 Dev Mode 渲染，publish 和 unpublish 会改变远端 Code Connect 映射。
+
+自动 Code Connect 映射发现仍是 Figma 产品能力；需要 Figma 产品内自动映射时使用官方 Figma Remote MCP。
+
 ## 安全模式
 
 Figma 写入工具默认隐藏，除非启用：
@@ -228,6 +246,14 @@ FIGHORSE_MCP_LOCAL_WRITE=allow fighorse mcp serve --transport http
 ```
 
 即使启用了本地写入，导出路径也会经过验证，必须保持在 `./.fighorse/exports`、`./assets/fighorse` 或 `~/.fighorse/exports` 之下。
+
+Code Connect 模板代码外发单独控制：
+
+```bash
+FIGHORSE_MCP_CODE_CONNECT=allow fighorse mcp serve --transport http
+```
+
+MCP preview/publish 需要 `FIGHORSE_MCP_CODE_CONNECT=allow`；publish 和 unpublish 还需要 `FIGHORSE_MCP_MODE=write`。
 
 ## 经验存储
 

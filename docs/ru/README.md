@@ -83,6 +83,7 @@ cargo build --release --target aarch64-unknown-linux-gnu
 |------|----------|
 | Обнаружение | `discover`, `doctor`, `smoke`, `url parse`, `mcp config` |
 | Официальный REST | `figma-api coverage`, `figma api <operationId>` |
+| Code Connect | `code-connect generate`, `code-connect parse`, `code-connect validate`, `code-connect preview`, `code-connect publish`, `code-connect unpublish` |
 | Пакет дизайна | `design package`, `visual audit`, `project playbook`, `experience summary`, `experience add` |
 | Данные Figma | `file get`, `file nodes`, `node get`, `file tree`, `file compact` |
 | Ассеты | `image export`, `component export`, `asset download`, `images render`, `images fills` |
@@ -94,12 +95,28 @@ cargo build --release --target aarch64-unknown-linux-gnu
 
 - Запись в Figma отключена, если не установлено `FIGHORSE_MCP_MODE=write`.
 - Локальный экспорт файлов через MCP требует `FIGHORSE_MCP_LOCAL_WRITE=allow`.
+- MCP preview/publish для Code Connect требует `FIGHORSE_MCP_CODE_CONNECT=allow`; publish/unpublish также требует `FIGHORSE_MCP_MODE=write`.
 - Пути экспорта ограничены `./.fighorse/exports`, `./assets/fighorse` и `~/.fighorse/exports`.
 - Установленные AI-клиенты по умолчанию используют общий локальный HTTP MCP-эндпоинт `http://127.0.0.1:9449/mcp`; MCP-сервер использует singleton-лок для предотвращения дублирования долгоживущих процессов.
 - `/mcp` реализован official Rust `rmcp` 2.2 Streamable HTTP: независимые stateful sessions, проверка Host/Origin, JSON или event-stream response и graceful shutdown. Legacy `/sse` и `/messages` отсутствуют; `--transport sse` завершается ошибкой с переходом на `--transport http`.
 - Новые service и явные stdio-конфиги используют `FIGHORSE_MCP_LOCAL_WRITE=deny`; существующий явный `allow` сохраняется только при миграции.
 - Обычные CLI-команды остаются одноразовыми процессами: они не запускают MCP-сервис, не привязывают порты, не используют MCP singleton-лок. `fighorse install all` по умолчанию настраивает только CLI; используйте `--mode service` или `install service --apply` только когда явно хотите долгоживущий MCP-сервис.
 - AI-клиенты должны спрашивать целевую платформу и формат ассетов при отсутствии; PNG — только резервный вариант рендеринга, не продуктовое решение.
+
+## Code Connect
+
+fighorse нативно поддерживает современные parserless-шаблоны Code Connect (`.figma.ts`, `.figma.js` и `.figma.batch.json`) без Node.js и без official Code Connect CLI. Он генерирует шаблоны из явно переданного AI-контекста кода, парсит их локально без выполнения, проверяет Figma component nodes, запускает настоящий удаленный preview, publish и unpublish.
+
+```bash
+fighorse code-connect generate "<figma-component-url>" --context code-context.json
+fighorse code-connect parse --dir .
+fighorse code-connect preview --documents docs.json
+fighorse code-connect publish --documents docs.json --dry-run
+fighorse code-connect publish --documents docs.json --yes --force
+fighorse code-connect unpublish --node "<figma-component-url>" --label React --dry-run
+```
+
+Automatic Code Connect mapping discovery остается возможностью продукта Figma; используйте official Figma Remote MCP, когда нужен именно этот workflow.
 
 ## Разработка
 

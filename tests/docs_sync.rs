@@ -42,6 +42,10 @@ fn readmes_publish_one_four_client_service_workflow() {
             text.contains("install verify") && text.contains("install rollback"),
             "{path} omits transaction verification or rollback"
         );
+        assert!(
+            text.contains("code-connect generate") && text.contains("FIGHORSE_MCP_CODE_CONNECT"),
+            "{path} omits Code Connect commands or safety defaults"
+        );
     }
 }
 
@@ -72,6 +76,10 @@ fn localized_guides_cover_payloads_transaction_and_skill_targets() {
 
     for name in ["user-guide.md", "design.md", "ai-client-guide.md"] {
         for (path, text) in localized(name) {
+            assert!(
+                text.contains("Code Connect") && text.contains("FIGHORSE_MCP_CODE_CONNECT"),
+                "{path} omits Code Connect safety guidance"
+            );
             for payload_token in [
                 r#""url""#,
                 r#""transport":"http""#,
@@ -173,8 +181,14 @@ fn ai_facing_sources_use_four_clients_and_canonical_targets() {
 
     let discovery = read("src/discovery.rs");
     let install = read("src/install.rs");
+    let skill = read("src/install/skill.md");
+    let agents = read("src/install/agents.md");
     assert!(discovery.contains(FOUR_CLIENTS));
     assert!(install.contains(FOUR_CLIENTS));
+    assert!(discovery.contains("FIGHORSE_MCP_CODE_CONNECT"));
+    assert!(install.contains("FIGHORSE_MCP_CODE_CONNECT"));
+    assert!(skill.contains("FIGHORSE_MCP_CODE_CONNECT"));
+    assert!(agents.contains("FIGHORSE_MCP_CODE_CONNECT"));
     assert!(read("src/main.rs").contains("cursor|codex|kimi|claude"));
     assert!(read("src/experience.rs").contains("cursor|codex|kimi|claude"));
     for target in [

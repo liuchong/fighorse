@@ -678,6 +678,23 @@
       "reason": "FigJam generation is not present in the public REST OpenAPI snapshot."
     }
   ],
+  "code_connect_compatibility": [
+    {
+      "capability": "code_connect_template_generate",
+      "status": "native-observed-private-protocol",
+      "reason": "fighorse can generate modern parserless Code Connect templates from explicit AI-supplied code context and Figma component schema."
+    },
+    {
+      "capability": "code_connect_template_parse",
+      "status": "native-local",
+      "reason": "fighorse parses .figma.ts/.figma.js/.figma.batch.json without executing template code."
+    },
+    {
+      "capability": "code_connect_preview_publish_unpublish",
+      "status": "native-observed-private-protocol",
+      "reason": "fighorse calls Figma's observed Code Connect preview, publish, and delete service endpoints with protocol drift detection."
+    }
+  ],
   "ai_guidance": {
     "use": "Use this report to verify REST parity before relying on low-level Figma tools.",
     "next_step": "If any operation is not covered, update fighorse.api operations, MCP tools, CLI dispatch, discovery, and tests together."

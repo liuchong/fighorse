@@ -146,11 +146,12 @@ Records should not contain secrets, private absolute paths, or one-off project d
 
 ## Safety Boundaries
 
-fighorse separates three safety domains:
+fighorse separates four safety domains:
 
 - Figma read access: requires a token and is the normal operating mode.
 - Figma write access: disabled unless `FIGHORSE_MCP_MODE=write`.
 - Local filesystem writes: disabled in MCP unless `FIGHORSE_MCP_LOCAL_WRITE=allow`.
+- Code Connect template egress: disabled in MCP unless `FIGHORSE_MCP_CODE_CONNECT=allow`.
 
 Local file exports are still restricted to approved roots:
 
@@ -158,7 +159,7 @@ Local file exports are still restricted to approved roots:
 - `./assets/fighorse`
 - `~/.fighorse/exports`
 
-This separation matters because downloading local screenshots or image fills is much less sensitive than mutating Figma, but still needs path validation. The user explicitly controls both domains.
+This separation matters because downloading local screenshots or image fills is much less sensitive than mutating Figma, while Code Connect preview/publish sends project template code to Figma. The user explicitly controls each domain.
 
 The default MCP adapter is official Rust `rmcp` 2.2 `StreamableHttpService` with `LocalSessionManager`. It provides independent stateful sessions, validates Host and Origin before dispatch, supports JSON or event-stream responses under the standard Streamable HTTP contract, and cancels sessions during graceful SIGINT/SIGTERM shutdown. The event stream returned by `/mcp` is not the retired legacy SSE transport. `/sse` and `/messages` are not served, and `--transport sse` fails with migration guidance to HTTP. Explicit compatibility mode uses standard rmcp stdio without a private framing protocol.
 
@@ -192,13 +193,13 @@ Canonical targets collapse per-client copies into exactly three artifacts: `~/.a
 
 fighorse borrows lessons from existing tools while choosing a different boundary.
 
-Official Figma MCP is prescriptive and deeply integrated. It can expose Code Connect, Code to Canvas, and design-system search, but its behavior is opaque and tied to Figma's product surface.
+Official Figma MCP is prescriptive and deeply integrated. It can expose Code to Canvas, automatic Code Connect mapping, and design-system search, but its behavior is opaque and tied to Figma's product surface.
 
 Framelink-style MCP is descriptive and lightweight. It gives AI layout and style facts instead of generated code structure. This avoids "poisoning" context with a framework decision the current codebase may not want.
 
-fighorse defaults to the descriptive path: facts over generated code. It can still expose richer Figma metadata and write-capable endpoints when explicitly enabled, but the main workflow is "precise context in, project-native implementation out."
+fighorse defaults to the descriptive path: facts over generated code. It can still expose richer Figma metadata, native modern Code Connect template workflows, and write-capable endpoints when explicitly enabled, but the main workflow is "precise context in, project-native implementation out."
 
-Official-only product surfaces that are not in the public REST OpenAPI are marked as unsupported by public REST rather than silently approximated. Examples include native canvas mutation, Code to Canvas, automatic Code Connect mapping discovery, Make resources, and FigJam generation. fighorse may offer open alternatives such as user-maintained component maps or generic resource ingestion, but it should not pretend to implement private Figma product APIs.
+Official-only product surfaces that are not in the public REST OpenAPI are marked as unsupported by public REST rather than silently approximated. Examples include native canvas mutation, Code to Canvas, automatic Code Connect mapping discovery, Make resources, and FigJam generation. fighorse's Code Connect support is a separate compatibility layer for modern templates and the observed preview/publish/delete service protocol; it does not claim to implement automatic product mapping.
 
 ## Data Fidelity
 
@@ -234,7 +235,7 @@ These lessons directly shaped the design package, export manifest, local-write, 
 
 fighorse does not aim to be a general code generator. Code should be produced by the AI agent using the target repository's existing patterns.
 
-It also does not aim to replace Figma's own product integrations. Official MCP remains appropriate for Code Connect, Code to Canvas, FigJam generation, or native Figma mutation workflows.
+It also does not aim to replace Figma's own product integrations. Official MCP remains appropriate for automatic Code Connect mapping, Code to Canvas, FigJam generation, or native Figma mutation workflows.
 
 The durable product boundary is the context and asset pipeline: fetch, compact, explain, export, verify, and learn.
 

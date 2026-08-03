@@ -83,6 +83,7 @@ cargo build --release --target aarch64-unknown-linux-gnu
 |------|----------|
 | 发现 | `discover`, `doctor`, `smoke`, `url parse`, `mcp config` |
 | 官方 REST | `figma-api coverage`, `figma api <operationId>` |
+| Code Connect | `code-connect generate`, `code-connect parse`, `code-connect validate`, `code-connect preview`, `code-connect publish`, `code-connect unpublish` |
 | 设计包 | `design package`, `visual audit`, `project playbook`, `experience summary`, `experience add` |
 | Figma 数据 | `file get`, `file nodes`, `node get`, `file tree`, `file compact` |
 | 资产 | `image export`, `component export`, `asset download`, `images render`, `images fills` |
@@ -94,12 +95,28 @@ cargo build --release --target aarch64-unknown-linux-gnu
 
 - Figma 写入操作默认禁用，除非设置 `FIGHORSE_MCP_MODE=write`。
 - MCP 本地文件导出需要 `FIGHORSE_MCP_LOCAL_WRITE=allow`。
+- MCP Code Connect 预览/发布需要 `FIGHORSE_MCP_CODE_CONNECT=allow`；发布/删除还需要 `FIGHORSE_MCP_MODE=write`。
 - 导出路径限制在 `./.fighorse/exports`、`./assets/fighorse` 和 `~/.fighorse/exports`。
 - 已安装的 AI 客户端默认使用本地共享 HTTP MCP 端点 `http://127.0.0.1:9449/mcp`；MCP 服务器使用单例锁避免重复的长驻进程。
 - `/mcp` 是 official Rust `rmcp` 2.2 Streamable HTTP 服务，提供相互独立的 stateful session、Host/Origin 校验、JSON 或 event-stream response 以及 graceful shutdown。legacy `/sse` 和 `/messages` 不再提供；`--transport sse` 会失败并引导迁移到 `--transport http`。
 - 新安装的服务和显式 stdio 配置默认 `FIGHORSE_MCP_LOCAL_WRITE=deny`；迁移时只保留既有的显式 `allow`。
 - 普通 CLI 命令保持一次性进程：不启动 MCP 服务，不绑定端口，不使用 MCP 单例锁。`fighorse install all` 默认仅设置 CLI；只有当你明确需要长驻 MCP 服务时，才使用 `--mode service` 或 `install service --apply`。
 - AI 客户端在缺少目标平台和资产格式时必须询问开发者；PNG 只是渲染回退，不是产品决策。
+
+## Code Connect
+
+fighorse 原生支持现代无本地执行模板的 Code Connect 文件（`.figma.ts`、`.figma.js` 和 `.figma.batch.json`），不需要 Node.js，也不包装官方 Code Connect CLI。它可以根据 AI 明确提供的代码组件上下文生成模板，本地解析模板但不执行代码，校验 Figma 组件节点，并通过 Figma 的真实远端预览、发布和删除协议让 Dev Mode 生效。
+
+```bash
+fighorse code-connect generate "<figma-component-url>" --context code-context.json
+fighorse code-connect parse --dir .
+fighorse code-connect preview --documents docs.json
+fighorse code-connect publish --documents docs.json --dry-run
+fighorse code-connect publish --documents docs.json --yes --force
+fighorse code-connect unpublish --node "<figma-component-url>" --label React --dry-run
+```
+
+自动 Code Connect 映射发现仍是 Figma 产品能力；需要 Figma 产品内自动映射时，使用官方 Figma Remote MCP。
 
 ## 开发
 

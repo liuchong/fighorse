@@ -9,6 +9,7 @@
 - Install Cursor, Codex, Kimi, and Claude with `fighorse install --default --mode service --clients cursor,codex,kimi,claude --apply`; install Claude alone with `fighorse install client --client claude --apply`. Service activation and `/health` plus `initialize`/`tools/list` verification happen before client configuration.
 - Canonical instruction targets are `~/.agents/skills/fighorse/SKILL.md` for Cursor/Kimi/Codex, `~/.claude/skills/fighorse/SKILL.md` for Claude, and `~/.cursor/rules/fighorse.mdc` for Cursor. The install manifest and backups support `install verify` and safe rollback.
 - For exact public REST API calls, use `fighorse figma-api coverage` and `fighorse figma api <operationId>` or MCP `figma_*` tools.
+- For modern Code Connect templates, use `fighorse code-connect generate|parse|validate|preview|publish|unpublish` or MCP `parse_code_connect_template`, `validate_code_connect`, `preview_code_connect`, `publish_code_connect`, and `unpublish_code_connect`. MCP preview/publish requires `FIGHORSE_MCP_CODE_CONNECT=allow`; publish/unpublish also requires `FIGHORSE_MCP_MODE=write`. Automatic Code Connect mapping remains an official Figma Remote MCP workflow.
 - Export assets with manifests instead of inventing controls or icons.
 - Store temporary exports in `./.fighorse/exports`; store packaged assets in `./assets/fighorse` or the app resource directory; MCP export requires `FIGHORSE_MCP_LOCAL_WRITE=allow` and path validation.
 - Use `visual_audit` or `fighorse visual audit` after implementation screenshots exist.

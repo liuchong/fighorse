@@ -70,6 +70,7 @@ pub struct Config {
     pub proxy: Option<String>,
     pub mcp_mode: String,
     pub mcp_local_write: String,
+    pub mcp_code_connect: String,
 }
 
 /// Save user config under `<home>/config.json`.
@@ -97,6 +98,7 @@ pub fn load_config() -> Config {
     let file_config = load_file_config();
 
     let token = env_nonempty("FIGMA_TOKEN")
+        .or_else(|| env_nonempty("FIGMA_ACCESS_TOKEN"))
         .or_else(|| env_nonempty("FIGMA_API_KEY"))
         .or_else(|| str_field(&file_config, "token"));
 
@@ -115,6 +117,10 @@ pub fn load_config() -> Config {
         .or_else(|| str_field(&file_config, "mcp-local-write"))
         .unwrap_or_else(|| "deny".to_string());
 
+    let mcp_code_connect = env_nonempty("FIGHORSE_MCP_CODE_CONNECT")
+        .or_else(|| str_field(&file_config, "mcp-code-connect"))
+        .unwrap_or_else(|| "deny".to_string());
+
     Config {
         token,
         config_path: config_path(),
@@ -123,6 +129,7 @@ pub fn load_config() -> Config {
         proxy,
         mcp_mode,
         mcp_local_write,
+        mcp_code_connect,
     }
 }
 
@@ -135,6 +142,14 @@ pub fn mcp_write_enabled() -> bool {
 pub fn mcp_local_write_enabled() -> bool {
     matches!(
         load_config().mcp_local_write.as_str(),
+        "allow" | "true" | "1" | "yes"
+    )
+}
+
+/// True when the MCP server may send Code Connect template code to Figma.
+pub fn mcp_code_connect_enabled() -> bool {
+    matches!(
+        load_config().mcp_code_connect.as_str(),
         "allow" | "true" | "1" | "yes"
     )
 }

@@ -112,7 +112,19 @@ Canonical instruction targets are `~/.agents/skills/fighorse/SKILL.md` for Curso
 
 Legacy `/sse` and `/messages` endpoints are not served. `--transport sse` fails and directs the user to `--transport http`; a `text/event-stream` response from `/mcp` is standard Streamable HTTP response negotiation, not the retired legacy transport. Fresh service and stdio configs deny local writes.
 
-## 7. What To Ask Your AI Agent
+## 7. Optional: Code Connect
+
+For modern Code Connect templates:
+
+```bash
+fighorse code-connect generate "<figma-component-url>" --context code-context.json
+fighorse code-connect parse --dir .
+fighorse code-connect publish --documents docs.json --dry-run
+```
+
+Use `--yes` only after reviewing the dry-run output. MCP preview/publish also requires `FIGHORSE_MCP_CODE_CONNECT=allow`; publish/unpublish requires `FIGHORSE_MCP_MODE=write`.
+
+## 8. What To Ask Your AI Agent
 
 After MCP is connected, paste a specific Figma frame link and ask:
 

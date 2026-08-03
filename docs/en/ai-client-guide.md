@@ -41,7 +41,7 @@ Recommended installed MCP config:
 }
 ```
 
-**Why both?** fighorse handles design-to-code read workflows (design package, asset export, visual audit, experience learning). The official Figma Remote MCP handles product-only capabilities not exposed by public REST: native canvas writes, Code to Canvas, Code Connect auto-mapping, FigJam generation, and Make resources. They complement each other and can coexist in the same client.
+**Why both?** fighorse handles design-to-code read workflows (design package, asset export, visual audit, experience learning) and native modern Code Connect template workflows. The official Figma Remote MCP handles product-only capabilities not exposed by public REST: native canvas writes, Code to Canvas, Code Connect auto-mapping, FigJam generation, and Make resources. They complement each other and can coexist in the same client.
 
 - Official Remote MCP: `https://mcp.figma.com/mcp` — OAuth auth, free during beta, will become usage-based paid.
 - Seat requirements: Full seat for writes to shared files; Dev seat is read-only outside drafts.
@@ -117,6 +117,16 @@ Use lower-level Figma tools only when the design package is insufficient:
 
 Use generated official REST tools when exact OpenAPI parity is needed. These tools are named `figma_<operation_id_in_snake_case>`, for example `figma_get_file`, `figma_get_developer_logs`, `figma_put_webhook`, and `figma_post_variables`. In readonly MCP mode, generated Figma write tools are hidden and blocked; set `FIGHORSE_MCP_MODE=write` only when the developer explicitly allows Figma mutations.
 
+Use Code Connect tools only when the user is connecting code components to Figma Dev Mode:
+
+- `parse_code_connect_template`: inspect already supplied Code Connect documents.
+- `validate_code_connect`: check that target Figma nodes are components or component sets.
+- `preview_code_connect`: send template code to Figma for real snippet rendering; requires `FIGHORSE_MCP_CODE_CONNECT=allow`.
+- `publish_code_connect`: publish mappings; requires `FIGHORSE_MCP_CODE_CONNECT=allow` and `FIGHORSE_MCP_MODE=write`.
+- `unpublish_code_connect`: delete precise node+label mappings; requires the same two switches.
+
+For template generation, read the target codebase with the AI client's own file tools, then pass explicit component context to CLI `fighorse code-connect generate`. fighorse does not scan or execute the user's code repository through MCP.
+
 Clients that support MCP resources and prompts can also read:
 
 - `fighorse://capabilities`
@@ -143,6 +153,10 @@ fighorse visual audit "<figma-url>" --screenshot <app-screenshot-path> --platfor
 fighorse project playbook --platform <platform> --asset-format <asset-format>
 fighorse figma-api coverage --format json
 fighorse figma api getFile --params '{"file_key":"<file_key>","depth":1}'
+fighorse code-connect generate "<figma-component-url>" --context code-context.json
+fighorse code-connect parse --dir .
+fighorse code-connect preview --documents docs.json
+fighorse code-connect publish --documents docs.json --dry-run
 ```
 
 ## Local Write Policy
@@ -153,6 +167,8 @@ MCP Figma write mode and local filesystem write mode are independent.
 - `FIGHORSE_MCP_MODE=write`: exposes Figma write tools where implemented.
 - `FIGHORSE_MCP_LOCAL_WRITE=deny`: default; local export tools are blocked.
 - `FIGHORSE_MCP_LOCAL_WRITE=allow`: permits local export tools within approved roots.
+- `FIGHORSE_MCP_CODE_CONNECT=deny`: default; Code Connect template code cannot be sent to Figma through MCP.
+- `FIGHORSE_MCP_CODE_CONNECT=allow`: permits Code Connect preview/publish template egress to Figma.
 
 Approved roots:
 

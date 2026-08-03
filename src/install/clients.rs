@@ -119,7 +119,8 @@ impl ClientSpec {
                     "env": {
                         "FIGHORSE_HOME": fighorse_home,
                         "FIGHORSE_MCP_MODE": "readonly",
-                        "FIGHORSE_MCP_LOCAL_WRITE": "deny"
+                        "FIGHORSE_MCP_LOCAL_WRITE": "deny",
+                        "FIGHORSE_MCP_CODE_CONNECT": "deny"
                     }
                 });
                 match self.kind {
@@ -144,7 +145,7 @@ impl ClientSpec {
                 command,
                 fighorse_home,
             } => format!(
-                "[mcp_servers.fighorse]\ncommand = \"{}\"\nargs = [\"mcp\", \"serve\", \"--transport\", \"stdio\"]\nenabled = true\nstartup_timeout_sec = 60\n\n[mcp_servers.fighorse.env]\nFIGHORSE_HOME = \"{}\"\nFIGHORSE_MCP_MODE = \"readonly\"\nFIGHORSE_MCP_LOCAL_WRITE = \"deny\"\n",
+                "[mcp_servers.fighorse]\ncommand = \"{}\"\nargs = [\"mcp\", \"serve\", \"--transport\", \"stdio\"]\nenabled = true\nstartup_timeout_sec = 60\n\n[mcp_servers.fighorse.env]\nFIGHORSE_HOME = \"{}\"\nFIGHORSE_MCP_MODE = \"readonly\"\nFIGHORSE_MCP_LOCAL_WRITE = \"deny\"\nFIGHORSE_MCP_CODE_CONNECT = \"deny\"\n",
                 toml_escape(command),
                 toml_escape(&fighorse_home.to_string_lossy())
             ),
