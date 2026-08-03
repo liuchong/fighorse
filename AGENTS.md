@@ -6,6 +6,7 @@ This repository is a Rust CLI and MCP server for turning Figma REST API data int
 
 - Use Cargo for all build, test, and binary workflows.
 - Never commit Figma access tokens, exported private design data, local config files, or generated binaries.
+- Do not bump the crate version or publish a release until the intended third-party AI clients have successfully completed an end-to-end fighorse MCP trial for the release candidate. Any failed or untested target keeps the release gate closed unless the user explicitly narrows the client matrix.
 - Preserve user changes in the working tree. Do not reset, checkout, or remove unrelated edits.
 - MCP Figma write mode and local file write mode are separate. Local asset export requires `FIGHORSE_MCP_LOCAL_WRITE=allow` and must stay under approved export roots.
 - Installed MCP clients should reuse the local HTTP service at `http://127.0.0.1:9449/mcp`; do not default to spawning multiple long-lived stdio servers. The MCP server uses a singleton lock unless `FIGHORSE_MCP_ALLOW_MULTIPLE=1` is explicitly set for development.
