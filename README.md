@@ -1,5 +1,9 @@
 # fighorse
 
+<p align="center">
+  <img src="assets/logo.svg" alt="fighorse logo" width="128" height="128">
+</p>
+
 > [English](docs/en/README.md) | [中文](docs/zh/README.md) | [Русский](docs/ru/README.md)
 
 The Swiss Army knife for Figma data, shaped for AI consumption.
