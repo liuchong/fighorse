@@ -67,7 +67,11 @@ pub struct InstallManifest {
 pub struct InstallTransaction {
     home: PathBuf,
     previous: BTreeMap<PathBuf, ManagedFile>,
+    /// Final records to persist in the next manifest, including no-op updates.
     changed: BTreeMap<PathBuf, ManagedFile>,
+    /// Filesystem mutations made in this transaction, with transaction-start
+    /// snapshots retained for failure rollback.
+    pending: BTreeMap<PathBuf, ManagedFile>,
     next_order: u64,
     endpoint: Option<String>,
     service: Option<ServiceState>,
@@ -109,6 +113,7 @@ impl InstallTransaction {
             home,
             previous,
             changed: BTreeMap::new(),
+            pending: BTreeMap::new(),
             next_order,
             endpoint: prior_manifest
                 .as_ref()
@@ -149,6 +154,9 @@ impl InstallTransaction {
             Error::Other(format!("managed client config missing: {}", path.display()))
         })?;
         managed.verification = ManagedFileVerification::ClientConfig { spec: spec.clone() };
+        if let Some(pending) = self.pending.get_mut(path) {
+            pending.verification = ManagedFileVerification::ClientConfig { spec: spec.clone() };
+        }
         Ok(())
     }
 
@@ -173,10 +181,14 @@ impl InstallTransaction {
             .as_ref()
             .map(|snapshot| snapshot.content.as_slice());
         if current.is_some_and(|bytes| content_hash(bytes) == desired_hash) {
-            let mut managed = match self.previous.get(path).cloned() {
+            let existing = self
+                .changed
+                .get(path)
+                .cloned()
+                .or_else(|| self.previous.get(path).cloned());
+            let mut managed = match existing {
                 Some(managed) if !managed.desired_absent => managed,
                 Some(mut managed) => {
-                    managed.hash = desired_hash.clone();
                     managed.backup = current
                         .map(|bytes| self.backup_file(path, bytes))
                         .transpose()?;
@@ -193,7 +205,7 @@ impl InstallTransaction {
                     let order = self.take_order();
                     let mut managed = ManagedFile {
                         path: path.to_path_buf(),
-                        hash: desired_hash,
+                        hash: desired_hash.clone(),
                         backup,
                         existed_before: true,
                         desired_absent: false,
@@ -208,42 +220,94 @@ impl InstallTransaction {
                     managed
                 }
             };
+            managed.hash = desired_hash;
+            managed.desired_absent = false;
+            managed.kind = ManagedFileKind::Regular;
             managed.verification = ManagedFileVerification::Exact;
             self.changed.insert(path.to_path_buf(), managed);
             return Ok(());
         }
 
-        let previous_managed = self.previous.get(path);
-        let backup = match current {
-            Some(bytes)
-                if previous_managed.is_some_and(|managed| managed.hash == content_hash(bytes)) =>
-            {
-                previous_managed.and_then(|managed| managed.backup.clone())
+        let mut pending = match self.pending.get(path).cloned() {
+            Some(pending) => pending,
+            None => {
+                let backup = current
+                    .map(|bytes| self.backup_file(path, bytes))
+                    .transpose()?;
+                let order = self.take_order();
+                let mut pending = ManagedFile {
+                    path: path.to_path_buf(),
+                    hash: desired_hash.clone(),
+                    backup,
+                    existed_before: snapshot.is_some(),
+                    desired_absent: false,
+                    order,
+                    kind: ManagedFileKind::Regular,
+                    previous_kind: None,
+                    previous_mode: None,
+                    previous_symlink_target: None,
+                    verification: ManagedFileVerification::Exact,
+                };
+                apply_snapshot_metadata(&mut pending, snapshot.as_ref());
+                pending
             }
-            Some(bytes) => Some(self.backup_file(path, bytes)?),
-            None => previous_managed.and_then(|managed| managed.backup.clone()),
         };
-        let existed_before =
-            current.is_some() || previous_managed.is_some_and(|managed| managed.existed_before);
-        let order = previous_managed
-            .map(|managed| managed.order)
-            .unwrap_or_else(|| self.take_order());
+        pending.hash = desired_hash.clone();
+        pending.desired_absent = false;
+        pending.kind = ManagedFileKind::Regular;
+        pending.verification = ManagedFileVerification::Exact;
+
+        let existing = self
+            .changed
+            .get(path)
+            .cloned()
+            .or_else(|| self.previous.get(path).cloned());
+        let mut managed = match existing {
+            Some(managed) if current.is_some_and(|bytes| managed.hash == content_hash(bytes)) => {
+                managed
+            }
+            Some(managed) if self.changed.contains_key(path) => managed,
+            previous_managed => {
+                let backup = current
+                    .map(|bytes| self.backup_file(path, bytes))
+                    .transpose()?
+                    .or_else(|| {
+                        previous_managed
+                            .as_ref()
+                            .and_then(|file| file.backup.clone())
+                    });
+                let existed_before = current.is_some()
+                    || previous_managed
+                        .as_ref()
+                        .is_some_and(|file| file.existed_before);
+                let order = previous_managed
+                    .as_ref()
+                    .map(|file| file.order)
+                    .unwrap_or_else(|| self.take_order());
+                let mut managed = ManagedFile {
+                    path: path.to_path_buf(),
+                    hash: desired_hash.clone(),
+                    backup,
+                    existed_before,
+                    desired_absent: false,
+                    order,
+                    kind: ManagedFileKind::Regular,
+                    previous_kind: None,
+                    previous_mode: None,
+                    previous_symlink_target: None,
+                    verification: ManagedFileVerification::Exact,
+                };
+                apply_snapshot_metadata(&mut managed, snapshot.as_ref());
+                managed
+            }
+        };
 
         atomic_write_mode(path, content, mode)?;
-        let mut managed = ManagedFile {
-            path: path.to_path_buf(),
-            hash: desired_hash,
-            backup,
-            existed_before,
-            desired_absent: false,
-            order,
-            kind: ManagedFileKind::Regular,
-            previous_kind: None,
-            previous_mode: None,
-            previous_symlink_target: None,
-            verification: ManagedFileVerification::Exact,
-        };
-        apply_snapshot_metadata(&mut managed, snapshot.as_ref());
+        managed.hash = desired_hash;
+        managed.desired_absent = false;
+        managed.kind = ManagedFileKind::Regular;
+        managed.verification = ManagedFileVerification::Exact;
+        self.pending.insert(path.to_path_buf(), pending);
         self.changed.insert(path.to_path_buf(), managed);
         Ok(())
     }
@@ -256,56 +320,121 @@ impl InstallTransaction {
             snapshot.kind == ManagedFileKind::Symlink
                 && snapshot.symlink_target.as_deref() == Some(target)
         }) {
-            let mut managed = self.previous.get(path).cloned().unwrap_or(ManagedFile {
-                path: path.to_path_buf(),
-                hash: target_hash,
-                backup: None,
-                existed_before: true,
-                desired_absent: false,
-                order: self.take_order(),
-                kind: ManagedFileKind::Symlink,
-                previous_kind: None,
-                previous_mode: None,
-                previous_symlink_target: None,
-                verification: ManagedFileVerification::Exact,
-            });
+            let existing = self
+                .changed
+                .get(path)
+                .cloned()
+                .or_else(|| self.previous.get(path).cloned());
+            let mut managed = match existing {
+                Some(managed) => managed,
+                None => {
+                    let order = self.take_order();
+                    let mut managed = ManagedFile {
+                        path: path.to_path_buf(),
+                        hash: target_hash.clone(),
+                        backup: None,
+                        existed_before: true,
+                        desired_absent: false,
+                        order,
+                        kind: ManagedFileKind::Symlink,
+                        previous_kind: None,
+                        previous_mode: None,
+                        previous_symlink_target: None,
+                        verification: ManagedFileVerification::Exact,
+                    };
+                    apply_snapshot_metadata(&mut managed, snapshot.as_ref());
+                    managed
+                }
+            };
+            managed.hash = target_hash;
             managed.kind = ManagedFileKind::Symlink;
             managed.desired_absent = false;
             managed.verification = ManagedFileVerification::Exact;
-            apply_snapshot_metadata(&mut managed, snapshot.as_ref());
             self.changed.insert(path.to_path_buf(), managed);
             return Ok(());
         }
-        let backup = snapshot
-            .as_ref()
-            .filter(|snapshot| snapshot.kind == ManagedFileKind::Regular)
-            .map(|snapshot| self.backup_file(path, &snapshot.content))
-            .transpose()?;
-        let existed_before = snapshot.is_some()
-            || self
-                .previous
-                .get(path)
-                .is_some_and(|managed| managed.existed_before);
-        let order = self
-            .previous
-            .get(path)
-            .map(|managed| managed.order)
-            .unwrap_or_else(|| self.take_order());
-        atomic_symlink(path, target)?;
-        let mut managed = ManagedFile {
-            path: path.to_path_buf(),
-            hash: target_hash,
-            backup,
-            existed_before,
-            desired_absent: false,
-            order,
-            kind: ManagedFileKind::Symlink,
-            previous_kind: None,
-            previous_mode: None,
-            previous_symlink_target: None,
-            verification: ManagedFileVerification::Exact,
+
+        let mut pending = match self.pending.get(path).cloned() {
+            Some(pending) => pending,
+            None => {
+                let backup = snapshot
+                    .as_ref()
+                    .filter(|snapshot| snapshot.kind == ManagedFileKind::Regular)
+                    .map(|snapshot| self.backup_file(path, &snapshot.content))
+                    .transpose()?;
+                let order = self.take_order();
+                let mut pending = ManagedFile {
+                    path: path.to_path_buf(),
+                    hash: target_hash.clone(),
+                    backup,
+                    existed_before: snapshot.is_some(),
+                    desired_absent: false,
+                    order,
+                    kind: ManagedFileKind::Symlink,
+                    previous_kind: None,
+                    previous_mode: None,
+                    previous_symlink_target: None,
+                    verification: ManagedFileVerification::Exact,
+                };
+                apply_snapshot_metadata(&mut pending, snapshot.as_ref());
+                pending
+            }
         };
-        apply_snapshot_metadata(&mut managed, snapshot.as_ref());
+        pending.hash = target_hash.clone();
+        pending.desired_absent = false;
+        pending.kind = ManagedFileKind::Symlink;
+
+        let existing = self
+            .changed
+            .get(path)
+            .cloned()
+            .or_else(|| self.previous.get(path).cloned());
+        let mut managed = match existing {
+            Some(managed) if self.changed.contains_key(path) => managed,
+            Some(managed)
+                if snapshot
+                    .as_ref()
+                    .is_some_and(|snapshot| snapshot_matches(snapshot, &managed)) =>
+            {
+                managed
+            }
+            previous_managed => {
+                let backup = snapshot
+                    .as_ref()
+                    .filter(|snapshot| snapshot.kind == ManagedFileKind::Regular)
+                    .map(|snapshot| self.backup_file(path, &snapshot.content))
+                    .transpose()?;
+                let existed_before = snapshot.is_some()
+                    || previous_managed
+                        .as_ref()
+                        .is_some_and(|file| file.existed_before);
+                let order = previous_managed
+                    .as_ref()
+                    .map(|file| file.order)
+                    .unwrap_or_else(|| self.take_order());
+                let mut managed = ManagedFile {
+                    path: path.to_path_buf(),
+                    hash: target_hash.clone(),
+                    backup,
+                    existed_before,
+                    desired_absent: false,
+                    order,
+                    kind: ManagedFileKind::Symlink,
+                    previous_kind: None,
+                    previous_mode: None,
+                    previous_symlink_target: None,
+                    verification: ManagedFileVerification::Exact,
+                };
+                apply_snapshot_metadata(&mut managed, snapshot.as_ref());
+                managed
+            }
+        };
+        atomic_symlink(path, target)?;
+        managed.hash = target_hash;
+        managed.desired_absent = false;
+        managed.kind = ManagedFileKind::Symlink;
+        managed.verification = ManagedFileVerification::Exact;
+        self.pending.insert(path.to_path_buf(), pending);
         self.changed.insert(path.to_path_buf(), managed);
         Ok(())
     }
@@ -316,9 +445,15 @@ impl InstallTransaction {
         let snapshot = match snapshot_path(path)? {
             Some(snapshot) => snapshot,
             None => {
-                if let Some(previous) = self.previous.get(path).filter(|file| !file.desired_absent)
-                {
-                    let mut managed = previous.clone();
+                if self.pending.contains_key(path) {
+                    return Ok(None);
+                }
+                let existing = self
+                    .changed
+                    .get(path)
+                    .cloned()
+                    .or_else(|| self.previous.get(path).cloned());
+                if let Some(mut managed) = existing.filter(|file| !file.desired_absent) {
                     managed.hash.clear();
                     managed.backup = None;
                     managed.existed_before = false;
@@ -328,33 +463,77 @@ impl InstallTransaction {
                 return Ok(None);
             }
         };
-        let backup = if snapshot.kind == ManagedFileKind::Regular {
+        let pending_backup = if snapshot.kind == ManagedFileKind::Regular {
             Some(self.backup_file(path, &snapshot.content)?)
         } else {
             None
         };
-        let order = self
-            .previous
-            .get(path)
-            .map(|managed| managed.order)
-            .unwrap_or_else(|| self.take_order());
-        std::fs::remove_file(path)?;
-        let mut managed = ManagedFile {
-            path: path.to_path_buf(),
-            hash: snapshot_hash(&snapshot),
-            backup: backup.clone(),
-            existed_before: true,
-            desired_absent: true,
-            order,
-            kind: snapshot.kind,
-            previous_kind: None,
-            previous_mode: None,
-            previous_symlink_target: None,
-            verification: ManagedFileVerification::Exact,
+        let mut pending = match self.pending.get(path).cloned() {
+            Some(pending) => pending,
+            None => {
+                let order = self.take_order();
+                let mut pending = ManagedFile {
+                    path: path.to_path_buf(),
+                    hash: snapshot_hash(&snapshot),
+                    backup: pending_backup.clone(),
+                    existed_before: true,
+                    desired_absent: true,
+                    order,
+                    kind: snapshot.kind,
+                    previous_kind: None,
+                    previous_mode: None,
+                    previous_symlink_target: None,
+                    verification: ManagedFileVerification::Exact,
+                };
+                apply_snapshot_metadata(&mut pending, Some(&snapshot));
+                pending
+            }
         };
-        apply_snapshot_metadata(&mut managed, Some(&snapshot));
+        pending.hash = snapshot_hash(&snapshot);
+        pending.desired_absent = true;
+
+        let existing = self
+            .changed
+            .get(path)
+            .cloned()
+            .or_else(|| self.previous.get(path).cloned());
+        let mut managed = match existing {
+            Some(managed) if self.changed.contains_key(path) => managed,
+            previous_managed => {
+                let backup = if snapshot.kind == ManagedFileKind::Regular {
+                    Some(self.backup_file(path, &snapshot.content)?)
+                } else {
+                    None
+                };
+                let order = previous_managed
+                    .as_ref()
+                    .map(|file| file.order)
+                    .unwrap_or_else(|| self.take_order());
+                let mut managed = ManagedFile {
+                    path: path.to_path_buf(),
+                    hash: snapshot_hash(&snapshot),
+                    backup,
+                    existed_before: true,
+                    desired_absent: true,
+                    order,
+                    kind: snapshot.kind,
+                    previous_kind: None,
+                    previous_mode: None,
+                    previous_symlink_target: None,
+                    verification: ManagedFileVerification::Exact,
+                };
+                apply_snapshot_metadata(&mut managed, Some(&snapshot));
+                managed
+            }
+        };
+        std::fs::remove_file(path)?;
+        managed.hash = snapshot_hash(&snapshot);
+        managed.desired_absent = true;
+        managed.kind = snapshot.kind;
+        managed.verification = ManagedFileVerification::Exact;
+        self.pending.insert(path.to_path_buf(), pending);
         self.changed.insert(path.to_path_buf(), managed);
-        Ok(backup)
+        Ok(pending_backup)
     }
 
     /// Create an idempotent safety copy for an unmanaged conflict.
@@ -408,7 +587,15 @@ impl InstallTransaction {
     /// Restore writes performed by this in-memory transaction. This is used
     /// when a later install stage fails before the manifest can be committed.
     pub fn rollback_pending(&self) -> Vec<InstallCheck> {
-        rollback_files(self.changed.values())
+        rollback_files(self.pending.values())
+    }
+
+    /// Verify only paths written or removed by this transaction.
+    ///
+    /// Targeted installers must not fail because an unrelated path from an
+    /// older manifest was customized after its original installation.
+    pub fn verify_changed(&self) -> Vec<InstallCheck> {
+        self.pending.values().map(verify_managed_file).collect()
     }
 
     pub fn rollback_pending_with_service(
@@ -470,48 +657,52 @@ pub fn verify_manifest(home: &Path) -> Result<Vec<InstallCheck>> {
     Ok(manifest
         .managed_files
         .iter()
-        .map(|managed| match snapshot_path(&managed.path) {
-            Ok(None) if managed.desired_absent => InstallCheck::new(
-                format!("managed:{}", managed.path.display()),
-                true,
-                "managed path is absent as expected",
-            ),
-            Ok(Some(_)) if managed.desired_absent => InstallCheck::new(
-                format!("managed:{}", managed.path.display()),
-                false,
-                "managed path should be absent",
-            ),
-            Ok(Some(snapshot)) => {
-                let matches = match &managed.verification {
-                    ManagedFileVerification::Exact => snapshot_matches(&snapshot, managed),
-                    ManagedFileVerification::ClientConfig { spec } => {
-                        snapshot.kind == ManagedFileKind::Regular
-                            && String::from_utf8(snapshot.content)
-                                .is_ok_and(|content| spec.matches_config(&content))
-                    }
-                };
-                InstallCheck::new(
-                    format!("managed:{}", managed.path.display()),
-                    matches,
-                    if matches {
-                        "managed content matches manifest"
-                    } else {
-                        "managed content or file type differs from manifest"
-                    },
-                )
-            }
-            Ok(None) => InstallCheck::new(
-                format!("managed:{}", managed.path.display()),
-                false,
-                "managed path is absent",
-            ),
-            Err(error) => InstallCheck::new(
-                format!("managed:{}", managed.path.display()),
-                false,
-                error.to_string(),
-            ),
-        })
+        .map(verify_managed_file)
         .collect())
+}
+
+fn verify_managed_file(managed: &ManagedFile) -> InstallCheck {
+    match snapshot_path(&managed.path) {
+        Ok(None) if managed.desired_absent => InstallCheck::new(
+            format!("managed:{}", managed.path.display()),
+            true,
+            "managed path is absent as expected",
+        ),
+        Ok(Some(_)) if managed.desired_absent => InstallCheck::new(
+            format!("managed:{}", managed.path.display()),
+            false,
+            "managed path should be absent",
+        ),
+        Ok(Some(snapshot)) => {
+            let matches = match &managed.verification {
+                ManagedFileVerification::Exact => snapshot_matches(&snapshot, managed),
+                ManagedFileVerification::ClientConfig { spec } => {
+                    snapshot.kind == ManagedFileKind::Regular
+                        && String::from_utf8(snapshot.content)
+                            .is_ok_and(|content| spec.matches_config(&content))
+                }
+            };
+            InstallCheck::new(
+                format!("managed:{}", managed.path.display()),
+                matches,
+                if matches {
+                    "managed content matches manifest"
+                } else {
+                    "managed content or file type differs from manifest"
+                },
+            )
+        }
+        Ok(None) => InstallCheck::new(
+            format!("managed:{}", managed.path.display()),
+            false,
+            "managed path is absent",
+        ),
+        Err(error) => InstallCheck::new(
+            format!("managed:{}", managed.path.display()),
+            false,
+            error.to_string(),
+        ),
+    }
 }
 
 pub fn rollback(home: &Path) -> Result<InstallReport> {
@@ -781,6 +972,11 @@ fn restore_previous(managed: &ManagedFile) -> std::io::Result<()> {
                 std::io::Error::other("managed backup is missing for pre-existing file")
             })?;
             let bytes = std::fs::read(backup)?;
+            if std::fs::symlink_metadata(&managed.path)
+                .is_ok_and(|metadata| metadata.file_type().is_symlink())
+            {
+                std::fs::remove_file(&managed.path)?;
+            }
             atomic_write_io(
                 &managed.path,
                 &bytes,

@@ -1782,18 +1782,16 @@ pub async fn install_service_async(
             )));
         }
     };
-    transaction.commit(None)?;
-    checks.extend(transaction::verify_manifest(&home)?);
+    checks.extend(transaction.verify_changed());
     let ok = checks.iter().all(|check| check.ok);
     if !ok {
-        let rollback = committed_file_rollback(&home);
+        let rollback = transaction.rollback_pending_with_service(&mut runner, true);
         return Err(Error::Other(format!(
             "Service installation verification failed; rollback: {}",
             serde_json::to_string(&rollback)?
         )));
     }
-    let final_transaction = transaction::InstallTransaction::new(&home)?;
-    final_transaction.commit(Some(checks.clone()))?;
+    transaction.commit(Some(checks.clone()))?;
     Ok(json!({
         "kind": "fighorse.install-service.v2",
         "service": manager,
@@ -2251,40 +2249,22 @@ async fn apply_install_transaction(opts: &InstallOpts<'_>, self_install: bool) -
         }
     };
 
-    if let Err(error) = transaction.commit(None) {
-        let rollback =
-            transaction.rollback_pending_with_service(&mut service_runner, service_touched);
-        return Err(Error::Other(format!(
-            "{error}; rollback: {}",
-            serde_json::to_string(&rollback)?
-        )));
-    }
-    match transaction::verify_manifest(&home) {
-        Ok(checks) => verification.extend(checks),
-        Err(error) => {
-            let rollback = committed_file_rollback(&home);
-            return Err(Error::Other(format!(
-                "{error}; rollback: {}",
-                serde_json::to_string(&rollback)?
-            )));
-        }
-    }
+    verification.extend(transaction.verify_changed());
     verification.push(executable_check(&target));
     verification.push(binary_path_check(&target));
     verification.push(config_permission_check(&home));
     let ok = verification.iter().all(|check| check.ok);
-    let final_transaction = match transaction::InstallTransaction::new(&home) {
-        Ok(transaction) => transaction,
-        Err(error) => {
-            let rollback = committed_file_rollback(&home);
-            return Err(Error::Other(format!(
-                "{error}; rollback: {}",
-                serde_json::to_string(&rollback)?
-            )));
-        }
-    };
-    if let Err(error) = final_transaction.commit(Some(verification.clone())) {
-        let rollback = committed_file_rollback(&home);
+    if !ok {
+        let rollback =
+            transaction.rollback_pending_with_service(&mut service_runner, service_touched);
+        return Err(Error::Other(format!(
+            "Installation verification failed; rollback: {}",
+            serde_json::to_string(&rollback)?
+        )));
+    }
+    if let Err(error) = transaction.commit(Some(verification.clone())) {
+        let rollback =
+            transaction.rollback_pending_with_service(&mut service_runner, service_touched);
         return Err(Error::Other(format!(
             "{error}; rollback: {}",
             serde_json::to_string(&rollback)?
@@ -2299,13 +2279,6 @@ async fn apply_install_transaction(opts: &InstallOpts<'_>, self_install: bool) -
         skills_migration,
         ok,
     };
-    if !ok {
-        let rollback = committed_file_rollback(&home);
-        return Err(Error::Other(format!(
-            "Installation verification failed; rollback: {}",
-            serde_json::to_string(&rollback)?
-        )));
-    }
     Ok(json!({
         "kind": if self_install { "fighorse.install-self.v2" } else { "fighorse.install-all.v2" },
         "apply": true,
@@ -2316,17 +2289,6 @@ async fn apply_install_transaction(opts: &InstallOpts<'_>, self_install: bool) -
         "service": service_result,
         "report": report,
     }))
-}
-
-fn committed_file_rollback(home: &Path) -> Vec<model::InstallCheck> {
-    match transaction::rollback(home) {
-        Ok(report) => report.rollback,
-        Err(error) => vec![model::InstallCheck::new(
-            "managed_rollback",
-            false,
-            error.to_string(),
-        )],
-    }
 }
 
 fn service_result_to_checks(manager: &str, result: &Value) -> Result<Vec<model::InstallCheck>> {

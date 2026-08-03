@@ -101,6 +101,153 @@ fn transaction_rolls_back_only_managed_files_in_reverse_order() {
 }
 
 #[test]
+fn scoped_transaction_verification_ignores_prior_manifest_drift() {
+    let root = temp_root("scoped-verification");
+    let unrelated = root.join("config.json");
+    let service = root.join("service.plist");
+    fs::write(&unrelated, "old-secret").unwrap();
+
+    let mut initial = InstallTransaction::new(&root).unwrap();
+    initial
+        .write_managed(&unrelated, b"current-secret")
+        .unwrap();
+    initial.commit(None).unwrap();
+
+    let mut targeted = InstallTransaction::new(&root).unwrap();
+    targeted
+        .write_managed(&unrelated, b"current-secret")
+        .unwrap();
+    targeted.write_managed(&service, b"new-service").unwrap();
+    let checks = targeted.verify_changed();
+    assert!(checks.iter().all(|check| check.ok), "{checks:?}");
+    let rollback = targeted.rollback_pending();
+    assert!(rollback.iter().all(|check| check.ok), "{rollback:?}");
+    assert_eq!(fs::read_to_string(&unrelated).unwrap(), "current-secret");
+    assert!(!service.exists());
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn noop_write_refreshes_manifest_without_becoming_pending_rollback() {
+    let root = temp_root("noop-manifest-refresh");
+    let target = root.join("config.json");
+    fs::write(&target, "before-install").unwrap();
+
+    let mut initial = InstallTransaction::new(&root).unwrap();
+    initial.write_managed(&target, b"managed-value").unwrap();
+    initial.commit(None).unwrap();
+    fs::write(&target, "user-preserved-value").unwrap();
+
+    let mut update = InstallTransaction::new(&root).unwrap();
+    update
+        .write_managed(&target, b"user-preserved-value")
+        .unwrap();
+    assert!(update.verify_changed().is_empty());
+    assert!(update.rollback_pending().is_empty());
+    update.commit(None).unwrap();
+
+    assert!(verify_manifest(&root).unwrap().iter().all(|check| check.ok));
+    assert_eq!(fs::read_to_string(&target).unwrap(), "user-preserved-value");
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn repeated_regular_writes_roll_back_to_transaction_start() {
+    let root = temp_root("repeated-regular-rollback");
+    let target = root.join("config.json");
+    fs::write(&target, "transaction-start").unwrap();
+
+    let mut transaction = InstallTransaction::new(&root).unwrap();
+    transaction.write_managed(&target, b"first-write").unwrap();
+    transaction.write_managed(&target, b"second-write").unwrap();
+    let rollback = transaction.rollback_pending();
+
+    assert!(rollback.iter().all(|check| check.ok), "{rollback:?}");
+    assert_eq!(fs::read_to_string(&target).unwrap(), "transaction-start");
+    let _ = fs::remove_dir_all(root);
+}
+
+#[cfg(unix)]
+#[test]
+fn repeated_symlink_writes_roll_back_to_original_regular_file() {
+    let root = temp_root("repeated-symlink-rollback");
+    let target = root.join("managed-link");
+    let link_target = root.join("binary");
+    fs::write(&target, "original-file").unwrap();
+    fs::write(&link_target, "binary").unwrap();
+
+    let mut transaction = InstallTransaction::new(&root).unwrap();
+    transaction
+        .write_managed_symlink(&target, &link_target)
+        .unwrap();
+    transaction
+        .write_managed_symlink(&target, &link_target)
+        .unwrap();
+    let rollback = transaction.rollback_pending();
+
+    assert!(rollback.iter().all(|check| check.ok), "{rollback:?}");
+    assert!(
+        !fs::symlink_metadata(&target)
+            .unwrap()
+            .file_type()
+            .is_symlink()
+    );
+    assert_eq!(fs::read_to_string(&target).unwrap(), "original-file");
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn repeated_remove_rolls_back_the_original_file() {
+    let root = temp_root("repeated-remove-rollback");
+    let target = root.join("legacy-skill.md");
+    fs::write(&target, "original-file").unwrap();
+
+    let mut initial = InstallTransaction::new(&root).unwrap();
+    initial.write_managed(&target, b"managed-file").unwrap();
+    initial.commit(None).unwrap();
+
+    let mut transaction = InstallTransaction::new(&root).unwrap();
+    transaction.remove_managed(&target).unwrap();
+    transaction.remove_managed(&target).unwrap();
+    let rollback = transaction.rollback_pending();
+
+    assert!(rollback.iter().all(|check| check.ok), "{rollback:?}");
+    assert_eq!(fs::read_to_string(&target).unwrap(), "managed-file");
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn mixed_write_and_remove_sequences_roll_back_to_transaction_start() {
+    let root = temp_root("mixed-operation-rollback");
+    let written_then_removed = root.join("written-then-removed");
+    let removed_then_written = root.join("removed-then-written");
+    fs::write(&written_then_removed, "first-original").unwrap();
+    fs::write(&removed_then_written, "second-original").unwrap();
+
+    let mut transaction = InstallTransaction::new(&root).unwrap();
+    transaction
+        .write_managed(&written_then_removed, b"temporary-write")
+        .unwrap();
+    transaction.remove_managed(&written_then_removed).unwrap();
+    transaction.remove_managed(&removed_then_written).unwrap();
+    transaction
+        .write_managed(&removed_then_written, b"replacement-write")
+        .unwrap();
+    let rollback = transaction.rollback_pending();
+
+    assert!(rollback.iter().all(|check| check.ok), "{rollback:?}");
+    assert_eq!(
+        fs::read_to_string(&written_then_removed).unwrap(),
+        "first-original"
+    );
+    assert_eq!(
+        fs::read_to_string(&removed_then_written).unwrap(),
+        "second-original"
+    );
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
 fn failed_transaction_restores_pending_writes_without_a_manifest() {
     let root = temp_root("pending-rollback");
     let original = root.join("original.txt");
@@ -569,7 +716,7 @@ fn failed_service_activation_unloads_a_fresh_service() {
 }
 
 #[test]
-fn production_failure_restores_auth_and_previous_service() {
+fn production_failure_preserves_noop_auth_and_restores_previous_service() {
     let root = temp_root("service-failure");
     let user_home = root.join("user");
     let home = root.join("fighorse-home");
@@ -590,6 +737,7 @@ fn production_failure_restores_auth_and_previous_service() {
         r#"{"token":"old-secret","future":{"enabled":true}}"#,
     )
     .unwrap();
+    install_auth(Some("current-secret"), Some(home.to_str().unwrap()), true).unwrap();
     fs::write(&service_file, "old-service-definition\n").unwrap();
 
     let fake_systemctl = fake_bin.join("systemctl");
@@ -651,7 +799,7 @@ exit 0
             "--link-dir",
             fake_bin.to_str().unwrap(),
             "--token",
-            "new-secret",
+            "current-secret",
         ])
         .env("HOME", &user_home)
         .env("PATH", path)
@@ -664,11 +812,11 @@ exit 0
     let error = String::from_utf8_lossy(&output.stderr);
     assert!(error.contains("systemd_enable failed"), "{error}");
     assert!(error.contains("service_rollback_systemd_enable"), "{error}");
-    assert!(!error.contains("new-secret"));
+    assert!(!error.contains("current-secret"));
 
     let config: Value =
         serde_json::from_str(&fs::read_to_string(home.join("config.json")).unwrap()).unwrap();
-    assert_eq!(config["token"], "old-secret");
+    assert_eq!(config["token"], "current-secret");
     assert_eq!(config["future"]["enabled"], true);
     assert_eq!(
         fs::read_to_string(&service_file).unwrap(),
