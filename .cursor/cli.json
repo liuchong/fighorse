@@ -1,7 +1,8 @@
 {
   "permissions": {
     "allow": [
-      "Mcp(fighorse:discover_fighorse)"
+      "Mcp(fighorse:discover_fighorse)",
+      "Mcp(fighorse:get_resource_catalog)"
     ],
     "deny": []
   }
