@@ -223,6 +223,17 @@ fn is_blank(s: Option<&str>) -> bool {
     s.map(|v| v.trim().is_empty()).unwrap_or(true)
 }
 
+fn implementation_node_type(node_type: Option<&str>) -> bool {
+    matches!(node_type, Some("FRAME" | "COMPONENT" | "INSTANCE"))
+}
+
+fn container_node_type(node_type: Option<&str>) -> bool {
+    matches!(
+        node_type,
+        Some("SECTION" | "CANVAS" | "DOCUMENT" | "SELECTION")
+    )
+}
+
 fn screen_candidates(target: &Value) -> Value {
     let out: Vec<Value> = all_nodes(target)
         .into_iter()
@@ -235,27 +246,72 @@ fn screen_candidates(target: &Value) -> Value {
         .filter(|n| !is_blank(n.get("id").and_then(|v| v.as_str())))
         .take(20)
         .map(|node| {
+            let node_type = node.get("type").and_then(|v| v.as_str());
             let bounds = node_bounds(&node);
             let w = bounds.get("width").and_then(|v| v.as_f64());
             let h = bounds.get("height").and_then(|v| v.as_f64());
-            let reason =
-                if w.map(|w| w > 200.0).unwrap_or(false) && h.map(|h| h > 200.0).unwrap_or(false) {
-                    "large candidate frame/component"
-                } else {
-                    "structural candidate"
-                };
+            let implementable = implementation_node_type(node_type);
+            let reason = if container_node_type(node_type) {
+                "container; choose an implementable child candidate"
+            } else if w.map(|w| w > 200.0).unwrap_or(false)
+                && h.map(|h| h > 200.0).unwrap_or(false)
+            {
+                "large candidate frame/component"
+            } else {
+                "structural candidate"
+            };
             json!({
                 "id": node.get("id").cloned().unwrap_or(Value::Null),
                 "name": node.get("name").cloned().unwrap_or(Value::Null),
                 "type": node.get("type").cloned().unwrap_or(Value::Null),
                 "width": bounds.get("width").cloned().unwrap_or(Value::Null),
                 "height": bounds.get("height").cloned().unwrap_or(Value::Null),
-                "renderable": node.get("id").map(|v| !v.is_null()).unwrap_or(false),
+                "role": if implementable { "implementation_target" } else { "container" },
+                "renderable": implementable && node.get("id").map(|v| !v.is_null()).unwrap_or(false),
+                "implementable": implementable,
                 "reason": reason,
             })
         })
         .collect();
     Value::Array(out)
+}
+
+fn scope_contract(target: &Value) -> Value {
+    let target_type = target.get("type").and_then(|v| v.as_str());
+    let child_count = target
+        .get("children")
+        .and_then(|c| c.as_array())
+        .map(|a| a.len())
+        .unwrap_or(0);
+
+    let reason = match target_type {
+        Some("SECTION") => "section",
+        Some("CANVAS") => "canvas",
+        Some("DOCUMENT") => "document",
+        Some("SELECTION") => "selection",
+        Some(_) if !implementation_node_type(target_type) && child_count > 1 => "many_children",
+        _ => "implementation_target",
+    };
+    let needs_narrowing = reason != "implementation_target";
+
+    json!({
+        "status": if needs_narrowing { "needs_narrowing" } else { "ready_to_implement" },
+        "reason": reason,
+        "target_type": target_type.unwrap_or("unknown"),
+        "next_action": if needs_narrowing {
+            json!({
+                "tool": "get_design_package",
+                "use": "screen_candidates[].id where implementable is true",
+                "message": "Choose a FRAME, COMPONENT, or INSTANCE candidate and rerun get_design_package with that node_id."
+            })
+        } else {
+            json!({
+                "tool": "implement_from_package",
+                "use": "current target",
+                "message": "The selected target is implementation-ready."
+            })
+        }
+    })
 }
 
 fn component_candidates(target: &Value) -> Value {
@@ -445,6 +501,22 @@ fn assets_image_count(assets: &Value) -> usize {
         .unwrap_or(0)
 }
 
+fn screenshot_image_counts(screenshots: &Option<Value>) -> (usize, usize) {
+    screenshots
+        .as_ref()
+        .and_then(|s| s.get("images"))
+        .and_then(|v| v.as_object())
+        .map(|images| {
+            let non_null_urls = images
+                .values()
+                .filter(|value| value.as_str().map(|s| !s.is_empty()).unwrap_or(false))
+                .count();
+            let null_images = images.values().filter(|value| value.is_null()).count();
+            (non_null_urls, null_images)
+        })
+        .unwrap_or((0, 0))
+}
+
 #[allow(clippy::too_many_arguments)]
 fn diagnostics(
     target: &Value,
@@ -455,12 +527,7 @@ fn diagnostics(
     platform: Option<&str>,
     asset_format: Option<&str>,
 ) -> Value {
-    let image_count = screenshots
-        .as_ref()
-        .and_then(|s| s.get("images"))
-        .and_then(|v| v.as_object())
-        .map(|o| o.len())
-        .unwrap_or(0);
+    let (image_count, null_image_count) = screenshot_image_counts(screenshots);
     let asset_count = assets.as_ref().map(assets_image_count).unwrap_or(0);
     let counts = token_counts(grouped_tokens);
     let token_total = total_tokens(&counts);
@@ -476,12 +543,17 @@ fn diagnostics(
         .map(|a| a.len())
         .unwrap_or(0);
     let is_truncated = truncated(compacted);
+    let scope = scope_contract(target);
+    let needs_narrowing = scope["status"] == "needs_narrowing";
 
     let mut warnings: Vec<Value> = Vec::new();
     if image_count == 0 {
         warnings.push(Value::String(
             "No screenshot URL was returned. Use get_screenshot or lower the target scope.".into(),
         ));
+    }
+    if null_image_count > 0 {
+        warnings.push(Value::String("Figma returned null for one or more requested screenshot nodes. Use screen_candidates to choose an implementable FRAME, COMPONENT, or INSTANCE and rerun get_design_package.".into()));
     }
     if token_total == 0 {
         warnings.push(Value::String(
@@ -503,6 +575,9 @@ fn diagnostics(
     if target_type == Some("CANVAS") {
         warnings.push(Value::String("Selected target is a CANVAS/page. Ask for the exact frame/screen node or inspect child frames before implementing.".into()));
     }
+    if target_type == Some("SECTION") {
+        warnings.push(Value::String("Selected target is a SECTION/container. Choose an implementable child from screen_candidates before coding.".into()));
+    }
     if child_count > 12 {
         warnings.push(Value::String("Selected target has many direct children. Treat it as a flow/overview and narrow to representative frames before coding.".into()));
     }
@@ -510,9 +585,10 @@ fn diagnostics(
     let categories: Vec<Value> = counts.keys().map(|k| Value::String(k.clone())).collect();
 
     json!({
-        "status": if image_count > 0 && token_total > 0 { "ready" } else { "partial" },
+        "status": if image_count > 0 && token_total > 0 && !needs_narrowing { "ready" } else { "partial" },
         "context_truncated": is_truncated,
-        "screenshots": {"requested": screenshots.is_some(), "count": image_count},
+        "scope": scope,
+        "screenshots": {"requested": screenshots.is_some(), "count": image_count, "null_count": null_image_count},
         "tokens": {"categories": categories, "counts": Value::Object(counts)},
         "assets": {"requested": assets.is_some(), "count": asset_count},
         "warnings": warnings,
@@ -566,6 +642,7 @@ fn package_base(
         "source": source.to_json(),
         "file": file_summary(data),
         "target": figma::node_summary(target),
+        "scope": scope_contract(target),
         "implementation_target": implementation_target(platform, asset_format),
         "screen_candidates": screen_candidates(target),
         "component_candidates": component_candidates(target),

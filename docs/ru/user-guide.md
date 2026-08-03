@@ -23,7 +23,9 @@
 ограниченным Projects endpoints или доступа к команде. Для библиотек и
 проверок файлов дополнительно нужны `team_library_content:read` и
 `file_content:read`. Ссылка `/files/<browser-root>` не позволяет публичному
-REST API определить команду и блокируется без сетевого запроса.
+REST API определить команду и блокируется без сетевого запроса. `url parse` и
+MCP `parse_figma_url` помечают это как `catalog_eligible=false` и
+`browser_root_not_enumerable`.
 
 ## Установка из исходников
 
@@ -166,16 +168,21 @@ fighorse design package "https://www.figma.com/design/<fileKey>/<name>?node-id=<
 
 - `source`: разобранный file key и node id.
 - `file` и `target`: метаданные и сводка по выбранному узлу.
+- `scope`: готова ли выбранная цель к реализации или её нужно сузить.
 - `implementation_target`: предположения о платформе и формате ассетов.
-- `screen_candidates` и `component_candidates`: вероятные фреймы/компоненты для изучения или экспорта.
+- `screen_candidates` и `component_candidates`: вероятные фреймы/компоненты для изучения, сужения или экспорта.
 - `fidelity_workflow`: шаги визуальной верификации.
 - `asset_export_plan`: предложенные CLI и MCP вызовы экспорта ассетов.
 - `learned_experience`: локальные уроки из предыдущих запусков.
 - `token_confidence`, `missing_font_diagnostics` и `implementation_risk_checklist`: AI-готовые проверки перед кодированием.
 - `context`, `tokens`, `screenshots` и опциональные `assets`.
-- `diagnostics`: предупреждения об отсутствующей платформе, формате ассетов, CANVAS-целях, усечении, отсутствующих скриншотах или токенах.
+- `diagnostics`: предупреждения об отсутствующей платформе, формате ассетов, SECTION/CANVAS-целях, усечении, `null_count` скриншотов, отсутствующих скриншотах или токенах.
 
-Если платформа или формат ассетов неизвестны, спросите разработчика перед реализацией. PNG — резервный вариант рендеринга, не автоматическое продуктовое решение.
+Если `SECTION`, `CANVAS`, `DOCUMENT` или `SELECTION` возвращает
+`scope.status=needs_narrowing`, выберите узел `screen_candidates` с
+`implementable=true` и снова запросите пакет для него. Если платформа или
+формат ассетов неизвестны, спросите разработчика перед реализацией. PNG —
+резервный вариант рендеринга, не автоматическое продуктовое решение.
 
 ## Экспорт ассетов
 

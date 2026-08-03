@@ -31,6 +31,8 @@ design URL; CLI и MCP вызывают одну async-функцию. Она а
 пользователя, сохраняет частичные результаты проектов, библиотек и file probes
 и выдаёт только ограниченную структурированную диагностику. Каталог не
 кэширует, не скачивает всё содержимое и не обходит scopes или доступ команды.
+URL parsing раскрывает `catalog_eligible` и `browser_root_not_enumerable`,
+чтобы клиенты не отправляли `/files/<browser-root>` в каталог.
 
 ## Основной принцип: CLI — ядро, MCP — оболочка
 
@@ -91,7 +93,7 @@ fighorse поддерживает явный OpenAPI operation registry для �
 - Токены и подсказки по реализации.
 - Figma render-референсы и опциональные URL ассетов.
 - Предположения о платформе и формате ассетов.
-- Кандидаты на screen и component.
+- Scope, кандидаты на screen и component.
 - План экспорта с примерами CLI и MCP-вызовов.
 - Локальный изученный опыт.
 - Confidence токенов, диагностика отсутствующих шрифтов и чеклист рисков реализации.
@@ -104,9 +106,14 @@ fighorse поддерживает явный OpenAPI operation registry для �
 - Отсутствующий `platform`.
 - Отсутствующий `asset_format`.
 - Неподдерживаемый render-формат для рендеринга нод Figma.
-- Целевая нода — широкий `CANVAS` или страница user-flow.
+- Целевая нода — широкий `SECTION`, `CANVAS` или страница user-flow с `scope.status=needs_narrowing`.
 - Усечение контекста из-за бюджета токенов.
-- Отсутствующие скриншоты, токены или image fills.
+- Отсутствующие скриншоты, screenshot `null_count`, токены или image fills.
+
+Когда `scope.status=needs_narrowing`, AI-клиент должен выбрать узел
+`screen_candidates` с `implementable=true` и повторно вызвать
+`get_design_package`. fighorse не заменяет контейнер произвольным дочерним
+frame без явного выбора.
 
 `visual_audit` и `project playbook` расширяют пакет до полного feedback loop. `visual_audit` превращает Figma URL плюс опциональный скриншот приложения в структурированный чеклист сравнения и предложения по опыту. `project playbook` объединяет AI-контракт, output policy, покрытие API и локальные уроки в reusable project instructions.
 

@@ -8,7 +8,9 @@
 要求用户逐个打开文件。保留其 `ready`、`partial`、`blocked` 诊断，让
 用户选定具体文件后再调用 `get_design_package`。不得把
 `/files/<browser-root>` 当作团队 ID，也不得把目录中的 ID、名称、key、
-URL 或私有内容写入可复用经验。
+URL 或私有内容写入可复用经验。必须先读取 `parse_figma_url` 字段：
+`catalog_eligible=true` 才允许调用目录，`browser_root_not_enumerable`
+表示应要求用户提供团队/项目 URL 或具体设计 URL。
 
 ## 客户端设置
 
@@ -192,7 +194,8 @@ MCP Figma 写入模式和本地文件系统写入模式是独立的。
 
 - `implementation_target`：平台和资产格式假设及警告。
 - `target`：选定节点的身份、类型、尺寸，以及是否可能太宽泛。
-- `screen_candidates` 和 `component_candidates`：可能需要检查、缩小或导出的 frame/component。
+- `scope`：`ready_to_implement` 或 `needs_narrowing`。
+- `screen_candidates` 和 `component_candidates`：可能需要检查、缩小或导出的 frame/component；缩小时使用 `implementable=true` 的候选。
 - `context`：用于实现的精简设计数据。
 - `tokens`：提取的颜色、排版、间距和效果。
 - `token_confidence` 和 `missing_font_diagnostics`：token/字体可靠性的质量信号。
@@ -200,9 +203,12 @@ MCP Figma 写入模式和本地文件系统写入模式是独立的。
 - `asset_export_plan`：精确的下一步导出命令和 MCP 调用。
 - `learned_experience`：之前运行学到的经验。
 - `implementation_risk_checklist`：在最终确定前需要验证的具体风险。
-- `diagnostics`：就绪状态和警告。
+- `diagnostics`：就绪状态、警告和截图 `null_count`。
 
-如果 `diagnostics.status` 不是 `ready`，尽可能在编码前按照警告操作。CANVAS 或用户流程目标通常应缩小到具体的移动/web frame。
+如果 `SECTION`、`CANVAS`、`DOCUMENT` 或 `SELECTION` 返回
+`scope.status=needs_narrowing`，用 `implementable=true` 的
+`screen_candidates` 节点再次调用 `get_design_package`。如果
+`diagnostics.status` 不是 `ready`，尽可能在编码前按照警告操作。
 
 ## 视觉保真循环
 

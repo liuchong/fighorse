@@ -22,7 +22,9 @@
 或团队访问权，不能武断归因。设计库与文件探测还分别需要
 `team_library_content:read` 和 `file_content:read`。只有
 `/files/<browser-root>` 的链接无法通过公共 REST API 反查团队，命令会在
-不发网络请求的情况下返回 `blocked`。
+不发网络请求的情况下返回 `blocked`。`url parse` 和 MCP
+`parse_figma_url` 会把它标为 `catalog_eligible=false` 与
+`browser_root_not_enumerable`。
 
 ## 从源码安装
 
@@ -164,16 +166,20 @@ fighorse design package "https://www.figma.com/design/<fileKey>/<name>?node-id=<
 
 - `source`：解析后的文件 key 和节点 id。
 - `file` 和 `target`：元数据和选定节点摘要。
+- `scope`：当前目标是否可直接实现，或是否需要缩小范围。
 - `implementation_target`：平台和资产格式假设。
-- `screen_candidates` 和 `component_candidates`：可能需要检查或导出的 frame/component。
+- `screen_candidates` 和 `component_candidates`：可能需要检查、缩小或导出的 frame/component。
 - `fidelity_workflow`：视觉验证步骤。
 - `asset_export_plan`：建议的 CLI 和 MCP 资产导出调用。
 - `learned_experience`：之前运行学到的本地经验。
 - `token_confidence`、`missing_font_diagnostics` 和 `implementation_risk_checklist`：编码前的 AI 就绪检查。
 - `context`、`tokens`、`screenshots` 和可选的 `assets`。
-- `diagnostics`：缺少平台、缺少资产格式、CANVAS 目标、截断、缺少截图或缺少 token 的警告。
+- `diagnostics`：缺少平台、缺少资产格式、SECTION/CANVAS 目标、截断、截图 `null_count`、缺少截图或缺少 token 的警告。
 
-如果平台或资产格式未知，请在实现前询问开发者。PNG 是渲染回退，不是自动的产品决策。
+如果 `SECTION`、`CANVAS`、`DOCUMENT` 或 `SELECTION` 返回
+`scope.status=needs_narrowing`，从 `screen_candidates` 中选择
+`implementable=true` 的节点并重新请求该节点的设计包。如果平台或资产格式未知，
+请在实现前询问开发者。PNG 是渲染回退，不是自动的产品决策。
 
 ## 导出资产
 

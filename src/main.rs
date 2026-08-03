@@ -235,8 +235,8 @@ Self Discovery and AI Replication:
   discover [--format json|md]                  Describe capabilities for AI tools
   doctor [--format json]                       Check runtime/auth readiness
   smoke <figma-url>                            Verify real Figma access and design package readiness
-  url parse <figma-url>                        Parse file_key and node_id
-  design package <figma-url> [--platform P] [--asset-format F]  Build AI replication package
+  url parse <figma-url>                        Parse file_key/node_id plus url_role/catalog_eligible/next_action
+  design package <figma-url> [--platform P] [--asset-format F]  Build AI replication package with scope/needs_narrowing diagnostics
   resource catalog <team-or-project-url> [--probe-file-access]  Enumerate accessible design resources
   mcp config [--client C] [--transport T]      Emit MCP client config
   figma-api coverage [--format json|md]        Report official Figma REST OpenAPI coverage
@@ -319,7 +319,9 @@ Projects:
   team_library_content:read; optional depth-1 probes require file_content:read.
   Parse /files/.../team/<team-id> with `url parse`; enumeration may require
   Figma Projects endpoint approval. /files/<browser-root> alone
-  cannot be used to discover team IDs through the public REST API.
+  cannot be used to discover team IDs through the public REST API and returns
+  browser_root_not_enumerable. SECTION/CANVAS design packages use
+  scope.status=needs_narrowing; choose screen_candidates where implementable=true.
 
 Users:
   me                                            Get current user

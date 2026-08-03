@@ -167,6 +167,75 @@ fn resource_catalog_contract_is_synchronized_across_user_and_ai_surfaces() {
 }
 
 #[test]
+fn routing_and_design_scope_contracts_are_synchronized() {
+    for path in [
+        "src/url.rs",
+        "src/mcp/tools_extra.json",
+        "src/discovery.rs",
+        "src/guidance.rs",
+        "src/main.rs",
+        "src/install/skill.md",
+        "src/install/agents.md",
+        "docs/specs/figma-url-routing-contract.md",
+        ".agents/experience/figma-browser-url-boundaries.md",
+    ] {
+        let text = read(path);
+        for token in ["url_role", "catalog_eligible", "next_action"] {
+            assert!(
+                text.contains(token),
+                "{path} omits URL routing token {token}"
+            );
+        }
+        assert!(
+            text.contains("browser_root_not_enumerable"),
+            "{path} omits browser-root routing error code"
+        );
+    }
+
+    for path in [
+        "src/product/design_package.rs",
+        "src/mcp/tools_extra.json",
+        "src/discovery.rs",
+        "src/guidance.rs",
+        "src/install/skill.md",
+        "src/install/agents.md",
+        "docs/specs/design-package-contract.md",
+    ] {
+        let text = read(path);
+        for token in ["scope", "needs_narrowing", "implementable", "null_count"] {
+            assert!(
+                text.contains(token),
+                "{path} omits design scope token {token}"
+            );
+        }
+        assert!(
+            text.contains("SECTION"),
+            "{path} omits SECTION narrowing guidance"
+        );
+    }
+
+    let mut user_docs = vec![("README.md".to_string(), read("README.md"))];
+    for name in [
+        "README.md",
+        "user-guide.md",
+        "ai-client-guide.md",
+        "design.md",
+    ] {
+        user_docs.extend(localized(name));
+    }
+    for (path, text) in user_docs {
+        assert!(
+            text.contains("catalog_eligible") && text.contains("browser_root_not_enumerable"),
+            "{path} omits machine-readable URL routing guidance"
+        );
+        assert!(
+            text.contains("needs_narrowing") && text.contains("SECTION"),
+            "{path} omits container narrowing guidance"
+        );
+    }
+}
+
+#[test]
 fn docs_distinguish_streamable_http_event_streams_from_legacy_sse() {
     let mut paths = vec!["README.md".to_string()];
     for language in ["en", "zh", "ru"] {

@@ -31,12 +31,14 @@ fighorse quickstart
 fighorse resource catalog "https://www.figma.com/files/<root>/team/<team-id>"
 ```
 
-В MCP ей соответствует `get_resource_catalog`. Отчёт содержит проекты, файлы,
+В MCP ей соответствует `get_resource_catalog`. Сначала используйте `url parse`
+или MCP `parse_figma_url`: `catalog_eligible=true` ведёт в каталог, а
+`browser_root_not_enumerable` означает, что по `/files/<browser-root>`
+публичный REST API не может определить команду. Отчёт содержит проекты, файлы,
 ветки и библиотеки команды, а состояние задаётся как `ready`, `partial` или
 `blocked`. Для проектов нужен `projects:read`, для библиотек —
 `team_library_content:read`, для опциональной проверки
-`--probe-file-access` — `file_content:read`. По ссылке
-`/files/<browser-root>` публичный REST API не может определить команду.
+`--probe-file-access` — `file_content:read`.
 
 ```bash
 fighorse quickstart "https://www.figma.com/design/<fileKey>/<name>?node-id=<node-id>"
@@ -49,6 +51,10 @@ fighorse design package "https://www.figma.com/design/<fileKey>/<name>?node-id=<
   --platform <target-platform> \
   --asset-format <asset-format>
 ```
+
+Если пакет возвращает `scope.status=needs_narrowing` для `SECTION`, `CANVAS`,
+`DOCUMENT` или `SELECTION`, выберите элемент `screen_candidates` с
+`implementable=true` и снова запустите `design package` для этого узла.
 
 Экспортируйте визуальные ассеты:
 

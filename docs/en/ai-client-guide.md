@@ -9,7 +9,10 @@ When the user supplies a team or project browser URL, call readonly
 `ready`/`partial`/`blocked` diagnostics and let the user select a concrete file
 before calling `get_design_package`. Do not treat `/files/<browser-root>` as a
 team ID, and do not record catalog IDs, names, keys, URLs, or private content
-as reusable experience.
+as reusable experience. Always read `parse_figma_url` fields first:
+`catalog_eligible=true` permits catalog calls, while
+`browser_root_not_enumerable` means ask for a team/project URL or a concrete
+design URL.
 
 ## Client Setup
 
@@ -193,7 +196,8 @@ Treat `get_design_package` as the implementation source of truth. Important fiel
 
 - `implementation_target`: platform and asset-format assumptions plus warnings.
 - `target`: selected node identity, type, dimensions, and whether it is likely too broad.
-- `screen_candidates` and `component_candidates`: likely frames/components to inspect, narrow to, or export.
+- `scope`: `ready_to_implement` or `needs_narrowing`.
+- `screen_candidates` and `component_candidates`: likely frames/components to inspect, narrow to, or export. Use `implementable=true` candidates for narrowing.
 - `context`: compact design data for implementation.
 - `tokens`: extracted colors, typography, spacing, and effects.
 - `token_confidence` and `missing_font_diagnostics`: quality signals for token/font reliability.
@@ -201,9 +205,12 @@ Treat `get_design_package` as the implementation source of truth. Important fiel
 - `asset_export_plan`: exact next export commands and MCP calls.
 - `learned_experience`: lessons from previous runs.
 - `implementation_risk_checklist`: concrete risks to verify before finalizing.
-- `diagnostics`: readiness status and warnings.
+- `diagnostics`: readiness status, warnings, and screenshot `null_count`.
 
-If `diagnostics.status` is not `ready`, follow the warnings before coding when possible. A CANVAS or user-flow target should usually be narrowed to a concrete mobile/web frame.
+If `scope.status=needs_narrowing` for a `SECTION`, `CANVAS`, `DOCUMENT`, or
+`SELECTION`, call `get_design_package` again with a `screen_candidates` node
+where `implementable=true`. If `diagnostics.status` is not `ready`, follow the
+warnings before coding when possible.
 
 ## Visual Fidelity Loop
 

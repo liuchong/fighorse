@@ -35,8 +35,10 @@ pub fn ai_contract() -> Value {
         "must": [
             "Call discover_fighorse or `fighorse discover --format json` before using low-level tools.",
             "Call list_experiences or `fighorse experience summary` before implementation and after a mismatch.",
+            "After parse_figma_url, follow url_role/catalog_eligible/next_action. A browser_root_not_enumerable result cannot be used for get_resource_catalog.",
             "For a Figma team/project browser URL, call get_resource_catalog or `fighorse resource catalog` before selecting a concrete file; preserve ready/partial/blocked diagnostics.",
             "Use get_design_package or `fighorse design package` as the default source of truth for implementation.",
+            "If get_design_package returns scope.status=needs_narrowing for SECTION, CANVAS, DOCUMENT, or SELECTION, choose a screen_candidates item with implementable=true and call get_design_package again.",
             "Pass platform and asset_format explicitly; if either is unknown, ask the developer before implementing.",
             "Treat learned experiences as transferable patterns, not fixed rules for one project, design, or platform; adapt them to the current target.",
             "Apply platform-specific lessons only when the current target platform matches or the developer confirms the analogy.",
@@ -55,6 +57,7 @@ pub fn ai_contract() -> Value {
             "Do not bypass fighorse export path validation or local-write mode when writing assets.",
             "Do not ignore diagnostics warnings, especially CANVAS/page scope, truncation, missing screenshots, missing tokens, or unknown platform.",
             "Do not treat /files/<browser-root> as a team ID or record private catalog IDs, names, keys, URLs, or content as reusable experience.",
+            "Do not treat screenshot diagnostics null_count as a usable screenshot; narrow container targets instead of falling back to get_node for implementation.",
             "Do not hard-code lessons from a previous project, brand, screen, or framework into an unrelated design.",
             "Do not discard lessons from visual debugging; persist reusable findings through the experience interface."
         ],

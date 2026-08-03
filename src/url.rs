@@ -125,6 +125,22 @@ impl ParsedUrl {
         let mut map = serde_json::Map::new();
         map.insert("valid".into(), Value::Bool(self.valid));
         map.insert("input".into(), Value::String(self.input.clone()));
+        map.insert(
+            "url_role".into(),
+            Value::String(self.url_role().to_string()),
+        );
+        map.insert(
+            "catalog_eligible".into(),
+            Value::Bool(self.catalog_eligible()),
+        );
+        map.insert("design_target".into(), Value::Bool(self.design_target()));
+        map.insert(
+            "next_action".into(),
+            Value::String(self.next_action().to_string()),
+        );
+        if let Some(code) = self.error_code() {
+            map.insert("error_code".into(), Value::String(code.to_string()));
+        }
         if let Some(k) = &self.kind {
             map.insert("kind".into(), Value::String(k.clone()));
         }
@@ -156,6 +172,51 @@ impl ParsedUrl {
             map.insert("error".into(), Value::String(err.clone()));
         }
         Value::Object(map)
+    }
+
+    fn url_role(&self) -> &'static str {
+        if self.kind.as_deref() == Some("file_key") && self.file_key.is_some() {
+            return "file_key";
+        }
+        if self.file_key.is_some() {
+            return "design_target";
+        }
+        if self.team_id.is_some() {
+            return "team_browser";
+        }
+        if self.project_id.is_some() {
+            return "project_browser";
+        }
+        if self.kind.as_deref() == Some("files") && self.browser_root_id.is_some() {
+            return "browser_root";
+        }
+        "unknown"
+    }
+
+    fn catalog_eligible(&self) -> bool {
+        self.file_key.is_none() && (self.team_id.is_some() || self.project_id.is_some())
+    }
+
+    fn design_target(&self) -> bool {
+        self.file_key.is_some()
+    }
+
+    fn next_action(&self) -> &'static str {
+        match self.url_role() {
+            "browser_root" => "ask_for_team_or_file_url",
+            "team_browser" | "project_browser" => "get_resource_catalog",
+            "design_target" | "file_key" => "get_design_package",
+            _ => "ask_for_figma_url",
+        }
+    }
+
+    fn error_code(&self) -> Option<&'static str> {
+        match self.url_role() {
+            "browser_root" => Some("browser_root_not_enumerable"),
+            "team_browser" | "project_browser" => Some("browser_url_not_design_target"),
+            _ if !self.valid => Some("figma_file_key_not_found"),
+            _ => None,
+        }
     }
 }
 
@@ -445,6 +506,12 @@ mod tests {
                 .unwrap_or("")
                 .contains("cannot discover team IDs")
         );
+        let json = p.to_json();
+        assert_eq!(json["url_role"], "browser_root");
+        assert_eq!(json["catalog_eligible"], false);
+        assert_eq!(json["design_target"], false);
+        assert_eq!(json["next_action"], "ask_for_team_or_file_url");
+        assert_eq!(json["error_code"], "browser_root_not_enumerable");
     }
 
     #[test]
@@ -463,7 +530,12 @@ mod tests {
         assert!(error.contains("resource catalog"), "{error}");
         assert!(error.contains("projects:read"), "{error}");
         assert!(error.contains("403"), "{error}");
-        assert_eq!(p.to_json()["team_id"].as_str(), Some("team-id-placeholder"));
+        let json = p.to_json();
+        assert_eq!(json["team_id"].as_str(), Some("team-id-placeholder"));
+        assert_eq!(json["url_role"], "team_browser");
+        assert_eq!(json["catalog_eligible"], true);
+        assert_eq!(json["design_target"], false);
+        assert_eq!(json["next_action"], "get_resource_catalog");
     }
 
     #[test]
@@ -476,6 +548,27 @@ mod tests {
             p.to_json()["project_id"].as_str(),
             Some("project-id-placeholder")
         );
+        assert_eq!(p.to_json()["url_role"], "project_browser");
+        assert_eq!(p.to_json()["catalog_eligible"], true);
+        assert_eq!(p.to_json()["next_action"], "get_resource_catalog");
+    }
+
+    #[test]
+    fn parse_design_and_file_key_urls_route_to_design_package() {
+        let selected = parse_figma_url(
+            "https://www.figma.com/design/SApEHB4JyKN2I8PpMYfgbK/Intent?node-id=376-5412",
+        )
+        .to_json();
+        assert_eq!(selected["url_role"], "design_target");
+        assert_eq!(selected["catalog_eligible"], false);
+        assert_eq!(selected["design_target"], true);
+        assert_eq!(selected["next_action"], "get_design_package");
+
+        let file_key = parse_figma_url("abc123").to_json();
+        assert_eq!(file_key["url_role"], "file_key");
+        assert_eq!(file_key["catalog_eligible"], false);
+        assert_eq!(file_key["design_target"], true);
+        assert_eq!(file_key["next_action"], "get_design_package");
     }
 
     #[test]

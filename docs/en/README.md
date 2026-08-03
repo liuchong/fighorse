@@ -31,12 +31,14 @@ the read-only resource catalog:
 fighorse resource catalog "https://www.figma.com/files/<root>/team/<team-id>"
 ```
 
-MCP exposes the same report as `get_resource_catalog`: projects, files,
-branches, team libraries, and `ready`/`partial`/`blocked` diagnostics.
+MCP exposes the same report as `get_resource_catalog`. First use `url parse` or
+MCP `parse_figma_url`: `catalog_eligible=true` routes to catalog, while
+`browser_root_not_enumerable` means the `/files/<browser-root>` URL cannot
+reveal a team through the public REST API. Catalog output includes projects,
+files, branches, team libraries, and `ready`/`partial`/`blocked` diagnostics.
 Enumeration needs `projects:read`; libraries need
 `team_library_content:read`; optional `--probe-file-access` needs
-`file_content:read`. `/files/<browser-root>` alone cannot reveal a team through
-the public REST API.
+`file_content:read`.
 
 ```bash
 fighorse quickstart "https://www.figma.com/design/<fileKey>/<name>?node-id=<node-id>"
@@ -49,6 +51,10 @@ fighorse design package "https://www.figma.com/design/<fileKey>/<name>?node-id=<
   --platform <target-platform> \
   --asset-format <asset-format>
 ```
+
+If the package returns `scope.status=needs_narrowing` for a `SECTION`, `CANVAS`,
+`DOCUMENT`, or `SELECTION`, choose a `screen_candidates` item with
+`implementable=true` and run `design package` again for that node.
 
 Export visual assets:
 

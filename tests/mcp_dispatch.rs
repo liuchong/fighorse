@@ -106,6 +106,19 @@ async fn mcp_dispatch_end_to_end() {
     let tree_text = tree["result"]["content"][0]["text"].as_str().unwrap();
     assert!(tree_text.contains("\"type\": \"DOCUMENT\""));
 
+    let parsed_browser_root = dispatch(&json!({"jsonrpc":"2.0","id":11,"method":"tools/call",
+    "params":{"name":"parse_figma_url","arguments":{
+        "figma_url":"https://www.figma.com/files/browser-root-placeholder"
+    }}}))
+    .await
+    .unwrap();
+    let parsed_text = parsed_browser_root["result"]["content"][0]["text"]
+        .as_str()
+        .unwrap();
+    assert!(parsed_text.contains("\"url_role\": \"browser_root\""));
+    assert!(parsed_text.contains("\"catalog_eligible\": false"));
+    assert!(parsed_text.contains("\"next_action\": \"ask_for_team_or_file_url\""));
+
     // Resource catalog is readonly and routes through the shared product layer.
     let catalog = dispatch(&json!({"jsonrpc":"2.0","id":6,"method":"tools/call",
     "params":{"name":"get_resource_catalog","arguments":{

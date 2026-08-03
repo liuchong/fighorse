@@ -4,6 +4,8 @@
 - Then call `check_fighorse_ready` or `fighorse doctor --format json`. If `auth.has_token` is false, tell the user to run `fighorse auth login --token <FIGMA_TOKEN>` or set `FIGMA_TOKEN`; do not retry Figma API calls until setup is fixed.
 - Load local lessons with `list_experiences` before using `get_design_package`.
 - Use `platform` and `asset_format` explicitly; ask if unknown.
+- After `parse_figma_url`, follow `url_role`, `catalog_eligible`, and `next_action`; `/files/<browser-root>` returns `browser_root_not_enumerable` and must not be sent to catalog.
+- If `get_design_package` returns `scope.status=needs_narrowing` for SECTION/CANVAS/DOCUMENT/SELECTION, choose `screen_candidates[].id` where `implementable=true` and call `get_design_package` again. Treat `diagnostics.screenshots.null_count` as missing screenshot data.
 - Prefer the installed shared HTTP MCP endpoint `http://127.0.0.1:9449/mcp`; avoid starting duplicate long-lived stdio servers unless a client requires compatibility mode.
 - If an expected tool is missing after install, upgrade, or service restart, reconnect the MCP client and request `tools/list` again before deciding the feature is unavailable; clients can cache old tool lists for an active session.
 - The shared endpoint uses official Rust `rmcp` 2.2 Streamable HTTP with independent stateful sessions, Host/Origin validation, JSON or event-stream response negotiation, and graceful shutdown. Legacy `/sse` and `/messages` endpoints are retired; `--transport sse` must fail and migrate to HTTP.

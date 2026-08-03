@@ -9,7 +9,9 @@
 Сохраняйте диагностику `ready`/`partial`/`blocked`; после выбора конкретного
 файла вызывайте `get_design_package`. Не считайте `/files/<browser-root>` ID
 команды и не записывайте ID, имена, ключи, URL или приватное содержимое
-каталога в переиспользуемый опыт.
+каталога в переиспользуемый опыт. Сначала читайте поля `parse_figma_url`:
+`catalog_eligible=true` разрешает каталог, а `browser_root_not_enumerable`
+означает, что нужно попросить URL команды/проекта или конкретный design URL.
 
 ## Настройка клиента
 
@@ -193,7 +195,8 @@ fighorse code-connect publish --documents docs.json --dry-run
 
 - `implementation_target`: предположения о платформе и формате ассетов плюс предупреждения.
 - `target`: идентификация выбранного узла, тип, размеры и вероятность, что он слишком широк.
-- `screen_candidates` и `component_candidates`: вероятные фреймы/компоненты для изучения, сужения или экспорта.
+- `scope`: `ready_to_implement` или `needs_narrowing`.
+- `screen_candidates` и `component_candidates`: вероятные фреймы/компоненты для изучения, сужения или экспорта; для сужения используйте кандидаты с `implementable=true`.
 - `context`: компактные данные дизайна для реализации.
 - `tokens`: извлеченные цвета, типографика, отступы и эффекты.
 - `token_confidence` и `missing_font_diagnostics`: сигналы качества для надежности токенов/шрифтов.
@@ -201,9 +204,12 @@ fighorse code-connect publish --documents docs.json --dry-run
 - `asset_export_plan`: точные следующие команды экспорта и MCP-вызовы.
 - `learned_experience`: уроки из предыдущих запусков.
 - `implementation_risk_checklist`: конкретные риски для проверки перед финализацией.
-- `diagnostics`: статус готовности и предупреждения.
+- `diagnostics`: статус готовности, предупреждения и screenshot `null_count`.
 
-Если `diagnostics.status` не `ready`, следуйте предупреждениям перед кодированием, когда возможно. CANVAS или цель пользовательского потока обычно должна быть сужена до конкретного мобильного/web-фрейма.
+Если `SECTION`, `CANVAS`, `DOCUMENT` или `SELECTION` возвращает
+`scope.status=needs_narrowing`, снова вызовите `get_design_package` с узлом
+`screen_candidates`, где `implementable=true`. Если `diagnostics.status` не
+`ready`, следуйте предупреждениям перед кодированием, когда возможно.
 
 ## Цикл визуальной точности
 

@@ -31,11 +31,13 @@ fighorse quickstart
 fighorse resource catalog "https://www.figma.com/files/<root>/team/<team-id>"
 ```
 
-MCP 中对应 `get_resource_catalog`。结果包含项目、文件、分支、团队设计库，
-并用 `ready`、`partial`、`blocked` 明确表示完整、部分成功或受阻。
+MCP 中对应 `get_resource_catalog`。先使用 `url parse` 或 MCP
+`parse_figma_url`：`catalog_eligible=true` 才进入资源目录，
+`browser_root_not_enumerable` 表示 `/files/<browser-root>` 无法通过公共
+REST API 反查团队。结果包含项目、文件、分支、团队设计库，并用
+`ready`、`partial`、`blocked` 明确表示完整、部分成功或受阻。
 项目枚举需要 `projects:read`，设计库需要 `team_library_content:read`，
 可选的 `--probe-file-access` 深度 1 探测需要 `file_content:read`。
-只有 `/files/<browser-root>` 的链接无法通过公共 REST API 反查团队。
 
 ```bash
 fighorse quickstart "https://www.figma.com/design/<fileKey>/<name>?node-id=<node-id>"
@@ -48,6 +50,10 @@ fighorse design package "https://www.figma.com/design/<fileKey>/<name>?node-id=<
   --platform <target-platform> \
   --asset-format <asset-format>
 ```
+
+如果包中返回 `scope.status=needs_narrowing`，且目标是 `SECTION`、
+`CANVAS`、`DOCUMENT` 或 `SELECTION`，从 `screen_candidates` 里选择
+`implementable=true` 的节点，再对该节点重新运行 `design package`。
 
 导出视觉资产：
 

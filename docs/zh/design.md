@@ -29,7 +29,9 @@ fighorse 的目标是提供一个白盒数据管道，具有三个渐进层次�
 项目、browser-root 和具体设计 URL；CLI 与 MCP 调用同一个异步函数。
 它先做不回传身份信息的用户验证探测，保留项目、设计库和文件探测的部分
 成功结果，只输出有界的结构化诊断。它不缓存、不批量下载，也不绕过 Figma
-scope 和团队访问权。
+scope 和团队访问权。URL 解析会暴露 `catalog_eligible` 和
+`browser_root_not_enumerable`，让客户端避免把 `/files/<browser-root>`
+误送进目录工具。
 
 ## 核心原则：CLI 内核，MCP 外壳
 
@@ -90,7 +92,7 @@ fighorse 为公共 Figma REST 快照维护一个显式的 OpenAPI 操作注册�
 - Token 和实现提示。
 - Figma 渲染参考和可选的资产 URL。
 - 平台和资产格式假设。
-- Screen 和 component 候选。
+- Scope、screen 和 component 候选。
 - 带 CLI 示例和 MCP 调用的导出计划。
 - 本地学习到的经验。
 - Token 置信度、缺失字体诊断和实现风险检查清单。
@@ -103,9 +105,13 @@ fighorse 为公共 Figma REST 快照维护一个显式的 OpenAPI 操作注册�
 - 缺少 `platform`。
 - 缺少 `asset_format`。
 - Figma 节点渲染不支持的渲染格式。
-- 目标节点是宽泛的 `CANVAS` 或用户流程页面。
+- 目标节点是宽泛的 `SECTION`、`CANVAS` 或用户流程页面，且 `scope.status=needs_narrowing`。
 - 由于 token 预算导致的上下文截断。
-- 缺少截图、token 或图片 fill。
+- 缺少截图、截图 `null_count`、token 或图片 fill。
+
+当 `scope.status=needs_narrowing` 时，AI 客户端应选择
+`screen_candidates` 中 `implementable=true` 的节点并重新调用
+`get_design_package`。fighorse 不会静默把容器替换成任意子 frame。
 
 `visual_audit` 和 `project playbook` 将包扩展为完整的反馈循环。`visual_audit` 将 Figma URL 加可选的应用截图转化为结构化比较检查清单和经验建议。`project playbook` 将 AI 契约、输出策略、API 覆盖和本地经验组合为可复用的项目指令。
 

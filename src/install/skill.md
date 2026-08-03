@@ -22,13 +22,13 @@ Figma API calls require a Figma Personal Access Token. Before calling Figma API 
 
 ## Replication
 
-Use `get_design_package` or `fighorse design package <figma-url> --platform <platform> --asset-format <format>` as the main context source. Prioritize screenshots, learned_experience, explicit typography, tokens, compact tree metadata, then assets. Use screen_candidates/component_candidates to narrow broad canvas or flow nodes before coding.
+Use `get_design_package` or `fighorse design package <figma-url> --platform <platform> --asset-format <format>` as the main context source. Prioritize screenshots, learned_experience, explicit typography, tokens, compact tree metadata, then assets. If `scope.status=needs_narrowing` for a SECTION, CANVAS, DOCUMENT, or SELECTION, choose `screen_candidates[].id` where `implementable=true` and call `get_design_package` again; `diagnostics.screenshots.null_count` means the render URL was null and is not a usable screenshot.
 
 ## Official REST API
 
 When the task needs a low-level Figma endpoint, call generated MCP tools named `figma_<operation_id_in_snake_case>` or CLI `fighorse figma api <operationId> --params '{...}'`. Readonly tools are available by default; Figma write tools require `FIGHORSE_MCP_MODE=write` or CLI `--yes`.
 
-Figma file-browser links are navigation context, not design targets. For `/files/.../team/<team-id>`, `/project/<project-id>`, or `/files/project/<project-id>`, call readonly `get_resource_catalog`; it enumerates accessible projects, files, branches, and team libraries and returns `ready`, `partial`, or `blocked` with structured permission guidance. Team/project enumeration requires `projects:read` and may require Projects endpoint approval; libraries need `team_library_content:read`, and optional depth-1 file probes need `file_content:read`. A `/files/<browser-root>` URL cannot discover teams through the public REST API. After catalog selection, use a concrete file/selection URL with `get_design_package`. Never record real browser IDs, team/project IDs, file keys, names, URLs, or private catalog content in reusable experience.
+Figma file-browser links are navigation context, not design targets. First call `parse_figma_url` and follow `url_role`, `catalog_eligible`, and `next_action`. For `/files/.../team/<team-id>`, `/project/<project-id>`, or `/files/project/<project-id>`, call readonly `get_resource_catalog`; it enumerates accessible projects, files, branches, and team libraries and returns `ready`, `partial`, or `blocked` with structured permission guidance. Team/project enumeration requires `projects:read` and may require Projects endpoint approval; libraries need `team_library_content:read`, and optional depth-1 file probes need `file_content:read`. A `/files/<browser-root>` URL returns `browser_root_not_enumerable`, `catalog_eligible=false`, and cannot discover teams through the public REST API. After catalog selection, use a concrete file/selection URL with `get_design_package`. Never record real browser IDs, team/project IDs, file keys, names, URLs, or private catalog content in reusable experience.
 
 ## Code Connect
 

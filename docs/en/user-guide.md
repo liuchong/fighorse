@@ -23,7 +23,9 @@ Projects HTTP 403 can mean missing `projects:read`, Projects limited-access
 eligibility, or missing team access. Library and probe access additionally
 need `team_library_content:read` and `file_content:read`. A
 `/files/<browser-root>` URL cannot be converted into a team ID through the
-public REST API and is blocked without a network request.
+public REST API and is blocked without a network request. `url parse` and MCP
+`parse_figma_url` expose this as `catalog_eligible=false` and
+`browser_root_not_enumerable`.
 
 ## Install From Source
 
@@ -166,16 +168,21 @@ The package includes:
 
 - `source`: parsed file key and node id.
 - `file` and `target`: metadata and selected node summary.
+- `scope`: whether the selected target is ready or needs narrowing.
 - `implementation_target`: platform and asset-format assumptions.
-- `screen_candidates` and `component_candidates`: likely frames/components to inspect or export next.
+- `screen_candidates` and `component_candidates`: likely frames/components to inspect, narrow to, or export next.
 - `fidelity_workflow`: visual verification steps.
 - `asset_export_plan`: suggested CLI and MCP asset export calls.
 - `learned_experience`: local lessons from previous runs.
 - `token_confidence`, `missing_font_diagnostics`, and `implementation_risk_checklist`: AI-ready checks before coding.
 - `context`, `tokens`, `screenshots`, and optional `assets`.
-- `diagnostics`: warnings for missing platform, missing asset format, CANVAS targets, truncation, missing screenshots, or missing tokens.
+- `diagnostics`: warnings for missing platform, missing asset format, SECTION/CANVAS targets, truncation, missing screenshots, `null_count`, or missing tokens.
 
-If platform or asset format is unknown, ask the developer before implementation. PNG is a render fallback, not an automatic product decision.
+If `scope.status=needs_narrowing` for a `SECTION`, `CANVAS`, `DOCUMENT`, or
+`SELECTION`, choose a `screen_candidates` item with `implementable=true` and run
+the package command again for that node. If platform or asset format is unknown,
+ask the developer before implementation. PNG is a render fallback, not an
+automatic product decision.
 
 ## Export Assets
 

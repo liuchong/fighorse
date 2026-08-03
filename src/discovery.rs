@@ -181,9 +181,10 @@ pub fn setup_guidance() -> Value {
             "must_check_first": ["discover_fighorse", "check_fighorse_ready"],
             "if_auth_missing": "Do not call Figma API tools yet. Tell the user: fighorse needs a Figma Personal Access Token. Run `fighorse auth login --token <FIGMA_TOKEN>` or set FIGMA_TOKEN, then retry.",
             "if_url_missing": "Ask the user to paste a specific Figma frame/group/component link, not a full canvas link.",
-            "if_browser_root_url": "A `/files/<browser-root>` URL cannot discover team IDs through the public REST API. Ask for a URL containing `/team/<team-id>` or a concrete file/selection URL.",
-            "if_team_browser_url": "Call get_resource_catalog with the URL. It enumerates projects/files and optionally team libraries with structured partial/blocked diagnostics. This requires `projects:read` and may require Figma Projects endpoint approval; HTTP 403 can also mean the token user cannot access the team.",
+            "if_browser_root_url": "parse_figma_url returns url_role=browser_root, catalog_eligible=false, next_action=ask_for_team_or_file_url, and error_code=browser_root_not_enumerable. A `/files/<browser-root>` URL cannot discover team IDs through the public REST API.",
+            "if_team_browser_url": "parse_figma_url returns url_role=team_browser, catalog_eligible=true, and next_action=get_resource_catalog. Call get_resource_catalog with the URL. It enumerates projects/files and optionally team libraries with structured partial/blocked diagnostics. This requires `projects:read` and may require Figma Projects endpoint approval; HTTP 403 can also mean the token user cannot access the team.",
             "if_project_browser_url": "Call get_resource_catalog with the URL to enumerate that project's files without requiring a team ID.",
+            "if_design_package_needs_narrowing": "If get_design_package returns scope.status=needs_narrowing for SECTION/CANVAS/DOCUMENT/SELECTION, choose screen_candidates[].id where implementable=true and call get_design_package again. diagnostics.screenshots.null_count is not a usable screenshot.",
             "if_platform_or_asset_format_missing": "Ask the user for target platform/framework and preferred asset format before implementation.",
             "after_user_fixes_setup": "Call check_fighorse_ready again, then parse_figma_url and get_design_package."
         }
@@ -465,7 +466,7 @@ pub fn doctor() -> Value {
         "mcp_service": mcp_service,
         "setup": setup_guidance(),
         "troubleshooting": {
-            "broad_canvas_target": "If diagnostics mention CANVAS, page, or user-flow target, copy a link to a specific frame, component, or group.",
+            "broad_canvas_target": "If diagnostics or scope mention SECTION, CANVAS, page, or user-flow target with needs_narrowing, copy a link to a specific frame, component, or group. Use screen_candidates where implementable=true; diagnostics.screenshots.null_count means the render URL was null.",
             "token_missing": "Run fighorse auth login --token <FIGMA_TOKEN>. AI clients should surface this exact command when auth.has_token is false.",
             "export_path_rejected": "Use ./.fighorse/exports, ./assets/fighorse, or ~/.fighorse/exports. MCP also requires FIGHORSE_MCP_LOCAL_WRITE=allow.",
             "code_connect_denied": "MCP Code Connect preview/publish requires FIGHORSE_MCP_CODE_CONNECT=allow; publish/unpublish also require FIGHORSE_MCP_MODE=write.",
@@ -566,8 +567,14 @@ pub fn manifest() -> Value {
         "output_contracts": {
             "design_package": {
                 "kind": "fighorse.design-package.v1",
-                "contains": ["source", "file", "target", "implementation_target", "screen_candidates", "component_candidates", "fidelity_workflow", "asset_export_plan", "learned_experience", "context", "tokens", "token_confidence", "missing_font_diagnostics", "screenshots", "assets", "implementation_risk_checklist", "implementation_hints"],
+                "contains": ["source", "file", "target", "scope", "implementation_target", "screen_candidates", "component_candidates", "fidelity_workflow", "asset_export_plan", "learned_experience", "context", "tokens", "token_confidence", "missing_font_diagnostics", "screenshots", "assets", "implementation_risk_checklist", "implementation_hints", "diagnostics.screenshots.null_count"],
+                "scope": "scope.status is ready_to_implement or needs_narrowing; SECTION/CANVAS/DOCUMENT containers require choosing a screen_candidates item where implementable=true.",
                 "best_for": "AI design replication and implementation planning"
+            },
+            "url_parse": {
+                "kind": "fighorse.url-parse.v1",
+                "contains": ["url_role", "catalog_eligible", "design_target", "next_action", "error_code"],
+                "browser_root_error_code": "browser_root_not_enumerable"
             },
             "experience_record": {
                 "kind": experience::RECORD_KIND,
@@ -609,10 +616,10 @@ pub fn manifest() -> Value {
             {"step": 1, "tool": "discover_fighorse", "reason": "Learn available tools and contracts without external instructions."},
             {"step": 2, "tool": "check_fighorse_ready", "reason": "Verify local setup. If auth.has_token is false, prompt the user to run fighorse auth login --token <FIGMA_TOKEN> before calling Figma APIs."},
             {"step": 3, "tool": "list_experiences", "reason": "Load reusable local lessons before repeating known layout, typography, asset, or platform mistakes."},
-            {"step": 4, "tool": "parse_figma_url", "reason": "Extract file_key/node_id from a design URL, or team_id/project_id from a browser URL. `/files/<browser-root>` alone cannot discover teams."},
+            {"step": 4, "tool": "parse_figma_url", "reason": "Extract file_key/node_id from a design URL, or team_id/project_id from a browser URL. Follow url_role, catalog_eligible, next_action, and browser_root_not_enumerable before choosing another tool."},
             {"step": 5, "tool": "get_resource_catalog", "reason": "For team/project browser URLs, enumerate accessible projects, files, branches, and team libraries before selecting a concrete file."},
             {"step": 6, "tool": "get_design_package", "reason": "For a concrete design target, fetch compact structure, screenshots, tokens, platform guidance, learned experience, asset export plan, and implementation hints in one call."},
-            {"step": 6, "action": "If the target is a CANVAS/page/user flow or contains many children, narrow to exact frame/screen nodes before coding.", "reason": "Whole-flow pages are context for navigation, not a single UI surface to implement directly."},
+            {"step": 6, "action": "If scope.status is needs_narrowing for SECTION/CANVAS/DOCUMENT or diagnostics.screenshots.null_count is non-zero, choose a screen_candidates node where implementable=true and call get_design_package again.", "reason": "Whole-flow pages and SECTION containers are context for navigation, not a single UI surface to implement directly."},
             {"step": 7, "action": "Ask the developer for missing platform/framework or asset format before implementation.", "reason": "Platform and asset format change typography, density, vector/raster export, and build-pipeline choices."},
             {"step": 8, "action": "Export assets into a project-local or fighorse-managed directory with manifest enabled.", "reason": "Reasonable output locations avoid permission failures and make generated files discoverable by AI tools and build scripts."},
             {"step": 9, "action": "Implement from the design package.", "reason": "Use screenshots for visual fidelity, context for layout, tokens for styling, and assets for image fills."},

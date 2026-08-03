@@ -30,7 +30,9 @@ store. Source resolution distinguishes team, project, browser-root, and
 concrete design URLs. The same async function backs CLI and MCP, performs an
 anonymous identity probe, preserves partial project/library/probe results, and
 emits only bounded structured diagnostics. It does not cache, bulk-download,
-or bypass Figma scopes and team access.
+or bypass Figma scopes and team access. URL parsing exposes
+`catalog_eligible` and `browser_root_not_enumerable` so clients can avoid
+sending `/files/<browser-root>` to catalog.
 
 ## Core Principle: CLI Kernel, MCP Shell
 
@@ -91,7 +93,7 @@ The generic official layer is separate from product tools. Low-level REST tools 
 - Tokens and implementation hints.
 - Figma render references and optional asset URLs.
 - Platform and asset-format assumptions.
-- Screen and component candidates.
+- Scope, screen candidates, and component candidates.
 - Export plan with CLI examples and MCP calls.
 - Local learned experiences.
 - Token confidence, missing-font diagnostics, and implementation risk checklist.
@@ -104,9 +106,14 @@ Important diagnostics include:
 - Missing `platform`.
 - Missing `asset_format`.
 - Unsupported render format for Figma node rendering.
-- Target node is a broad `CANVAS` or user-flow page.
+- Target node is a broad `SECTION`, `CANVAS`, or user-flow page with `scope.status=needs_narrowing`.
 - Context truncation due to token budget.
-- Missing screenshots, tokens, or image fills.
+- Missing screenshots, screenshot `null_count`, tokens, or image fills.
+
+When `scope.status=needs_narrowing`, AI clients should choose a
+`screen_candidates` node where `implementable=true` and rerun
+`get_design_package`. fighorse does not silently replace a container with an
+arbitrary child frame.
 
 `visual_audit` and `project playbook` extend the package into a full feedback loop. `visual_audit` turns a Figma URL plus optional app screenshot into a structured comparison checklist and experience suggestions. `project playbook` combines the AI contract, output policy, API coverage, and local lessons into reusable project instructions.
 

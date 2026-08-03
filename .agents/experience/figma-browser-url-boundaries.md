@@ -4,12 +4,16 @@ Reusable checks for Figma file-browser links:
 
 - `/files/<browser-root>` is navigation context, not a design target. The
   identifier after `/files/` is not a team ID, and the public REST API cannot
-  discover team IDs from this page.
+  discover team IDs from this page. `parse_figma_url` must expose
+  `url_role=browser_root`, `catalog_eligible=false`, `next_action=ask_for_team_or_file_url`,
+  and `error_code=browser_root_not_enumerable`.
 - `/files/.../team/<team-id>` provides a usable team ID. Enumerate accessible
   resources with readonly `get_resource_catalog`; the same product-layer
   aggregation is available as `fighorse resource catalog`.
 - `/project/<project-id>` and `/files/project/<project-id>` provide a usable
   project ID and can be cataloged directly without first discovering a team.
+- Design/file/proto/board URLs and raw file keys are `design_target=true`,
+  `catalog_eligible=false`, and route through `next_action=get_design_package`.
 - The catalog defaults to projects, files, branches, and paginated team
   components/component sets/styles. Optional depth-1 file probes are bounded
   and return access state/page count rather than raw document trees.
