@@ -148,6 +148,8 @@ fn resource_catalog_contract_is_synchronized_across_user_and_ai_surfaces() {
     for path in [
         "src/main.rs",
         "src/discovery.rs",
+        "src/guidance.rs",
+        "src/install.rs",
         "src/install/skill.md",
         "src/install/agents.md",
         "src/mcp/tools_extra.json",

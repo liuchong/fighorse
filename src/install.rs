@@ -780,7 +780,7 @@ fn install_project_in_transaction(
         },
         "exports": {"scratch": ".fighorse/exports", "packaged": "assets/fighorse", "manifest_required": true},
         "ai": {
-            "default_workflow": ["discover_fighorse", "list_experiences", "get_design_package", "visual_audit", "record_experience"],
+            "default_workflow": ["discover_fighorse", "list_experiences", "get_resource_catalog", "get_design_package", "visual_audit", "record_experience"],
             "must_obey": must_obey,
             "ask_when_missing": ["platform", "asset_format"]
         }
@@ -1507,13 +1507,14 @@ pub fn install_client(
                 "generated_at": now_iso(),
                 "mcp_server": server,
                 "detected": client_detection(&client),
-                "recommended_tool_order": ["discover_fighorse", "check_fighorse_ready", "list_experiences", "get_design_package", "visual_audit", "record_experience"],
+                "recommended_tool_order": ["discover_fighorse", "check_fighorse_ready", "list_experiences", "get_resource_catalog", "get_design_package", "visual_audit", "record_experience"],
                 "ai_contract": guidance::ai_contract(),
                 "notes": [
                     "By default this command writes reviewable snippets only.",
                     "Use --apply to install into detected user-level client config and skill/rule locations.",
                     "The default HTTP transport reuses the installed local MCP service, so multiple AI clients do not spawn separate fighorse processes.",
                     "Use `figma-api coverage` or MCP resource `fighorse://coverage` for exact public REST API coverage.",
+                    "Use get_resource_catalog for team/project browser URLs, then select a concrete file before get_design_package.",
                     "For Codex, apply prefers `codex mcp add` and falls back to a managed TOML block.",
                     "For Cursor, apply uses `cursor --add-mcp`, writes ~/.cursor/mcp.json for Cursor Agent CLI, and attempts `cursor agent mcp enable fighorse`.",
                     "For Kimi, apply prefers `kimi mcp add` and falls back to ~/.kimi/mcp.json."
@@ -1527,7 +1528,7 @@ pub fn install_client(
         "# fighorse {client} install\n\n\
 Main MCP config: `mcp.json`.\n\n\
 Run with `--apply` to install into detected client config and skill locations.\n\n\
-Recommended order: discover_fighorse, check_fighorse_ready, list_experiences, get_design_package, visual_audit, record_experience.\n\
+Recommended order: discover_fighorse, check_fighorse_ready, list_experiences, get_resource_catalog for team/project browser URLs, get_design_package for concrete files, visual_audit, record_experience.\n\
 For exact public REST API calls, inspect `fighorse://coverage` or run `fighorse figma-api coverage`.\n\n\
 ## Complementary: Official Figma MCP\n\n\
 For capabilities not exposed by the public Figma REST API, also install the official Figma Remote MCP.\n\n\

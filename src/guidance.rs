@@ -35,6 +35,7 @@ pub fn ai_contract() -> Value {
         "must": [
             "Call discover_fighorse or `fighorse discover --format json` before using low-level tools.",
             "Call list_experiences or `fighorse experience summary` before implementation and after a mismatch.",
+            "For a Figma team/project browser URL, call get_resource_catalog or `fighorse resource catalog` before selecting a concrete file; preserve ready/partial/blocked diagnostics.",
             "Use get_design_package or `fighorse design package` as the default source of truth for implementation.",
             "Pass platform and asset_format explicitly; if either is unknown, ask the developer before implementing.",
             "Treat learned experiences as transferable patterns, not fixed rules for one project, design, or platform; adapt them to the current target.",
@@ -53,6 +54,7 @@ pub fn ai_contract() -> Value {
             "Do not write generated files to protected system locations, dependency directories, or hard-to-discover temporary locations unless explicitly requested.",
             "Do not bypass fighorse export path validation or local-write mode when writing assets.",
             "Do not ignore diagnostics warnings, especially CANVAS/page scope, truncation, missing screenshots, missing tokens, or unknown platform.",
+            "Do not treat /files/<browser-root> as a team ID or record private catalog IDs, names, keys, URLs, or content as reusable experience.",
             "Do not hard-code lessons from a previous project, brand, screen, or framework into an unrelated design.",
             "Do not discard lessons from visual debugging; persist reusable findings through the experience interface."
         ],
