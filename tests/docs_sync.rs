@@ -110,6 +110,54 @@ fn localized_guides_cover_payloads_transaction_and_skill_targets() {
 }
 
 #[test]
+fn ai_plugin_bundle_contract_is_synchronized_across_surfaces() {
+    for path in [
+        "src/main.rs",
+        "src/discovery.rs",
+        "src/install.rs",
+        "src/install/skill.md",
+        "src/install/agents.md",
+        "docs/specs/ai-plugin-bundle-contract.md",
+    ] {
+        let text = read(path);
+        for token in [
+            "install ai-plugin",
+            "ai-plugin/fighorse",
+            "fighorse-canvas-write",
+            "http://127.0.0.1:9449/mcp",
+        ] {
+            assert!(text.contains(token), "{path} omits AI plugin token {token}");
+        }
+    }
+
+    let mut docs = vec![("README.md".to_string(), read("README.md"))];
+    docs.extend(localized("README.md"));
+    for name in ["user-guide.md", "ai-client-guide.md", "design.md"] {
+        docs.extend(localized(name));
+    }
+    for (path, text) in docs {
+        assert!(
+            text.contains("install ai-plugin"),
+            "{path} omits install ai-plugin"
+        );
+        assert!(
+            text.contains("ai-plugin/fighorse"),
+            "{path} omits ai plugin package path"
+        );
+        assert!(
+            text.contains("fighorse-canvas-write"),
+            "{path} omits workflow skills"
+        );
+        assert!(
+            text.contains("Verified by Cursor")
+                || text.contains("local-only")
+                || text.contains("本地-only"),
+            "{path} omits local-only / not-verified boundary"
+        );
+    }
+}
+
+#[test]
 fn resource_catalog_contract_is_synchronized_across_user_and_ai_surfaces() {
     let mut readmes = vec![("README.md".to_string(), read("README.md"))];
     readmes.extend(localized("README.md"));

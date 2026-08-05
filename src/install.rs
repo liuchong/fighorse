@@ -28,6 +28,7 @@ pub const SUPPORTED_CLIENTS: &[&str] = &[
     "kimi-cli",
     "claude",
     "opencode",
+    "gemini",
     "openclaw",
     "hermes-agent",
     "generic",
@@ -389,6 +390,278 @@ pub fn install_canvas_plugin(home: Option<&str>, apply: bool) -> Result<Value> {
         "files": files,
         "applied": applied,
         "manual_action": "In Figma Desktop, import the generated manifest.json as a development plugin and run fighorse Canvas Bridge."
+    }))
+}
+
+const AI_PLUGIN_SKILLS: &[(&str, &str)] = &[
+    (
+        "fighorse",
+        include_str!("../assets/ai-plugin/skills/fighorse/SKILL.md"),
+    ),
+    (
+        "fighorse-design-to-code",
+        include_str!("../assets/ai-plugin/skills/fighorse-design-to-code/SKILL.md"),
+    ),
+    (
+        "fighorse-canvas-write",
+        include_str!("../assets/ai-plugin/skills/fighorse-canvas-write/SKILL.md"),
+    ),
+    (
+        "fighorse-resource-catalog",
+        include_str!("../assets/ai-plugin/skills/fighorse-resource-catalog/SKILL.md"),
+    ),
+    (
+        "fighorse-code-connect",
+        include_str!("../assets/ai-plugin/skills/fighorse-code-connect/SKILL.md"),
+    ),
+    (
+        "fighorse-self-learning",
+        include_str!("../assets/ai-plugin/skills/fighorse-self-learning/SKILL.md"),
+    ),
+];
+
+#[derive(Debug, Clone, Copy)]
+pub struct AiPluginInstallOpts<'a> {
+    pub home: Option<&'a str>,
+    pub clients: Option<&'a str>,
+    pub endpoint: Option<&'a str>,
+    pub apply: bool,
+}
+
+fn ai_plugin_dir(home: &Path) -> PathBuf {
+    home.join("ai-plugin").join("fighorse")
+}
+
+fn ai_plugin_mcp_config(endpoint: &str) -> Value {
+    json!({
+        "mcpServers": {
+            "fighorse": {
+                "type": "http",
+                "url": endpoint,
+                "_meta": {
+                    "ideToolIconPath": "./fighorse.svg",
+                    "ideToolIconRendersAsTemplate": false,
+                    "ideToolTitles": {
+                        "discover_fighorse": "Discover fighorse",
+                        "check_fighorse_ready": "Check fighorse Readiness",
+                        "get_design_package": "Get Design Package",
+                        "get_resource_catalog": "Get Resource Catalog",
+                        "canvas_apply": "Apply Canvas Plan",
+                        "canvas_verify": "Verify Canvas",
+                        "code_connect_preview": "Preview Code Connect",
+                        "code_connect_publish": "Publish Code Connect"
+                    }
+                }
+            }
+        }
+    })
+}
+
+fn ai_plugin_server_json(endpoint: &str) -> Value {
+    json!({
+        "$schema": "https://static.modelcontextprotocol.io/schemas/2025-09-29/server.schema.json",
+        "name": "com.fighorse/mcp",
+        "title": "fighorse MCP Server",
+        "description": "Local fighorse MCP server for Figma design context, catalog, Code Connect, canvas bridge, and learning workflows.",
+        "repository": {
+            "url": env!("CARGO_PKG_REPOSITORY"),
+            "source": "github"
+        },
+        "version": env!("CARGO_PKG_VERSION"),
+        "remotes": [{
+            "type": "streamable-http",
+            "url": endpoint
+        }]
+    })
+}
+
+fn ai_plugin_files(endpoint: &str, clients: &[String]) -> Result<Vec<(PathBuf, String)>> {
+    let cursor_plugin = json!({
+        "name": "fighorse",
+        "displayName": "fighorse",
+        "version": env!("CARGO_PKG_VERSION"),
+        "description": "Local MCP and workflow skills for Figma design context, native canvas writes, Code Connect, resource catalog, and self-learning.",
+        "author": {"name": "fighorse"},
+        "logo": "./fighorse.svg",
+        "homepage": env!("CARGO_PKG_HOMEPAGE"),
+        "repository": env!("CARGO_PKG_REPOSITORY"),
+        "keywords": ["figma", "mcp", "design", "code-connect", "canvas"],
+        "skills": "./skills/",
+        "mcpServers": "./.mcp.json"
+    });
+    let claude_plugin = json!({
+        "name": "fighorse",
+        "description": "Local fighorse MCP server and workflow skills.",
+        "version": env!("CARGO_PKG_VERSION"),
+        "author": {"name": "fighorse"}
+    });
+    let gemini_extension = json!({
+        "name": "fighorse",
+        "version": env!("CARGO_PKG_VERSION"),
+        "description": "Local fighorse MCP server and workflow skills.",
+        "mcpServers": {"fighorse": {"type": "http", "url": endpoint}}
+    });
+    let mut files = vec![
+        (
+            PathBuf::from("README.md"),
+            include_str!("../assets/ai-plugin/README.md").to_string(),
+        ),
+        (
+            PathBuf::from(".cursor-plugin/plugin.json"),
+            serde_json::to_string_pretty(&cursor_plugin)?,
+        ),
+        (
+            PathBuf::from(".claude-plugin/plugin.json"),
+            serde_json::to_string_pretty(&claude_plugin)?,
+        ),
+        (
+            PathBuf::from("gemini-extension.json"),
+            serde_json::to_string_pretty(&gemini_extension)?,
+        ),
+        (
+            PathBuf::from("server.json"),
+            serde_json::to_string_pretty(&ai_plugin_server_json(endpoint))?,
+        ),
+        (
+            PathBuf::from(".mcp.json"),
+            serde_json::to_string_pretty(&ai_plugin_mcp_config(endpoint))?,
+        ),
+        (
+            PathBuf::from("mcp.json"),
+            serde_json::to_string_pretty(&ai_plugin_mcp_config(endpoint))?,
+        ),
+        (
+            PathBuf::from("fighorse.svg"),
+            include_str!("../assets/logo.svg").to_string(),
+        ),
+    ];
+    for (name, content) in AI_PLUGIN_SKILLS {
+        files.push((
+            PathBuf::from("skills").join(name).join("SKILL.md"),
+            (*content).to_string(),
+        ));
+    }
+    let client_note = json!({
+        "clients": clients,
+        "automatic_apply": ["cursor", "codex", "kimi", "claude"],
+        "artifact_only": ["opencode", "gemini", "generic"],
+        "publish_status": "local_only"
+    });
+    files.push((
+        PathBuf::from("clients.json"),
+        serde_json::to_string_pretty(&client_note)?,
+    ));
+    Ok(files)
+}
+
+pub fn ai_plugin_bundle(endpoint: &str, clients: &str) -> Result<Value> {
+    let clients = if clients.trim().is_empty() {
+        coerce_clients(None, Some("cursor,codex,kimi,claude,opencode,gemini"))
+    } else {
+        coerce_clients(None, Some(clients))
+    };
+    let files: Vec<Value> = ai_plugin_files(endpoint, &clients)?
+        .into_iter()
+        .map(|(path, content)| {
+            json!({
+                "path": path.to_string_lossy(),
+                "bytes": content.len(),
+                "content": content
+            })
+        })
+        .collect();
+    Ok(json!({
+        "kind": "fighorse.ai-plugin-bundle.v1",
+        "bundle_version": env!("CARGO_PKG_VERSION"),
+        "publish_status": "local_only",
+        "mcp_endpoint": endpoint,
+        "clients": clients,
+        "package_dir": "~/.fighorse/ai-plugin/fighorse",
+        "skills": AI_PLUGIN_SKILLS.iter().map(|(name, _)| *name).collect::<Vec<_>>(),
+        "rmcp": {
+            "current": "2.2.0",
+            "official_sdk": "rmcp",
+            "decision": "defer",
+            "reason": "fighorse already uses official rmcp; 3.x migration is evaluated separately unless it is a safe version bump."
+        },
+        "files": files,
+    }))
+}
+
+fn write_ai_plugin_bundle_in_transaction(
+    transaction: &mut transaction::InstallTransaction,
+    home: &Path,
+    endpoint: &str,
+    clients: &[String],
+) -> Result<Vec<Value>> {
+    let dir = ai_plugin_dir(home);
+    let mut written = Vec::new();
+    for (relative, content) in ai_plugin_files(endpoint, clients)? {
+        let path = dir.join(&relative);
+        transaction.write_managed(&path, content.as_bytes())?;
+        written.push(json!({
+            "path": path,
+            "relative": relative,
+            "bytes": content.len(),
+        }));
+    }
+    Ok(written)
+}
+
+pub fn install_ai_plugin(opts: AiPluginInstallOpts<'_>) -> Result<Value> {
+    let endpoint = opts.endpoint.unwrap_or("http://127.0.0.1:9449/mcp");
+    let clients = coerce_clients(
+        None,
+        opts.clients
+            .or(Some("cursor,codex,kimi,claude,opencode,gemini")),
+    );
+    let bundle = ai_plugin_bundle(endpoint, &clients.join(","))?;
+    let home = fighorse_home(opts.home);
+    let dir = ai_plugin_dir(&home);
+    let planned_files: Vec<Value> = ai_plugin_files(endpoint, &clients)?
+        .into_iter()
+        .map(|(relative, content)| {
+            json!({
+                "path": dir.join(relative),
+                "bytes": content.len(),
+            })
+        })
+        .collect();
+    let applied = if opts.apply {
+        install_home(Some(&home.to_string_lossy()))?;
+        let mut transaction = transaction::InstallTransaction::new(&home)?;
+        let files =
+            write_ai_plugin_bundle_in_transaction(&mut transaction, &home, endpoint, &clients)?;
+        let verification = transaction.verify_changed();
+        if verification.iter().any(|check| !check.ok) {
+            let rollback = transaction.rollback_pending();
+            return Err(Error::Other(format!(
+                "AI plugin bundle installation verification failed; rollback: {}",
+                serde_json::to_string(&rollback)?
+            )));
+        }
+        transaction.commit(Some(verification.clone()))?;
+        Some(json!({
+            "files": files,
+            "verification": verification,
+            "manifest": transaction::manifest_path(&home),
+        }))
+    } else {
+        None
+    };
+    Ok(json!({
+        "kind": "fighorse.install-ai-plugin.v1",
+        "command": "fighorse install ai-plugin --clients cursor,codex,kimi,claude,opencode,gemini --apply",
+        "apply": opts.apply,
+        "dir": dir,
+        "clients": clients,
+        "files": planned_files,
+        "bundle": bundle,
+        "applied": applied,
+        "manual_actions": [
+            "Cursor: import the generated local plugin package if automatic plugin directory installation is not available.",
+            "Gemini/opencode/generic MCP clients: use the generated mcp.json or server.json artifact when automatic install is not verified."
+        ]
     }))
 }
 
@@ -2558,6 +2831,31 @@ pub async fn install_verify(home: Option<&str>, port: i64) -> Result<Value> {
             "canvas_plugin_manual_import",
             true,
             "manual action: import the fighorse-canvas manifest in Figma Desktop and run the plugin",
+        ));
+    }
+    let ai_plugin_manifest = ai_plugin_dir(&home)
+        .join(".cursor-plugin")
+        .join("plugin.json");
+    let ai_plugin_mcp = ai_plugin_dir(&home).join(".mcp.json");
+    let has_ai_plugin_bundle = manifest
+        .managed_files
+        .iter()
+        .any(|file| file.path == ai_plugin_manifest || file.path == ai_plugin_mcp);
+    if has_ai_plugin_bundle {
+        checks.push(model::InstallCheck::new(
+            "ai_plugin_bundle_manifest",
+            ai_plugin_manifest.is_file(),
+            ai_plugin_manifest.to_string_lossy(),
+        ));
+        checks.push(model::InstallCheck::new(
+            "ai_plugin_bundle_mcp_config",
+            ai_plugin_mcp.is_file(),
+            ai_plugin_mcp.to_string_lossy(),
+        ));
+        checks.push(model::InstallCheck::new(
+            "ai_plugin_bundle_manual_actions",
+            true,
+            "manual action: import or reference generated client artifacts when automatic client plugin installation is not verified",
         ));
     }
     let has_service = manifest.managed_files.iter().any(|file| {

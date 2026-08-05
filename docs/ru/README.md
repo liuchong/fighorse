@@ -79,6 +79,20 @@ fighorse install client --client claude --apply
 
 Три canonical-цели: `~/.agents/skills/fighorse/SKILL.md` для Cursor/Kimi/Codex, `~/.claude/skills/fighorse/SKILL.md` для Claude и `~/.cursor/rules/fighorse.mdc` для Cursor.
 
+Для локального или командного распространения AI-клиентов сгенерируйте AI plugin bundle:
+
+```bash
+fighorse install ai-plugin --clients cursor,codex,kimi,claude,opencode,gemini --apply
+```
+
+Bundle записывается в `~/.fighorse/ai-plugin/fighorse/` и содержит
+`.cursor-plugin/plugin.json`, `.mcp.json`, `server.json`,
+`gemini-extension.json` и общие workflow skills: `fighorse`,
+`fighorse-design-to-code`, `fighorse-canvas-write`,
+`fighorse-resource-catalog`, `fighorse-code-connect` и
+`fighorse-self-learning`. Это local-only пакет, он не заявляет Verified by
+Cursor и сам не включает write-разрешения.
+
 Упаковка распространяемых бинарников с помощью Cargo. Кросс-компилируйте под каждую
 цель с соответствующим Rust-тулчейном (или `cargo-zigbuild` для Linux-целей):
 
@@ -108,7 +122,7 @@ cargo build --release --target aarch64-unknown-linux-gnu
 | Данные Figma | `file get`, `file nodes`, `node get`, `file tree`, `file compact` |
 | Ассеты | `image export`, `component export`, `asset download`, `images render`, `images fills` |
 | Дизайн-система | `components`, `component-sets`, `styles`, `variables`, `tokens extract` |
-| Установка | `install`, `install self`, `install home`, `install auth`, `install binary`, `install client`, `install service`, `install skill`, `install all`, `install verify`, `install rollback` |
+| Установка | `install`, `install self`, `install home`, `install auth`, `install binary`, `install client`, `install service`, `install ai-plugin`, `install skill`, `install all`, `install verify`, `install rollback` |
 | MCP | `mcp serve --transport http`, явный режим совместимости `stdio` |
 
 ## Безопасные значения по умолчанию

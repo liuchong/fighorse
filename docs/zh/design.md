@@ -22,7 +22,7 @@ fighorse 的目标是提供一个白盒数据管道，具有三个渐进层次�
 - 准确的 Figma 事实：节点结构、尺寸、样式、版式、图片、token、元数据。
 - AI 就绪上下文：精简、有预算意识、明确假设。
 - 视觉参考：截图/渲染 URL 和带 manifest 的本地导出资产。
-- 工具中立访问：CLI 优先，MCP 作为适配器，可安装的 skill/rule 用于 AI 客户端。
+- 工具中立访问：CLI 优先，MCP 作为适配器，可安装的 skill/rule 和本地 AI 插件资源包用于 AI 客户端。
 - 反馈记忆：本地经验存储，使视觉调试经验被复用。
 
 资源目录是产品层聚合器，不是新的爬虫或数据存储。来源解析严格区分团队、
@@ -52,6 +52,24 @@ Figma REST API
 - 可脚本化：shell、CI 和自定义 agent 可以直接使用二进制文件。
 - 传输中立：共享 Streamable HTTP、显式标准 stdio MCP 和 CLI 共享业务行为。
 - 更易于测试：纯转换和 API 包装器与客户端配置保持分离。
+
+## AI 插件资源包
+
+AI 插件资源包用于打包客户端侧指导，不改变运行时权限。
+`fighorse install ai-plugin --clients cursor,codex,kimi,claude,opencode,gemini --apply`
+会从 `assets/ai-plugin/` 的共享模板生成
+`~/.fighorse/ai-plugin/fighorse/`。
+
+资源包包含薄客户端 manifest（`.cursor-plugin/plugin.json`、
+`.claude-plugin/plugin.json`、`gemini-extension.json`、`server.json`、
+`.mcp.json`）以及共享 workflow skills：`fighorse`、
+`fighorse-design-to-code`、`fighorse-canvas-write`、
+`fighorse-resource-catalog`、`fighorse-code-connect` 和
+`fighorse-self-learning`。
+
+该资源包只用于本地分发，不声明 Verified by Cursor，并继续使用
+`http://127.0.0.1:9449/mcp`。它不会打开 Figma 写入、本地文件导出、画布写入、
+Plugin API JavaScript 或 Code Connect 发布权限；这些仍是独立的 fighorse gate。
 
 ## 分层架构
 

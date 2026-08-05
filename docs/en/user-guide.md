@@ -57,6 +57,25 @@ Install MCP service and AI client integrations only when needed:
 
 Install commands generate reviewable files by default. Add `--apply` only when you want fighorse to mutate user-level client config, skill/rule locations, binary links, or service managers.
 
+## AI Plugin Bundle
+
+For local or team AI client distribution, generate a local-only bundle:
+
+```bash
+fighorse install ai-plugin --clients cursor,codex,kimi,claude,opencode,gemini --apply
+```
+
+The generated package lives at `~/.fighorse/ai-plugin/fighorse/`. It includes
+`.cursor-plugin/plugin.json`, `.mcp.json`, `server.json`,
+`gemini-extension.json`, and shared workflow skills:
+`fighorse`, `fighorse-design-to-code`, `fighorse-canvas-write`,
+`fighorse-resource-catalog`, `fighorse-code-connect`, and
+`fighorse-self-learning`.
+
+The bundle reuses `http://127.0.0.1:9449/mcp` and stays readonly by default.
+It does not enable Figma writes, canvas writes, Plugin API JavaScript, Code
+Connect publish, or local file export.
+
 ## Package Binaries
 
 Build a release binary with Cargo, then cross-compile per target with the

@@ -1698,6 +1698,20 @@ pub fn cmd_install_skill(args: &[String]) -> Result<()> {
     )
 }
 
+pub fn cmd_install_ai_plugin(args: &[String]) -> Result<()> {
+    let flags = parse_flags(args, &["--home", "--clients", "--endpoint", "--output"]);
+    let apply = flag_present(args, "--apply");
+    print_data(
+        &install::install_ai_plugin(install::AiPluginInstallOpts {
+            home: flags.get("home"),
+            clients: flags.get("clients"),
+            endpoint: flags.get("endpoint"),
+            apply,
+        })?,
+        flags.get("output"),
+    )
+}
+
 pub fn cmd_install_client(args: &[String]) -> Result<()> {
     let flags = parse_flags(
         args,

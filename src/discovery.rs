@@ -175,6 +175,30 @@ fn canvas_bridge_status(cfg: &config::Config) -> Value {
     })
 }
 
+fn ai_plugin_bundle_status(cfg: &config::Config) -> Value {
+    let bundle_dir = cfg.fighorse_home.join("ai-plugin").join("fighorse");
+    let cursor_manifest = bundle_dir.join(".cursor-plugin").join("plugin.json");
+    let mcp_config = bundle_dir.join(".mcp.json");
+    json!({
+        "package_dir": bundle_dir.to_string_lossy(),
+        "cursor_manifest": cursor_manifest.to_string_lossy(),
+        "mcp_config": mcp_config.to_string_lossy(),
+        "installed": cursor_manifest.is_file() && mcp_config.is_file(),
+        "publish_status": "local_only",
+        "install_command": "fighorse install ai-plugin --clients cursor,codex,kimi,claude,opencode,gemini --apply",
+        "default_endpoint": "http://127.0.0.1:9449/mcp",
+        "workflow_skills": [
+            "fighorse",
+            "fighorse-design-to-code",
+            "fighorse-canvas-write",
+            "fighorse-resource-catalog",
+            "fighorse-code-connect",
+            "fighorse-self-learning"
+        ],
+        "safety": "Installing the bundle does not enable canvas writes, Plugin API JavaScript, Code Connect publish, local file export, or Figma REST writes."
+    })
+}
+
 /// Structured setup instructions for humans and AI clients.
 pub fn setup_guidance() -> Value {
     json!({
@@ -204,6 +228,13 @@ pub fn setup_guidance() -> Value {
             "clients": ["Cursor", "Codex", "Kimi", "Claude"],
             "command": "fighorse install --default --mode service --clients cursor,codex,kimi,claude --apply",
             "endpoint": "http://127.0.0.1:9449/mcp"
+        },
+        "recommended_ai_plugin_bundle": {
+            "when": "Use after the local MCP service is installed or when sharing fighorse workflow skills and MCP config as one local artifact.",
+            "command": "fighorse install ai-plugin --clients cursor,codex,kimi,claude,opencode,gemini --apply",
+            "package_dir": "~/.fighorse/ai-plugin/fighorse",
+            "publish_status": "local_only",
+            "default_endpoint": "http://127.0.0.1:9449/mcp"
         },
         "ai_client_behavior": {
             "must_check_first": ["discover_fighorse", "check_fighorse_ready"],
@@ -430,6 +461,7 @@ pub fn doctor() -> Value {
     let code_connect_enabled = config::mcp_code_connect_enabled();
     let mcp_service = mcp_service_status();
     let canvas_bridge = canvas_bridge_status(&cfg);
+    let ai_plugin_bundle = ai_plugin_bundle_status(&cfg);
     let stale_lock = mcp_service["lock_present"].as_bool().unwrap_or(false)
         && !mcp_service["owner_active"].as_bool().unwrap_or(false);
     let service_ready = mcp_service["ready"].as_bool().unwrap_or(false);
@@ -453,9 +485,11 @@ pub fn doctor() -> Value {
             "code_connect_env": "FIGHORSE_MCP_CODE_CONNECT=allow"
         },
         "canvas": canvas_bridge,
+        "ai_plugin_bundle": ai_plugin_bundle,
         "install": {
             "home": cfg.fighorse_home.to_string_lossy(),
             "output_locations": guidance::output_location_guidance(),
+            "ai_plugin_bundle_command": "fighorse install ai-plugin --clients cursor,codex,kimi,claude,opencode,gemini --apply",
             "next_step": "Run fighorse install status first. Install commands generate artifacts by default; pass --apply only when you want fighorse to mutate detected CLI, MCP service, AI client, and skill locations."
         },
         "experience": {
@@ -587,6 +621,7 @@ pub fn manifest() -> Value {
             "canvas_mode": "readonly; set FIGHORSE_CANVAS_MODE=write only for paired local plugin canvas writes",
             "canvas_script": "deny; set FIGHORSE_CANVAS_SCRIPT=allow only for explicitly confirmed Plugin API JavaScript",
             "canvas_bridge": "disabled unless fighorse canvas serve is running or FIGHORSE_CANVAS_BRIDGE=allow starts it with mcp serve",
+            "ai_plugin_bundle": "local-only; generated with fighorse install ai-plugin and installed under ~/.fighorse/ai-plugin/fighorse",
             "fighorse_home": "~/.fighorse",
             "global_experience": "~/.fighorse/experience/global.jsonl",
             "project_experience": "./.fighorse/experience.jsonl after fighorse install project",
@@ -617,6 +652,14 @@ pub fn manifest() -> Value {
                 "kind": experience::RECORD_KIND,
                 "schema_version": experience::SCHEMA_VERSION,
                 "best_for": "Persisting reusable lessons from real Figma replication, screenshot comparison, asset export, and platform debugging."
+            },
+            "ai_plugin_bundle": {
+                "kind": "fighorse.ai-plugin-bundle.v1",
+                "package_dir": "~/.fighorse/ai-plugin/fighorse",
+                "publish_status": "local_only",
+                "skills": ["fighorse", "fighorse-design-to-code", "fighorse-canvas-write", "fighorse-resource-catalog", "fighorse-code-connect", "fighorse-self-learning"],
+                "default_mcp_endpoint": "http://127.0.0.1:9449/mcp",
+                "permissions": "readonly by default; bundle install does not enable Figma writes, local file exports, canvas writes, scripts, or Code Connect publishing"
             }
         },
         "api_coverage": api_coverage::coverage_report(),
@@ -791,6 +834,7 @@ pub fn manifest() -> Value {
                 "fighorse install client --client claude --apply",
                 "fighorse install client --client opencode",
                 "fighorse install service --service launchd --apply",
+                "fighorse install ai-plugin --clients cursor,codex,kimi,claude,opencode,gemini --apply",
                 "fighorse install skill --clients cursor,codex,kimi,claude --apply",
                 "fighorse install --default --apply",
                 "fighorse install --path ~/.local/bin --apply",
@@ -816,7 +860,8 @@ pub fn manifest() -> Value {
             "skill_targets": {
                 "cursor_kimi_codex": "~/.agents/skills/fighorse/SKILL.md",
                 "claude": "~/.claude/skills/fighorse/SKILL.md",
-                "cursor_rule": "~/.cursor/rules/fighorse.mdc"
+                "cursor_rule": "~/.cursor/rules/fighorse.mdc",
+                "ai_plugin_bundle": "~/.fighorse/ai-plugin/fighorse/skills/<workflow>/SKILL.md"
             }
         },
         "auth": {

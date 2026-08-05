@@ -143,6 +143,7 @@ async fn async_main() -> ExitCode {
         (Some("install"), Some("canvas-plugin")) => {
             finish(commands::cmd_install_canvas_plugin(&rest2))
         }
+        (Some("install"), Some("ai-plugin")) => finish(commands::cmd_install_ai_plugin(&rest2)),
         (Some("install"), Some("skill")) => finish(commands::cmd_install_skill(&rest2)),
         (Some("install"), Some("all")) => finish(commands::cmd_install_all(&rest2).await),
         (Some("install"), Some("status")) => finish(commands::cmd_install_status(&rest2)),
@@ -292,6 +293,8 @@ Install:
   install client --client cursor|codex|kimi|claude|opencode|openclaw|hermes-agent [--apply]  Generate or apply client MCP setup
   install service [--service launchd|systemd] [--apply]  Generate or apply auto-start MCP HTTP service
   install canvas-plugin [--apply]               Install local Figma development plugin bundle
+  install ai-plugin [--clients C] [--apply]     Generate or apply local AI plugin bundle with MCP config and workflow skills
+                                                Writes ~/.fighorse/ai-plugin/fighorse with fighorse-canvas-write and other local-only manifests
   install skill [--dir D] [--clients C] [--apply]  Apply canonical skills/rule and safely migrate generated legacy copies
   install [--default|--path D|--target P] [--mode cli|service] [--apply]  Self-install this binary and emit AI-readable install guidance
   install self [--default|--path D|--target P] [--apply]  Same as install root command

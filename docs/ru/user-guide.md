@@ -57,6 +57,25 @@ cargo build --release
 
 Команды установки по умолчанию генерируют файлы для ревью. Добавляйте `--apply` только когда хотите, чтобы fighorse модифицировал пользовательскую конфигурацию клиента, расположения skill/rule, ссылки на бинарники или сервис-менеджеры.
 
+## AI Plugin Bundle
+
+Для локального или командного распространения AI-клиентов сгенерируйте local-only bundle:
+
+```bash
+fighorse install ai-plugin --clients cursor,codex,kimi,claude,opencode,gemini --apply
+```
+
+Пакет находится в `~/.fighorse/ai-plugin/fighorse/`. Он содержит
+`.cursor-plugin/plugin.json`, `.mcp.json`, `server.json`,
+`gemini-extension.json` и общие workflow skills: `fighorse`,
+`fighorse-design-to-code`, `fighorse-canvas-write`,
+`fighorse-resource-catalog`, `fighorse-code-connect` и
+`fighorse-self-learning`.
+
+Bundle использует `http://127.0.0.1:9449/mcp` и остается readonly по
+умолчанию. Он сам не включает Figma writes, canvas writes, Plugin API
+JavaScript, Code Connect publish или локальный file export.
+
 ## Упаковка бинарников
 
 Соберите release-бинарник с помощью Cargo, затем кросс-компилируйте под каждую

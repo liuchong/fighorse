@@ -70,6 +70,20 @@ fighorse install verify
 
 Canonical-цели: `~/.agents/skills/fighorse/SKILL.md` для Cursor/Kimi/Codex, `~/.claude/skills/fighorse/SKILL.md` для Claude и `~/.cursor/rules/fighorse.mdc` для Cursor.
 
+Для локального или командного распространения предпочитайте AI plugin bundle:
+
+```bash
+fighorse install ai-plugin --clients cursor,codex,kimi,claude,opencode,gemini --apply
+```
+
+Он записывает `~/.fighorse/ai-plugin/fighorse/` с
+`.cursor-plugin/plugin.json`, `.mcp.json`, `server.json`,
+`gemini-extension.json` и общими workflow skills: `fighorse`,
+`fighorse-design-to-code`, `fighorse-canvas-write`,
+`fighorse-resource-catalog`, `fighorse-code-connect` и
+`fighorse-self-learning`. Считайте его local-only пакетом, не Verified by
+Cursor. Он указывает на `http://127.0.0.1:9449/mcp` и не включает write-разрешения.
+
 ## Обязательный стартовый поток
 
 При подключении к fighorse делайте это перед реализацией:

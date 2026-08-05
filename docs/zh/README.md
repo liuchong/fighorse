@@ -78,6 +78,19 @@ fighorse install client --client claude --apply
 
 三处 canonical 目标是：Cursor/Kimi/Codex 共用 `~/.agents/skills/fighorse/SKILL.md`，Claude 使用 `~/.claude/skills/fighorse/SKILL.md`，Cursor 另用 `~/.cursor/rules/fighorse.mdc`。
 
+如果要做本地或团队内 AI 客户端分发，可以生成 AI 插件资源包：
+
+```bash
+fighorse install ai-plugin --clients cursor,codex,kimi,claude,opencode,gemini --apply
+```
+
+资源包写入 `~/.fighorse/ai-plugin/fighorse/`，包含
+`.cursor-plugin/plugin.json`、`.mcp.json`、`server.json`、
+`gemini-extension.json` 以及共享 workflow skills：`fighorse`、
+`fighorse-design-to-code`、`fighorse-canvas-write`、
+`fighorse-resource-catalog`、`fighorse-code-connect` 和
+`fighorse-self-learning`。它只用于本地分发，不声明 Verified by Cursor，也不会自己打开任何写权限。
+
 使用 Cargo 打包可分发的二进制文件。使用匹配的 Rust 工具链按目标平台交叉编译
 （Linux 目标可使用 `cargo-zigbuild`）：
 
@@ -107,7 +120,7 @@ cargo build --release --target aarch64-unknown-linux-gnu
 | Figma 数据 | `file get`, `file nodes`, `node get`, `file tree`, `file compact` |
 | 资产 | `image export`, `component export`, `asset download`, `images render`, `images fills` |
 | 设计系统 | `components`, `component-sets`, `styles`, `variables`, `tokens extract` |
-| 安装 | `install`, `install self`, `install home`, `install auth`, `install binary`, `install client`, `install service`, `install skill`, `install all`, `install verify`, `install rollback` |
+| 安装 | `install`, `install self`, `install home`, `install auth`, `install binary`, `install client`, `install service`, `install ai-plugin`, `install skill`, `install all`, `install verify`, `install rollback` |
 | MCP | `mcp serve --transport http`, 显式 `stdio` 兼容模式 |
 
 ## 安全默认值

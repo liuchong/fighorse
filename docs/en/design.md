@@ -22,7 +22,7 @@ The pipeline provides:
 - Accurate Figma facts: node structure, dimensions, styles, layout, images, tokens, metadata.
 - AI-ready context: compact, budget-aware, and explicit about assumptions.
 - Visual references: screenshot/render URLs and local exported assets with manifests.
-- Tool-neutral access: CLI first, MCP as an adapter, installable skills/rules for AI clients.
+- Tool-neutral access: CLI first, MCP as an adapter, installable skills/rules and local AI plugin bundles for AI clients.
 - Feedback memory: local experience storage so visual debugging lessons are reused.
 
 The resource catalog is a product-layer aggregator, not a new crawler or data
@@ -53,6 +53,25 @@ This keeps the system:
 - Scriptable: shell, CI, and custom agents can use the binary directly.
 - Transport-neutral: shared Streamable HTTP, explicit standard stdio MCP, and CLI all share the same business behavior.
 - Easier to test: pure transformations and API wrappers remain separable from client configuration.
+
+## AI Plugin Bundle
+
+The AI plugin bundle packages client-facing guidance without changing runtime
+permissions. `fighorse install ai-plugin --clients cursor,codex,kimi,claude,opencode,gemini --apply`
+generates `~/.fighorse/ai-plugin/fighorse/` from shared templates in
+`assets/ai-plugin/`.
+
+The package contains thin client manifests (`.cursor-plugin/plugin.json`,
+`.claude-plugin/plugin.json`, `gemini-extension.json`, `server.json`,
+`.mcp.json`) and shared workflow skills: `fighorse`,
+`fighorse-design-to-code`, `fighorse-canvas-write`,
+`fighorse-resource-catalog`, `fighorse-code-connect`, and
+`fighorse-self-learning`.
+
+The bundle is local-only, not Verified by Cursor, and keeps the MCP endpoint at
+`http://127.0.0.1:9449/mcp`. It does not turn on Figma writes, local file
+exports, canvas writes, Plugin API JavaScript, or Code Connect publishing; those
+remain separate fighorse gates.
 
 ## Layered Architecture
 

@@ -22,7 +22,7 @@ Pipeline предоставляет:
 - Точные факты Figma: структура нод, размеры, стили, раскладка, изображения, токены, метаданные.
 - AI-ready контекст: компактный, с учетом бюджета токенов и явными предположениями.
 - Визуальные референсы: URL скриншотов/рендеров и локальные экспортированные ассеты с манифестами.
-- Нейтральный к инструментам доступ: сначала CLI, MCP как адаптер, устанавливаемые skills/rules для AI-клиентов.
+- Нейтральный к инструментам доступ: сначала CLI, MCP как адаптер, устанавливаемые skills/rules и local AI plugin bundles для AI-клиентов.
 - Память обратной связи: локальное хранилище опыта, чтобы уроки визуальной отладки использовались повторно.
 
 Каталог ресурсов — агрегатор продуктового слоя, а не новый crawler или
@@ -53,6 +53,25 @@ Figma REST API
 - Скриптуемой: shell, CI и кастомные агенты могут использовать бинарник напрямую.
 - Транспортно-нейтральной: общий Streamable HTTP, явный standard stdio MCP и CLI разделяют бизнес-поведение.
 - Проще в тестировании: чистые трансформации и API-обертки остаются отделимыми от конфигурации клиента.
+
+## AI Plugin Bundle
+
+AI plugin bundle упаковывает клиентские инструкции без изменения runtime-разрешений.
+`fighorse install ai-plugin --clients cursor,codex,kimi,claude,opencode,gemini --apply`
+генерирует `~/.fighorse/ai-plugin/fighorse/` из общих шаблонов
+`assets/ai-plugin/`.
+
+Пакет содержит тонкие client manifests (`.cursor-plugin/plugin.json`,
+`.claude-plugin/plugin.json`, `gemini-extension.json`, `server.json`,
+`.mcp.json`) и общие workflow skills: `fighorse`,
+`fighorse-design-to-code`, `fighorse-canvas-write`,
+`fighorse-resource-catalog`, `fighorse-code-connect` и
+`fighorse-self-learning`.
+
+Bundle является local-only, не Verified by Cursor, и использует
+`http://127.0.0.1:9449/mcp`. Он не включает Figma writes, local file exports,
+canvas writes, Plugin API JavaScript или Code Connect publishing; эти действия
+остаются отдельными fighorse gates.
 
 ## Многоуровневая архитектура
 

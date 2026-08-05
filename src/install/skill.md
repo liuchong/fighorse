@@ -22,6 +22,26 @@ Native canvas writes do not use the public REST token path. They require the loc
 5. For exact public Figma REST API work, use `fighorse figma-api coverage --format json` or MCP resource `fighorse://coverage` to see the covered OpenAPI operations.
 6. If an expected tool is missing after install, upgrade, or service restart, reconnect the MCP client and request `tools/list` again before deciding the feature is unavailable; clients can cache old tool lists for an active session.
 
+## AI Plugin Bundle
+
+For local or team distribution, generate the AI plugin bundle with
+`fighorse install ai-plugin --clients cursor,codex,kimi,claude,opencode,gemini --apply`.
+The bundle is written to `~/.fighorse/ai-plugin/fighorse/` and contains
+`.cursor-plugin/plugin.json`, `.mcp.json`, `server.json`,
+`gemini-extension.json`, and shared workflow skills:
+
+- `fighorse`
+- `fighorse-design-to-code`
+- `fighorse-canvas-write`
+- `fighorse-resource-catalog`
+- `fighorse-code-connect`
+- `fighorse-self-learning`
+
+The bundle is local-only and not Verified by Cursor. Installing it does not
+enable Figma writes, local file export, canvas writes, Plugin API JavaScript, or
+Code Connect publish; those still require the existing fighorse environment
+gates and per-call confirmation.
+
 ## Replication
 
 Use `get_design_package` or `fighorse design package <figma-url> --platform <platform> --asset-format <format>` as the main context source. Prioritize screenshots, learned_experience, explicit typography, tokens, compact tree metadata, then assets. If `scope.status=needs_narrowing` for a SECTION, CANVAS, DOCUMENT, or SELECTION, choose `screen_candidates[].id` where `implementable=true` and call `get_design_package` again; `diagnostics.screenshots.null_count` means the render URL was null and is not a usable screenshot.

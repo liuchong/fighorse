@@ -79,6 +79,20 @@ Native HTTP payloads differ by client: Cursor uses `{"url":"http://127.0.0.1:944
 
 The canonical instruction targets are `~/.agents/skills/fighorse/SKILL.md` for Cursor/Kimi/Codex, `~/.claude/skills/fighorse/SKILL.md` for Claude, and `~/.cursor/rules/fighorse.mdc` for Cursor.
 
+For local or team AI client distribution, generate the AI plugin bundle:
+
+```bash
+fighorse install ai-plugin --clients cursor,codex,kimi,claude,opencode,gemini --apply
+```
+
+The bundle is written to `~/.fighorse/ai-plugin/fighorse/` and contains
+`.cursor-plugin/plugin.json`, `.mcp.json`, `server.json`,
+`gemini-extension.json`, and shared workflow skills:
+`fighorse`, `fighorse-design-to-code`, `fighorse-canvas-write`,
+`fighorse-resource-catalog`, `fighorse-code-connect`, and
+`fighorse-self-learning`. It is local-only, not Verified by Cursor, and does not
+enable write permissions by itself.
+
 Package distributable binaries with Cargo. Cross-compile per target with the
 matching Rust toolchain (or `cargo-zigbuild` for Linux targets):
 
@@ -108,7 +122,7 @@ cargo build --release --target aarch64-unknown-linux-gnu
 | Figma Data | `file get`, `file nodes`, `node get`, `file tree`, `file compact` |
 | Assets | `image export`, `component export`, `asset download`, `images render`, `images fills` |
 | Design System | `components`, `component-sets`, `styles`, `variables`, `tokens extract` |
-| Install | `install`, `install self`, `install home`, `install auth`, `install binary`, `install client`, `install service`, `install skill`, `install all`, `install verify`, `install rollback` |
+| Install | `install`, `install self`, `install home`, `install auth`, `install binary`, `install client`, `install service`, `install ai-plugin`, `install skill`, `install all`, `install verify`, `install rollback` |
 | MCP | `mcp serve --transport http`, explicit `stdio` compatibility mode |
 
 ## Safety Defaults

@@ -56,6 +56,24 @@ cargo build --release
 
 安装命令默认生成可审查的文件。只有当你希望 fighorse 修改用户级客户端配置、skill/rule 位置、二进制链接或服务管理器时，才添加 `--apply`。
 
+## AI 插件资源包
+
+如果要做本地或团队内 AI 客户端分发，可以生成本地-only 资源包：
+
+```bash
+fighorse install ai-plugin --clients cursor,codex,kimi,claude,opencode,gemini --apply
+```
+
+生成目录是 `~/.fighorse/ai-plugin/fighorse/`，其中包含
+`.cursor-plugin/plugin.json`、`.mcp.json`、`server.json`、
+`gemini-extension.json` 以及共享 workflow skills：`fighorse`、
+`fighorse-design-to-code`、`fighorse-canvas-write`、
+`fighorse-resource-catalog`、`fighorse-code-connect` 和
+`fighorse-self-learning`。
+
+资源包复用 `http://127.0.0.1:9449/mcp`，默认仍是 readonly。它不会自己打开
+Figma 写入、画布写入、Plugin API JavaScript、Code Connect 发布或本地文件导出权限。
+
 ## 打包二进制文件
 
 使用 Cargo 构建 release 二进制文件，然后使用匹配的 Rust 工具链按目标平台交叉编译

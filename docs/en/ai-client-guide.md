@@ -71,6 +71,20 @@ The installer activates the service, waits for `/health`, completes `initialize`
 
 Canonical instruction targets are `~/.agents/skills/fighorse/SKILL.md` for Cursor/Kimi/Codex, `~/.claude/skills/fighorse/SKILL.md` for Claude, and `~/.cursor/rules/fighorse.mdc` for Cursor.
 
+For local or team distribution, prefer the AI plugin bundle:
+
+```bash
+fighorse install ai-plugin --clients cursor,codex,kimi,claude,opencode,gemini --apply
+```
+
+It writes `~/.fighorse/ai-plugin/fighorse/` with `.cursor-plugin/plugin.json`,
+`.mcp.json`, `server.json`, `gemini-extension.json`, and shared workflow
+skills: `fighorse`, `fighorse-design-to-code`, `fighorse-canvas-write`,
+`fighorse-resource-catalog`, `fighorse-code-connect`, and
+`fighorse-self-learning`. Treat it as a local-only package, not Verified by
+Cursor. It keeps the MCP endpoint at `http://127.0.0.1:9449/mcp` and does not
+enable write permissions.
+
 ## Mandatory Startup Flow
 
 When connected to fighorse, do this before implementation:

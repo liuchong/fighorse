@@ -33,6 +33,8 @@ fn root_help_lists_canvas_bridge_entry_points() {
         "canvas status|pair|sessions",
         "canvas upload-asset",
         "FIGHORSE_CANVAS_BRIDGE",
+        "install ai-plugin",
+        "workflow skills",
     ] {
         assert!(help.contains(token), "root help omits {token}");
     }

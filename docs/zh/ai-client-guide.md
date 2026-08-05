@@ -69,6 +69,20 @@ fighorse install verify
 
 Canonical 三目标是 `~/.agents/skills/fighorse/SKILL.md`（Cursor/Kimi/Codex）、`~/.claude/skills/fighorse/SKILL.md`（Claude）、`~/.cursor/rules/fighorse.mdc`（Cursor）。
 
+如果要本地或团队分发，优先生成 AI 插件资源包：
+
+```bash
+fighorse install ai-plugin --clients cursor,codex,kimi,claude,opencode,gemini --apply
+```
+
+它会写入 `~/.fighorse/ai-plugin/fighorse/`，包含
+`.cursor-plugin/plugin.json`、`.mcp.json`、`server.json`、
+`gemini-extension.json` 和共享 workflow skills：`fighorse`、
+`fighorse-design-to-code`、`fighorse-canvas-write`、
+`fighorse-resource-catalog`、`fighorse-code-connect`、
+`fighorse-self-learning`。把它视为本地-only 包，不声明 Verified by Cursor；
+它继续指向 `http://127.0.0.1:9449/mcp`，也不会打开写权限。
+
 ## 必需的启动流程
 
 连接到 fighorse 后，在实现之前执行以下操作：
