@@ -359,6 +359,22 @@ async fn serve_http(port: i64, host: Option<&str>, cors_origin: Option<&str>) ->
     }
 
     let cancellation_token = CancellationToken::new();
+    if config::canvas_bridge_enabled() {
+        let canvas_token = cancellation_token.child_token();
+        let canvas_port = config::load_config().canvas_port;
+        tokio::spawn(async move {
+            if let Err(error) = crate::canvas::control::serve(
+                crate::canvas::shared_manager(),
+                canvas_port,
+                canvas_token,
+            )
+            .await
+            {
+                eprintln!("Fighorse canvas bridge error: {error}");
+            }
+        });
+        eprintln!("Fighorse canvas bridge listening on http://127.0.0.1:{canvas_port}/canvas");
+    }
     let mut allowed_origins = vec![
         format!("http://127.0.0.1:{port}"),
         format!("http://localhost:{port}"),

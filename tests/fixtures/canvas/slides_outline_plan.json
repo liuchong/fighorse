@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "transaction_id": "txn-slides-outline",
+  "session_id": "session-slides",
+  "expected_editor": "slides",
+  "operations": [
+    {
+      "op": "create_slide",
+      "op_id": "intro",
+      "args": {
+        "title": "Canvas write overview"
+      }
+    },
+    {
+      "op": "create_speaker_notes",
+      "op_id": "notes",
+      "args": {
+        "slide": "intro",
+        "text": "Explain pairing, write gates, and rollback."
+      }
+    }
+  ],
+  "verify": {
+    "capture": true
+  }
+}

@@ -4,6 +4,7 @@
 //! The `fighorse` binary (`src/main.rs`) wires these into the CLI.
 
 pub mod api;
+pub mod canvas;
 pub mod cli;
 pub mod code_connect;
 pub mod config;

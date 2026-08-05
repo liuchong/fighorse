@@ -47,6 +47,9 @@ pub fn ai_contract() -> Value {
             "Export ambiguous icons, controls, image fills, repeated cards, and visual details before approximating them.",
             "Store exported files in ./.fighorse/exports, ./assets/fighorse, or ~/.fighorse/exports, and include a manifest.",
             "For MCP asset export, ensure FIGHORSE_MCP_LOCAL_WRITE=allow is enabled; do not ask for unrestricted filesystem access.",
+            "For native Figma canvas writes, use the local canvas bridge: install the plugin bundle, run fighorse canvas serve or enable FIGHORSE_CANVAS_BRIDGE=allow in service mode, create a pairing code, and wait for a paired session.",
+            "For canvas writes, require FIGHORSE_MCP_MODE=write, FIGHORSE_CANVAS_MODE=write, and explicit yes=true or --yes. If multiple sessions are connected, pass session_id.",
+            "For canvas_execute_script or fighorse canvas execute, also require FIGHORSE_CANVAS_SCRIPT=allow and per-call confirmation.",
             "Run/build the target app when possible, capture screenshots, compare against Figma, and fix overlap, clipping, system chrome, and typography problems.",
             "Record reusable lessons with record_experience or `fighorse experience add` after a fix."
         ],
@@ -58,6 +61,8 @@ pub fn ai_contract() -> Value {
             "Do not ignore diagnostics warnings, especially CANVAS/page scope, truncation, missing screenshots, missing tokens, or unknown platform.",
             "Do not treat /files/<browser-root> as a team ID or record private catalog IDs, names, keys, URLs, or content as reusable experience.",
             "Do not treat screenshot diagnostics null_count as a usable screenshot; narrow container targets instead of falling back to get_node for implementation.",
+            "Do not auto-retry a canvas transaction that returned unknown after a timeout or disconnect; inspect or verify first to avoid duplicate nodes.",
+            "Do not run arbitrary Plugin API JavaScript unless the script gate is enabled and the user confirms that exact call.",
             "Do not hard-code lessons from a previous project, brand, screen, or framework into an unrelated design.",
             "Do not discard lessons from visual debugging; persist reusable findings through the experience interface."
         ],

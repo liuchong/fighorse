@@ -342,3 +342,4 @@ fighorse image export <file_key> --ids "$IDS" --dir ./.fighorse/exports --manife
 - MCP 导出工具报告本地写入禁用：在 MCP 服务器环境中设置 `FIGHORSE_MCP_LOCAL_WRITE=allow`。
 - 导出路径被拒绝：使用 `./.fighorse/exports`、`./assets/fighorse` 或 `~/.fighorse/exports`。
 - AI 实现了整个用户流程页面：在实现前将 Figma URL 缩小到具体的 Frame/Screen 节点。
+- 原生画布写入需要本地插件桥：运行 `fighorse install canvas-plugin --apply`、`fighorse canvas serve`、`fighorse canvas pair`，然后在 Figma 中运行已导入插件。写入要求 `FIGHORSE_CANVAS_MODE=write`；脚本执行还要求 `FIGHORSE_CANVAS_SCRIPT=allow`。事务返回 `unknown` 时，先 inspect 或 verify，不要自动重试。

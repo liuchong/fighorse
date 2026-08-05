@@ -208,7 +208,7 @@ Framelink-style MCP — descriptive и легковесный. Он дает AI 
 
 fighorse по умолчанию идет по descriptive пути: факты вместо сгенерированного кода. Он все еще может предоставлять более богатые Figma-метаданные, современные Code Connect template workflows и write-capable endpoint'ы при явном включении, но основной workflow — "точный контекст на входе, project-native реализация на выходе".
 
-Product surfaces, доступные только через official API и не входящие в public REST OpenAPI, помечаются как unsupported by public REST вместо того, чтобы быть тихо аппроксимированными. Примеры включают нативную canvas mutation, Code to Canvas, automatic Code Connect mapping discovery, Make resources и FigJam generation. Поддержка Code Connect в fighorse является отдельным compatibility layer для современных шаблонов и observed preview/publish/delete service protocol; она не заявляет automatic product mapping.
+Product surfaces вне public REST OpenAPI должны иметь явный route вместо тихой аппроксимации. Native canvas mutation маршрутизируется через локальный fighorse plugin bridge. Hosted Code to Canvas, automatic Code Connect mapping discovery, Make resources и другие Remote MCP-only workflows остаются official Figma product capabilities. Поддержка Code Connect в fighorse является отдельным compatibility layer для современных шаблонов и observed preview/publish/delete service protocol; она не заявляет automatic product mapping.
 
 ## Достоверность данных
 
@@ -244,7 +244,12 @@ Pixel-perfect рендеринг в браузере или на мобильн�
 
 fighorse не стремится быть универсальным генератором кода. Код должен производиться AI-агентом с использованием существующих паттернов целевого репозитория.
 
-Он также не стремится заменить собственные product-интеграции Figma. Official MCP остается подходящим для automatic Code Connect mapping, Code to Canvas, FigJam generation или native Figma mutation workflows.
+Он также не стремится заменить собственные hosted product-интеграции Figma.
+Native canvas mutation в fighorse намеренно локальна: Rust bridge, paired Figma
+development plugin, явный write gate `FIGHORSE_CANVAS_MODE=write`, script gate
+`FIGHORSE_CANVAS_SCRIPT=allow` и без private server API. Official MCP
+остается подходящим для automatic Code Connect mapping, hosted Code to Canvas,
+Make resources и других Remote MCP-only workflows.
 
 Долгосрочная продуктовая граница — это pipeline контекста и ассетов: fetch, compact, explain, export, verify и learn.
 
@@ -252,7 +257,7 @@ fighorse не стремится быть универсальным генер�
 
 Проект должен оставаться верифицируемым без реального Figma-токена:
 
-- Unit и integration tests покрывают парсинг аргументов, compacting, URL, валидацию путей, OpenAPI, MCP routing, official HTTP/standard stdio, discovery manifest, install transaction, design-package diagnostics и docs consistency.
+- Unit и integration tests покрывают парсинг аргументов, compacting, URL, валидацию путей, OpenAPI, MCP routing, official HTTP/standard stdio, local canvas protocol/session gates, discovery manifest, install transaction, design-package diagnostics и docs consistency.
 - Интеграционные тесты, обращающиеся к реальному Figma API, опциональны.
 - Документация и сгенерированные install артефакты должны отражать текущее поведение CLI.
 

@@ -138,6 +138,21 @@ fighorse code-connect unpublish --node "<figma-component-url>" --label React --d
 
 Automatic Code Connect mapping discovery остается возможностью продукта Figma; используйте official Figma Remote MCP, когда нужен именно этот workflow.
 
+## Canvas Bridge
+
+`fighorse` может создавать и менять нативные узлы в открытых файлах Figma
+Design, FigJam и Slides через локальный Figma development plugin. Установите
+bundle командой `fighorse install canvas-plugin --apply`, запустите
+`fighorse canvas serve`, создайте код командой `fighorse canvas pair`, затем
+запустите импортированный plugin в Figma и введите код.
+
+Canvas-запись требует `FIGHORSE_CANVAS_MODE=write`; MCP-запись также требует
+`FIGHORSE_MCP_MODE=write` и `yes=true`. `canvas_execute_script` и
+`fighorse canvas execute` дополнительно требуют `FIGHORSE_CANVAS_SCRIPT=allow`.
+Если подключено несколько plugin sessions, передайте `session_id`. Если
+transaction вернул `unknown`, сначала выполните inspect или verify и не
+повторяйте тот же план автоматически.
+
 ## Разработка
 
 ```bash

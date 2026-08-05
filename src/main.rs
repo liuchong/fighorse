@@ -61,6 +61,13 @@ async fn async_main() -> ExitCode {
         return ExitCode::SUCCESS;
     }
 
+    let is_canvas_help = matches!((cmd1, cmd2), (Some("help"), Some("canvas")))
+        || (matches!(cmd1, Some("canvas")) && args.iter().any(|a| a == "--help" || a == "-h"));
+    if is_canvas_help {
+        print_canvas_help();
+        return ExitCode::SUCCESS;
+    }
+
     let is_help = matches!(cmd1, Some("help")) || args.iter().any(|a| a == "--help" || a == "-h");
     if is_help {
         print_help();
@@ -72,6 +79,22 @@ async fn async_main() -> ExitCode {
     let rest2: Vec<String> = args.iter().skip(2).cloned().collect();
 
     match (cmd1, cmd2) {
+        // Canvas bridge
+        (Some("canvas"), Some("serve")) => finish(commands::cmd_canvas_serve(&rest2).await),
+        (Some("canvas"), Some("status")) => finish(commands::cmd_canvas_status(&rest2).await),
+        (Some("canvas"), Some("pair")) => finish(commands::cmd_canvas_pair(&rest2).await),
+        (Some("canvas"), Some("sessions")) => finish(commands::cmd_canvas_sessions(&rest2).await),
+        (Some("canvas"), Some("revoke")) => finish(commands::cmd_canvas_sessions(&rest2).await),
+        (Some("canvas"), Some("inspect")) => finish(commands::cmd_canvas_inspect(&rest2).await),
+        (Some("canvas"), Some("apply")) => finish(commands::cmd_canvas_apply(&rest2).await),
+        (Some("canvas"), Some("upload-asset")) => {
+            finish(commands::cmd_canvas_upload_asset(&rest2).await)
+        }
+        (Some("canvas"), Some("capture")) => finish(commands::cmd_canvas_capture(&rest2).await),
+        (Some("canvas"), Some("verify")) => finish(commands::cmd_canvas_verify(&rest2).await),
+        (Some("canvas"), Some("undo")) => finish(commands::cmd_canvas_undo(&rest2).await),
+        (Some("canvas"), Some("execute")) => finish(commands::cmd_canvas_execute(&rest2).await),
+
         // Discovery / coverage / figma api
         (Some("quickstart"), _) => finish(commands::cmd_quickstart(&rest1)),
         (Some("discover"), _) => finish(commands::cmd_discover(&rest1)),
@@ -117,6 +140,9 @@ async fn async_main() -> ExitCode {
         (Some("install"), Some("binary")) => finish(commands::cmd_install_binary(&rest2)),
         (Some("install"), Some("client")) => finish(commands::cmd_install_client(&rest2)),
         (Some("install"), Some("service")) => finish(commands::cmd_install_service(&rest2).await),
+        (Some("install"), Some("canvas-plugin")) => {
+            finish(commands::cmd_install_canvas_plugin(&rest2))
+        }
         (Some("install"), Some("skill")) => finish(commands::cmd_install_skill(&rest2)),
         (Some("install"), Some("all")) => finish(commands::cmd_install_all(&rest2).await),
         (Some("install"), Some("status")) => finish(commands::cmd_install_status(&rest2)),
@@ -238,6 +264,7 @@ Self Discovery and AI Replication:
   url parse <figma-url>                        Parse file_key/node_id plus url_role/catalog_eligible/next_action
   design package <figma-url> [--platform P] [--asset-format F]  Build AI replication package with scope/needs_narrowing diagnostics
   resource catalog <team-or-project-url> [--probe-file-access]  Enumerate accessible design resources
+  canvas status|pair|sessions|inspect|apply|verify|undo  Local Figma plugin canvas bridge
   mcp config [--client C] [--transport T]      Emit MCP client config
   figma-api coverage [--format json|md]        Report official Figma REST OpenAPI coverage
   figma api <operationId> --params JSON [--body JSON|--body-file P] [--yes]  Call any covered REST operation
@@ -264,10 +291,12 @@ Install:
   install project [--project-dir D]             Enable project-scoped .fighorse experience
   install client --client cursor|codex|kimi|claude|opencode|openclaw|hermes-agent [--apply]  Generate or apply client MCP setup
   install service [--service launchd|systemd] [--apply]  Generate or apply auto-start MCP HTTP service
+  install canvas-plugin [--apply]               Install local Figma development plugin bundle
   install skill [--dir D] [--clients C] [--apply]  Apply canonical skills/rule and safely migrate generated legacy copies
   install [--default|--path D|--target P] [--mode cli|service] [--apply]  Self-install this binary and emit AI-readable install guidance
   install self [--default|--path D|--target P] [--apply]  Same as install root command
   install all [--mode cli|service|all] [--no-service] [--clients C] [--source P] [--apply]  Generate or apply setup; default mode is cli
+  Canvas service: fighorse install --default --mode service --canvas-plugin --canvas-mode write --apply
   install status                                Show install paths and detected state
   install verify [--home D] [--port N]          Verify manifest, binary, service handshake, clients, and skills
   install rollback [--home D]                   Restore unchanged managed files from manifest backups
@@ -280,6 +309,19 @@ Auth:
   auth login --token <token>                    Save Figma token
   auth logout                                   Remove saved token
   auth status                                   Show auth status
+
+Canvas Bridge:
+  canvas serve [--port N]                       Start local plugin bridge on 127.0.0.1:9450
+  canvas status [--output P]                    Show bridge readiness and active plugin sessions
+  canvas pair [--ttl-seconds N]                 Create a one-time plugin pairing code
+  canvas sessions                               List active Figma Design, FigJam, and Slides sessions
+  canvas inspect [--session-id S]               Inspect current page and selection through the plugin
+  canvas apply --plan JSON|--plan-file P --yes  Apply a structured CanvasPlan to the selected session
+  canvas upload-asset --path P --yes            Place an approved local asset through the plugin
+  canvas capture [--session-id S]               Capture current canvas diagnostics
+  canvas verify [--session-id S]                Verify node structure and layout diagnostics
+  canvas undo --transaction-id T --yes          Undo the latest plugin transaction when safe
+  canvas execute --script JS --yes              Run bounded Plugin API JavaScript; requires FIGHORSE_CANVAS_SCRIPT=allow
 
 File Operations:
   file get <file-key> [depth] [--version V] [--output P]  Fetch raw file JSON
@@ -369,6 +411,10 @@ Environment:
   FIGHORSE_MCP_MODE  MCP safety mode: readonly (default) or write
   FIGHORSE_MCP_LOCAL_WRITE  Set to allow for MCP local asset exports inside approved roots
   FIGHORSE_MCP_CODE_CONNECT  Set to allow before MCP preview/publish sends Code Connect templates to Figma
+  FIGHORSE_CANVAS_MODE  Canvas bridge mode: readonly (default) or write
+  FIGHORSE_CANVAS_SCRIPT  Set to allow before using canvas execute or canvas_execute_script
+  FIGHORSE_CANVAS_PORT  Canvas bridge loopback port, default 9450
+  FIGHORSE_CANVAS_BRIDGE  Set to allow for mcp serve to also start the canvas bridge
   FIGHORSE_MCP_ALLOW_MULTIPLE  Set to 1 only for development when bypassing the MCP singleton lock
   FIGHORSE_HTTP_TIMEOUT_MS  Figma REST request timeout, default 120000
   FIGHORSE_EXPERIENCE_PATH  Override local experience JSONL store
@@ -379,6 +425,39 @@ Environment:
 
 Proxy Example:
   HTTPS_PROXY=http://127.0.0.1:7897 fighorse file meta <file-key>
+"#
+    );
+}
+
+fn print_canvas_help() {
+    print!(
+        r#"fighorse canvas — local Figma Plugin API bridge
+
+Usage:
+  fighorse canvas serve [--port N]
+  fighorse canvas status [--output P]
+  fighorse canvas pair [--ttl-seconds N] [--output P]
+  fighorse canvas sessions [--output P]
+  fighorse canvas inspect [--session-id S] [--output P]
+  fighorse canvas apply --plan JSON|--plan-file P --yes [--session-id S] [--output P]
+  fighorse canvas upload-asset --path P --yes [--session-id S] [--output P]
+  fighorse canvas capture [--session-id S] [--output P]
+  fighorse canvas verify [--session-id S] [--output P]
+  fighorse canvas undo --transaction-id T --yes [--session-id S] [--output P]
+  fighorse canvas execute --script JS|--script-file P --yes [--session-id S] [--output P]
+
+Behavior:
+  The bridge binds to 127.0.0.1 only. Start it explicitly with `canvas serve`,
+  or set FIGHORSE_CANVAS_BRIDGE=allow for `mcp serve` service mode.
+  Pairing codes are one-time and expire within five minutes.
+  Writes require FIGHORSE_CANVAS_MODE=write and --yes.
+  Script execution also requires FIGHORSE_CANVAS_SCRIPT=allow.
+  If multiple Figma files are connected, pass --session-id; fighorse will not guess.
+
+MCP tools:
+  canvas_status, canvas_create_pairing, canvas_list_sessions, canvas_inspect,
+  canvas_capture, canvas_verify, canvas_apply, canvas_upload_asset,
+  canvas_undo, canvas_execute_script.
 "#
     );
 }

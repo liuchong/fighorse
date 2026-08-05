@@ -1,0 +1,117 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      body {
+        margin: 0;
+        padding: 16px;
+        font: 12px Inter, sans-serif;
+        color: #172033;
+      }
+      label, input, button {
+        display: block;
+        width: 100%;
+        box-sizing: border-box;
+      }
+      input {
+        margin: 6px 0 12px;
+        padding: 8px;
+      }
+      button {
+        padding: 8px;
+        border: 0;
+        border-radius: 6px;
+        color: #fff;
+        background: #172033;
+      }
+      pre {
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+        background: #f6f7f9;
+        padding: 8px;
+        border-radius: 6px;
+      }
+    </style>
+  </head>
+  <body>
+    <h2>fighorse Canvas Bridge</h2>
+    <label>
+      Bridge URL
+      <input id="url" value="ws://127.0.0.1:9450/canvas/ws" />
+    </label>
+    <label>
+      Pairing code
+      <input id="code" placeholder="pair-..." />
+    </label>
+    <button id="connect">Connect</button>
+    <pre id="status">Disconnected</pre>
+    <script>
+      const status = document.getElementById("status");
+      const url = document.getElementById("url");
+      const code = document.getElementById("code");
+      let socket = null;
+      let session = null;
+
+      function log(message) {
+        status.textContent = message;
+      }
+
+      document.getElementById("connect").onclick = () => {
+        parent.postMessage({ pluginMessage: { type: "describe-session" } }, "*");
+      };
+
+      window.onmessage = async (event) => {
+        const message = event.data.pluginMessage;
+        if (!message) return;
+        if (message.type === "session") {
+          session = message.session;
+          connect();
+          return;
+        }
+        if (message.type === "plugin-response" && socket) {
+          socket.send(JSON.stringify({
+            type: "response",
+            id: message.id,
+            result: message.result,
+            error: message.error
+          }));
+        }
+      };
+
+      function connect() {
+        const pairingCode = code.value.trim();
+        if (!pairingCode) {
+          log("Enter the pairing code from fighorse canvas pair.");
+          return;
+        }
+        const base = url.value.trim().replace(/\?.*$/, "");
+        socket = new WebSocket(`${base}?code=${encodeURIComponent(pairingCode)}`);
+        socket.onopen = () => {
+          socket.send(JSON.stringify({
+            type: "hello",
+            ...session
+          }));
+          log("Connected. Waiting for pairing acknowledgement...");
+        };
+        socket.onmessage = (event) => {
+          const data = JSON.parse(event.data);
+          if (data.type === "paired") {
+            log(`Paired as ${data.session.session_id}`);
+          } else if (data.type === "request") {
+            parent.postMessage({ pluginMessage: {
+              type: "plugin-request",
+              id: data.id,
+              command: data.command,
+              params: data.params
+            }}, "*");
+          } else if (data.type === "error") {
+            log(JSON.stringify(data, null, 2));
+          }
+        };
+        socket.onclose = () => log("Disconnected");
+        socket.onerror = () => log("WebSocket error. Check that fighorse canvas serve is running.");
+      }
+    </script>
+  </body>
+</html>

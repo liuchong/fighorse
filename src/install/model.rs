@@ -13,6 +13,7 @@ pub enum InstallStep {
     Preflight,
     Backup,
     Binary,
+    CanvasPlugin,
     Service,
     HealthReady,
     Clients,

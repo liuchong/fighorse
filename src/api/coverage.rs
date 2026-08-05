@@ -456,8 +456,8 @@ pub fn official_operations() -> Vec<Operation> {
 pub fn official_mcp_only_capabilities() -> Value {
     json!([
         {"capability": "native_canvas_write",
-         "status": "unsupported-by-public-rest-api",
-         "reason": "Figma MCP use_figma-style native canvas mutations are not exposed by the public REST OpenAPI."},
+         "status": "implemented-by-local-plugin-bridge",
+         "reason": "Figma native canvas mutations are not exposed by the public REST OpenAPI; fighorse provides them through a paired local Figma plugin bridge using the Plugin API."},
         {"capability": "code_to_canvas",
          "status": "unsupported-by-public-rest-api",
          "reason": "generate_figma_design is an official MCP product capability, not a public REST endpoint."},

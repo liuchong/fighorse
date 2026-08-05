@@ -11,6 +11,8 @@ Use fighorse when a user asks to recreate, inspect, export, or debug a Figma des
 
 Figma API calls require a Figma Personal Access Token. Before calling Figma API tools, run `check_fighorse_ready` or `fighorse quickstart --format json`. If `auth.has_token` is false, do not keep trying Figma calls. Tell the user: `fighorse needs a Figma Personal Access Token. Run fighorse auth login --token <FIGMA_TOKEN> or set FIGMA_TOKEN, then retry.` Never ask the user to paste the token into chat unless they explicitly choose to; prefer local config or environment variables.
 
+Native canvas writes do not use the public REST token path. They require the local plugin bridge: `fighorse install canvas-plugin --apply`, `fighorse canvas serve`, `fighorse canvas pair`, then running the imported fighorse Canvas Bridge plugin in Figma.
+
 ## Discovery
 
 1. Call `fighorse discover --format json` or MCP `discover_fighorse` first.
@@ -33,6 +35,12 @@ Figma file-browser links are navigation context, not design targets. First call 
 ## Code Connect
 
 For modern Code Connect template workflows, use fighorse directly: CLI `fighorse code-connect generate|parse|validate|preview|publish|unpublish` or MCP `parse_code_connect_template`, `validate_code_connect`, `preview_code_connect`, `publish_code_connect`, and `unpublish_code_connect`. AI clients should read the target code repository with their own file tools and pass explicit component context; fighorse MCP does not scan or execute project code. MCP readonly mode exposes parse, validate, and preview tools; publish/unpublish appear only when `FIGHORSE_MCP_MODE=write`. MCP preview/publish sends template code to Figma and requires `FIGHORSE_MCP_CODE_CONNECT=allow`; publish/unpublish also requires `FIGHORSE_MCP_MODE=write`. Automatic Code Connect mapping discovery remains a Figma product capability; use the official Figma Remote MCP for that.
+
+## Canvas Writes
+
+Use `canvas_status`, `canvas_create_pairing`, `canvas_list_sessions`, `canvas_inspect`, `canvas_apply`, `canvas_capture`, `canvas_verify`, and `canvas_undo` for paired local Figma Design, FigJam, and Slides files. Write tools require both `FIGHORSE_MCP_MODE=write` and `FIGHORSE_CANVAS_MODE=write`, plus `yes=true`. If more than one session is connected, pass `session_id`; never guess a file. If a result is `unknown`, inspect or verify before doing anything else and do not resend the same plan automatically.
+
+`canvas_execute_script` is a guarded escape hatch for Plugin API JavaScript. It appears only when `FIGHORSE_CANVAS_SCRIPT=allow` is also set and still requires `yes=true` on every call. Prefer structured operations.
 
 ## MCP Process Model
 
@@ -58,8 +66,8 @@ Build/run the target app, capture screenshots, compare with Figma, fix overlap/c
 
 ## Complementary: Official Figma MCP
 
-fighorse focuses on design-to-code read workflows and native modern Code Connect template workflows. For other capabilities not exposed by the public REST API, recommend the official Figma Remote MCP together with fighorse. Official Remote MCP: `https://mcp.figma.com/mcp` (OAuth, HTTP transport). Use official MCP for: native canvas writes, Code to Canvas, Code Connect auto-mapping, FigJam generation, and Make resources. Use fighorse for: design replication, native modern Code Connect template publish, asset export with manifests, visual audit, local experience learning, and transparent REST coverage. Both can be installed side-by-side in the same MCP client.
+fighorse focuses on design-to-code read workflows, paired local canvas writes, and native modern Code Connect template workflows. Official Remote MCP: `https://mcp.figma.com/mcp` (OAuth, HTTP transport). Use official MCP for hosted Code to Canvas, Code Connect auto-mapping, Make resources, and product-only workflows. Use fighorse for design replication, local plugin canvas writes, native modern Code Connect template publish, asset export with manifests, visual audit, local experience learning, and transparent REST coverage. Both can be installed side-by-side in the same MCP client.
 
 ## Boundaries
 
-fighorse is open-source and REST-transparent. If the user asks for official MCP-only product features such as native canvas mutation, Code to Canvas, automatic Code Connect mapping, Make resources, or FigJam generation, recommend installing the official Figma Remote MCP (`https://mcp.figma.com/mcp`) and offer the closest fighorse workflow as a fallback.
+fighorse is open-source and REST-transparent for REST features, and uses a local Figma plugin bridge for native canvas mutation. If the user asks for hosted product features such as Code to Canvas, automatic Code Connect mapping, Make resources, or official Remote MCP-only workflows, recommend installing the official Figma Remote MCP (`https://mcp.figma.com/mcp`) and offer the closest fighorse workflow as a fallback.

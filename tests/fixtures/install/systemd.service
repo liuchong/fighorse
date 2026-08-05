@@ -6,6 +6,10 @@ Environment="FIGHORSE_HOME=/tmp/home"
 Environment="FIGHORSE_MCP_MODE=readonly"
 Environment="FIGHORSE_MCP_LOCAL_WRITE=deny"
 Environment="FIGHORSE_MCP_CODE_CONNECT=deny"
+Environment="FIGHORSE_CANVAS_MODE=readonly"
+Environment="FIGHORSE_CANVAS_SCRIPT=deny"
+Environment="FIGHORSE_CANVAS_BRIDGE=deny"
+Environment="FIGHORSE_CANVAS_PORT=9450"
 Environment="FIGHORSE_MCP_SERVICE=true"
 ExecStart="/tmp/fighorse" mcp serve --transport http --host 127.0.0.1 --port 9449
 Restart=always

@@ -345,3 +345,4 @@ fighorse image export <file_key> --ids "$IDS" --dir ./.fighorse/exports --manife
 - MCP-инструмент экспорта сообщает, что локальная запись отключена: установите `FIGHORSE_MCP_LOCAL_WRITE=allow` в окружении MCP-сервера.
 - Путь экспорта отклонен: используйте `./.fighorse/exports`, `./assets/fighorse` или `~/.fighorse/exports`.
 - AI реализует целую страницу пользовательского потока: сузьте Figma URL до конкретного узла Frame/Screen перед реализацией.
+- Native canvas writes требуют локальный plugin bridge: выполните `fighorse install canvas-plugin --apply`, `fighorse canvas serve`, `fighorse canvas pair`, затем запустите импортированный Figma plugin. Запись требует `FIGHORSE_CANVAS_MODE=write`; script execution также требует `FIGHORSE_CANVAS_SCRIPT=allow`. Если transaction вернул `unknown`, сначала выполните inspect или verify и не повторяйте автоматически.

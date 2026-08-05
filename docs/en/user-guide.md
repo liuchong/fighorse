@@ -360,3 +360,4 @@ fighorse image export <file_key> --ids "$IDS" --dir ./.fighorse/exports --manife
 - MCP export tool reports local-write disabled: set `FIGHORSE_MCP_LOCAL_WRITE=allow` in the MCP server environment.
 - Export path is rejected: use `./.fighorse/exports`, `./assets/fighorse`, or `~/.fighorse/exports`.
 - AI implements an entire user flow page: narrow the Figma URL to a concrete Frame/Screen node before implementation.
+- Native canvas writes need the local plugin bridge: run `fighorse install canvas-plugin --apply`, `fighorse canvas serve`, `fighorse canvas pair`, then run the imported Figma plugin. Writes require `FIGHORSE_CANVAS_MODE=write`; script execution also requires `FIGHORSE_CANVAS_SCRIPT=allow`. If a transaction returns `unknown`, inspect or verify before continuing.

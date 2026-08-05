@@ -147,6 +147,34 @@ pub fn mcp_service_status() -> Value {
     })
 }
 
+fn canvas_bridge_status(cfg: &config::Config) -> Value {
+    let port = cfg.canvas_port;
+    let address = SocketAddr::from(([127, 0, 0, 1], port));
+    let listener_reachable =
+        TcpStream::connect_timeout(&address, Duration::from_millis(75)).is_ok();
+    let plugin_manifest = cfg
+        .fighorse_home
+        .join("plugins")
+        .join("fighorse-canvas")
+        .join("manifest.json");
+    json!({
+        "mode": &cfg.canvas_mode,
+        "write_enabled": config::canvas_write_enabled(),
+        "script": &cfg.canvas_script,
+        "script_enabled": config::canvas_script_enabled(),
+        "bridge": &cfg.canvas_bridge,
+        "bridge_enabled": config::canvas_bridge_enabled(),
+        "port": port,
+        "endpoint": format!("http://127.0.0.1:{port}/canvas"),
+        "websocket": format!("ws://127.0.0.1:{port}/canvas/ws"),
+        "listener_reachable": listener_reachable,
+        "plugin_manifest": plugin_manifest.to_string_lossy(),
+        "plugin_installed": plugin_manifest.is_file(),
+        "requires_figma_rest_token": false,
+        "session_readiness": "Run fighorse canvas pair, open the local plugin in Figma, and pass session_id when multiple files are connected."
+    })
+}
+
 /// Structured setup instructions for humans and AI clients.
 pub fn setup_guidance() -> Value {
     json!({
@@ -401,6 +429,7 @@ pub fn doctor() -> Value {
     let local_write = config::mcp_local_write_enabled();
     let code_connect_enabled = config::mcp_code_connect_enabled();
     let mcp_service = mcp_service_status();
+    let canvas_bridge = canvas_bridge_status(&cfg);
     let stale_lock = mcp_service["lock_present"].as_bool().unwrap_or(false)
         && !mcp_service["owner_active"].as_bool().unwrap_or(false);
     let service_ready = mcp_service["ready"].as_bool().unwrap_or(false);
@@ -423,6 +452,7 @@ pub fn doctor() -> Value {
             "code_connect_enabled": code_connect_enabled,
             "code_connect_env": "FIGHORSE_MCP_CODE_CONNECT=allow"
         },
+        "canvas": canvas_bridge,
         "install": {
             "home": cfg.fighorse_home.to_string_lossy(),
             "output_locations": guidance::output_location_guidance(),
@@ -459,6 +489,9 @@ pub fn doctor() -> Value {
             {"id": "code_connect_egress", "ok": code_connect_enabled,
              "message": if code_connect_enabled { "MCP Code Connect template egress is enabled." } else { "MCP Code Connect template egress is disabled by default." },
              "next_step": "Set FIGHORSE_MCP_CODE_CONNECT=allow only when the client may send Code Connect template code to Figma preview/publish."},
+            {"id": "canvas_bridge", "ok": !config::canvas_bridge_enabled() || canvas_bridge["listener_reachable"].as_bool().unwrap_or(false),
+             "message": if config::canvas_bridge_enabled() { "Canvas bridge is expected for this process; listener status is shown under canvas.listener_reachable." } else { "Canvas bridge is disabled by default; use fighorse canvas serve or FIGHORSE_CANVAS_BRIDGE=allow for service mode." },
+             "next_step": "For native canvas writes, run fighorse install canvas-plugin --apply, start fighorse canvas serve, pair the plugin, then set FIGHORSE_CANVAS_MODE=write only when writes are allowed."},
             {"id": "stale_singleton_lock", "ok": !stale_lock,
              "message": if stale_lock { "A stale MCP singleton lock was found." } else { "No stale MCP singleton lock detected." },
              "next_step": format!("Remove {} only after confirming no fighorse MCP service is running.", mcp_service["lock_file"].as_str().unwrap_or(""))}
@@ -470,6 +503,7 @@ pub fn doctor() -> Value {
             "token_missing": "Run fighorse auth login --token <FIGMA_TOKEN>. AI clients should surface this exact command when auth.has_token is false.",
             "export_path_rejected": "Use ./.fighorse/exports, ./assets/fighorse, or ~/.fighorse/exports. MCP also requires FIGHORSE_MCP_LOCAL_WRITE=allow.",
             "code_connect_denied": "MCP Code Connect preview/publish requires FIGHORSE_MCP_CODE_CONNECT=allow; publish/unpublish also require FIGHORSE_MCP_MODE=write.",
+            "canvas_session_missing": "Native canvas writes do not need a Figma REST token, but they do need the local bridge and a paired Figma plugin session. If multiple sessions are connected, pass session_id.",
             "mcp_unexpected_content_type": "Codex/Cursor/Kimi/Claude should target http://127.0.0.1:9449/mcp. The official rmcp handler must return a standard Streamable HTTP JSON or event-stream response for every independent initialize request.",
             "quickstart": "Run fighorse quickstart \"<figma-frame-url>\" for the shortest public onboarding path."
         },
@@ -550,6 +584,9 @@ pub fn manifest() -> Value {
             "mcp_mode": "readonly",
             "mcp_local_write": "set FIGHORSE_MCP_LOCAL_WRITE=allow only for safe local asset exports",
             "mcp_code_connect": "set FIGHORSE_MCP_CODE_CONNECT=allow only when preview/publish may send Code Connect template code to Figma",
+            "canvas_mode": "readonly; set FIGHORSE_CANVAS_MODE=write only for paired local plugin canvas writes",
+            "canvas_script": "deny; set FIGHORSE_CANVAS_SCRIPT=allow only for explicitly confirmed Plugin API JavaScript",
+            "canvas_bridge": "disabled unless fighorse canvas serve is running or FIGHORSE_CANVAS_BRIDGE=allow starts it with mcp serve",
             "fighorse_home": "~/.fighorse",
             "global_experience": "~/.fighorse/experience/global.jsonl",
             "project_experience": "./.fighorse/experience.jsonl after fighorse install project",
@@ -584,22 +621,22 @@ pub fn manifest() -> Value {
         },
         "api_coverage": api_coverage::coverage_report(),
         "official_mcp_comparison": {
-            "official_strengths": ["Native Figma canvas writes through official MCP product APIs.", "Code Connect-aware context and code generation inside Figma's product surface.", "Make resources, FigJam generation, and hosted Remote MCP ergonomics."],
-            "fighorse_strengths": ["Self-hosted CLI-first pipeline under 1PL.", "Full public REST coverage with transparent operation registry.", "Native modern Code Connect template generate/parse/preview/publish/unpublish through an observed private protocol compatibility layer.", "AI self-discovery, local experience learning, asset manifests, and reproducible visual feedback loops.", "Separate Figma write, local filesystem write, and Code Connect code egress safety controls."],
+            "official_strengths": ["Hosted Remote MCP product APIs.", "Code Connect-aware context and code generation inside Figma's product surface.", "Make resources, FigJam generation, and hosted Remote MCP ergonomics."],
+            "fighorse_strengths": ["Self-hosted CLI-first pipeline under 1PL.", "Full public REST coverage with transparent operation registry.", "Native local canvas writes through an explicitly paired Figma plugin bridge.", "Native modern Code Connect template generate/parse/preview/publish/unpublish through an observed private protocol compatibility layer.", "AI self-discovery, local experience learning, asset manifests, and reproducible visual feedback loops.", "Separate Figma REST write, local filesystem write, canvas write, script, and Code Connect code egress safety controls."],
             "unsupported_by_public_rest": api_coverage::official_mcp_only_capabilities(),
             "native_code_connect": api_coverage::code_connect_compatibility_capabilities(),
-            "recommended_setup": "Use fighorse for design-to-code read workflows and native modern Code Connect template workflows. Use the official Figma Remote MCP for native canvas writes, Code to Canvas, and automatic Code Connect mapping."
+            "recommended_setup": "Use fighorse for design-to-code read workflows, native modern Code Connect template workflows, and local paired plugin canvas writes. Use the official Figma Remote MCP for hosted product-only features such as Code to Canvas and automatic Code Connect mapping."
         },
         "complementary_mcp_servers": [{
             "name": "figma-official",
-            "purpose": "Native canvas writes, Code to Canvas, automatic Code Connect mapping, and product-only Figma capabilities.",
+            "purpose": "Hosted Code to Canvas, automatic Code Connect mapping, Make resources, and other product-only Figma capabilities.",
             "remote_url": "https://mcp.figma.com/mcp",
             "transport": "http",
             "auth": "OAuth via Figma account",
             "pricing": "Beta: free. Future: usage-based paid feature (per Figma docs).",
             "seat_requirements": "Full seat for write to shared files; Dev seat read-only outside drafts.",
-            "when_to_use": ["Write directly to Figma canvas", "Code to Canvas (push running UI into Figma as editable layers)", "Code Connect automatic mapping", "FigJam generation", "Make resources"],
-            "when_not_to_use": "Design-to-code replication, native modern Code Connect template publish, asset export with manifests, visual audit, or local experience learning — use fighorse instead."
+            "when_to_use": ["Hosted Code to Canvas (push running UI into Figma as editable layers)", "Code Connect automatic mapping", "Make resources", "Hosted workflows where OAuth Remote MCP is required"],
+            "when_not_to_use": "Design-to-code replication, local paired plugin canvas writes, native modern Code Connect template publish, asset export with manifests, visual audit, or local experience learning — use fighorse instead."
         }],
         "experience_loop": {
             "store_path": experience::experience_path(&opts).to_string_lossy(),
@@ -643,6 +680,7 @@ pub fn manifest() -> Value {
             },
             "local_write": {"env": "FIGHORSE_MCP_LOCAL_WRITE=allow", "allowed_roots": ["./.fighorse/exports", "./assets/fighorse", "~/.fighorse/exports"], "default": "deny unless explicitly enabled"},
             "code_connect_egress": {"env": "FIGHORSE_MCP_CODE_CONNECT=allow", "default": "deny unless explicitly enabled", "reason": "preview/publish sends Code Connect template code to Figma"},
+            "canvas": {"endpoint": "http://127.0.0.1:9450/canvas", "websocket": "ws://127.0.0.1:9450/canvas/ws", "mode_env": "FIGHORSE_CANVAS_MODE=write", "script_env": "FIGHORSE_CANVAS_SCRIPT=allow", "bridge_env": "FIGHORSE_CANVAS_BRIDGE=allow", "default": "readonly and script-denied", "session_rule": "write calls must pass session_id when multiple plugin sessions are connected"},
             "default_mode": "readonly",
             "write_mode": "Set FIGHORSE_MCP_MODE=write only when the AI client is allowed to mutate Figma resources.",
             "tool_visibility": {
@@ -666,7 +704,13 @@ pub fn manifest() -> Value {
                     "get_project_playbook",
                     "parse_code_connect_template",
                     "validate_code_connect",
-                    "preview_code_connect"
+                    "preview_code_connect",
+                    "canvas_status",
+                    "canvas_create_pairing",
+                    "canvas_list_sessions",
+                    "canvas_inspect",
+                    "canvas_capture",
+                    "canvas_verify"
                 ],
                 "write_mode": [
                     "post_comment",
@@ -684,6 +728,16 @@ pub fn manifest() -> Value {
                     "update_webhook",
                     "delete_webhook"
                 ],
+                "canvas_write": {
+                    "env": "FIGHORSE_CANVAS_MODE=write",
+                    "visible_when": "FIGHORSE_MCP_MODE=write and FIGHORSE_CANVAS_MODE=write",
+                    "tools": ["canvas_apply", "canvas_upload_asset", "canvas_undo"]
+                },
+                "canvas_script": {
+                    "env": "FIGHORSE_CANVAS_SCRIPT=allow",
+                    "visible_when": "FIGHORSE_MCP_MODE=write and FIGHORSE_CANVAS_MODE=write and FIGHORSE_CANVAS_SCRIPT=allow",
+                    "tools": ["canvas_execute_script"]
+                },
                 "code_connect_egress": {
                     "env": "FIGHORSE_MCP_CODE_CONNECT=allow",
                     "readonly_visible": ["parse_code_connect_template", "validate_code_connect", "preview_code_connect"],
@@ -696,9 +750,10 @@ pub fn manifest() -> Value {
             "learning_tools": ["get_experience_schema", "list_experiences", "record_experience"],
             "replication_tools": ["get_resource_catalog", "get_design_package", "get_design_context", "get_screenshot", "export_images", "export_component", "download_image_fills", "get_tokens", "visual_audit", "get_project_playbook"],
             "code_connect_tools": ["parse_code_connect_template", "validate_code_connect", "preview_code_connect", "publish_code_connect", "unpublish_code_connect"],
+            "canvas_tools": ["canvas_status", "canvas_create_pairing", "canvas_list_sessions", "canvas_inspect", "canvas_capture", "canvas_verify", "canvas_apply", "canvas_upload_asset", "canvas_undo", "canvas_execute_script"],
             "resources": ["fighorse://capabilities", "fighorse://coverage", "fighorse://workflow/design-replication", "fighorse://experience/summary"],
             "prompts": ["fighorse_design_replication", "fighorse_api_coverage"],
-            "complementary_servers": [{"name": "figma-official", "url": "https://mcp.figma.com/mcp", "transport": "http", "auth": "OAuth", "purpose": "Canvas writes, Code to Canvas, automatic Code Connect mapping", "pricing_note": "Free during beta; will become usage-based paid"}]
+            "complementary_servers": [{"name": "figma-official", "url": "https://mcp.figma.com/mcp", "transport": "http", "auth": "OAuth", "purpose": "Hosted Code to Canvas, automatic Code Connect mapping, and product-only Figma workflows", "pricing_note": "Free during beta; will become usage-based paid"}]
         },
         "cli": {
             "self_discovery_commands": [
@@ -708,6 +763,9 @@ pub fn manifest() -> Value {
                 "fighorse install status",
                 "fighorse install project",
                 "fighorse smoke <figma-url>",
+                "fighorse canvas status",
+                "fighorse canvas pair",
+                "fighorse canvas apply --plan-file <canvas-plan.json> --yes",
                 "fighorse url parse <figma-url>",
                 "fighorse experience summary --platform <target-platform> --asset-format <asset-format>",
                 "fighorse experience add --summary <issue-pattern> --lesson <generalized-lesson> --platform <target-platform> --asset-format <asset-format>",
@@ -722,6 +780,7 @@ pub fn manifest() -> Value {
                 "fighorse install home",
                 "fighorse install auth --apply",
                 "fighorse install binary --source <path-to-fighorse-binary> --apply",
+                "fighorse install canvas-plugin --apply",
                 "fighorse install project",
                 "fighorse install client --client cursor",
                 "fighorse install client --client cursor --apply",
@@ -735,7 +794,8 @@ pub fn manifest() -> Value {
                 "fighorse install skill --clients cursor,codex,kimi,claude --apply",
                 "fighorse install --default --apply",
                 "fighorse install --path ~/.local/bin --apply",
-                "fighorse install --default --mode service --clients cursor,codex,kimi,claude --apply"
+                "fighorse install --default --mode service --clients cursor,codex,kimi,claude --apply",
+                "fighorse install --default --mode service --canvas-plugin --canvas-mode write --apply"
             ],
             "service_install_order": [
                 "install binary and service definition",

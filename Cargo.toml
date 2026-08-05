@@ -28,7 +28,7 @@ regex = "1"
 url = "2"
 dirs = "5"
 futures-util = "0.3"
-axum = "0.8.9"
+axum = { version = "0.8.9", features = ["ws"] }
 rmcp = { version = "2.2.0", default-features = false, features = ["server", "transport-streamable-http-server", "transport-io"] }
 tokio-util = "0.7.18"
 sha2 = "0.11.0"

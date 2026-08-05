@@ -439,3 +439,12 @@ fighorse mcp config --client generic --transport http
 Типичная проблема: множество долгоживущих stdio-процессов потребляют ресурсы. Предпочитайте общий HTTP-сервис для клиентов, которые его поддерживают.
 
 Когда AI-инструмент видит URL Figma и fighorse доступен, он не должен вручную скрейпить URL, угадывать frame id или реализовывать из визуальной памяти. Сначала используйте fighorse.
+
+Для native canvas writes используйте локальный plugin bridge, а не REST token:
+`canvas_status`, `canvas_create_pairing`, `canvas_list_sessions`,
+`canvas_apply`, `canvas_verify` и `canvas_undo`. Пользователь должен установить
+и запустить Figma plugin. Запись требует `FIGHORSE_MCP_MODE=write`,
+`FIGHORSE_CANVAS_MODE=write` и `yes=true`; scripts дополнительно требуют
+`FIGHORSE_CANVAS_SCRIPT=allow`. Если подключено несколько sessions, спросите
+или передайте точный `session_id`. Если result равен `unknown`, сначала
+выполните inspect или verify.

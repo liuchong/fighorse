@@ -1,0 +1,28 @@
+{
+  "version": 1,
+  "transaction_id": "txn-figjam-retro",
+  "session_id": "session-figjam",
+  "expected_editor": "figjam",
+  "operations": [
+    {
+      "op": "create_sticky",
+      "op_id": "went-well",
+      "args": {
+        "text": "What went well",
+        "x": 0,
+        "y": 0
+      }
+    },
+    {
+      "op": "create_connector",
+      "op_id": "connector",
+      "args": {
+        "from": "went-well",
+        "to": "actions"
+      }
+    }
+  ],
+  "verify": {
+    "capture": false
+  }
+}

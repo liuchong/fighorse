@@ -53,7 +53,7 @@ Recommended installed MCP config:
 }
 ```
 
-**Why both?** fighorse handles design-to-code read workflows (design package, asset export, visual audit, experience learning) and native modern Code Connect template workflows. The official Figma Remote MCP handles product-only capabilities not exposed by public REST: native canvas writes, Code to Canvas, Code Connect auto-mapping, FigJam generation, and Make resources. They complement each other and can coexist in the same client.
+**Why both?** fighorse handles design-to-code read workflows (design package, asset export, visual audit, experience learning), local paired plugin canvas writes, and native modern Code Connect template workflows. The official Figma Remote MCP handles hosted product-only capabilities such as Code to Canvas, Code Connect auto-mapping, and Make resources. They complement each other and can coexist in the same client.
 
 - Official Remote MCP: `https://mcp.figma.com/mcp` — OAuth auth, free during beta, will become usage-based paid.
 - Seat requirements: Full seat for writes to shared files; Dev seat is read-only outside drafts.
@@ -440,3 +440,12 @@ For explicit stdio compatibility only:
 Common failure: multiple long-lived stdio processes consume resources. Prefer the shared HTTP service for clients that support it.
 
 When an AI tool sees a Figma URL and fighorse is available, it should not manually scrape the URL, guess frame ids, or implement from visual memory. Use fighorse first.
+
+For native canvas writes, use the local plugin bridge rather than a REST token:
+`canvas_status`, `canvas_create_pairing`, `canvas_list_sessions`,
+`canvas_apply`, `canvas_verify`, and `canvas_undo`. The user must install and
+run the Figma plugin. Write calls require `FIGHORSE_MCP_MODE=write`,
+`FIGHORSE_CANVAS_MODE=write`, and `yes=true`; scripts additionally require
+`FIGHORSE_CANVAS_SCRIPT=allow`. If multiple sessions are connected, ask or pass
+the exact `session_id`. If the result is `unknown`, inspect or verify before any
+next action.

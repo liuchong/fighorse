@@ -71,6 +71,10 @@ pub struct Config {
     pub mcp_mode: String,
     pub mcp_local_write: String,
     pub mcp_code_connect: String,
+    pub canvas_mode: String,
+    pub canvas_script: String,
+    pub canvas_port: u16,
+    pub canvas_bridge: String,
 }
 
 /// Save user config under `<home>/config.json`.
@@ -121,6 +125,24 @@ pub fn load_config() -> Config {
         .or_else(|| str_field(&file_config, "mcp-code-connect"))
         .unwrap_or_else(|| "deny".to_string());
 
+    let canvas_mode = env_nonempty("FIGHORSE_CANVAS_MODE")
+        .or_else(|| str_field(&file_config, "canvas-mode"))
+        .unwrap_or_else(|| "readonly".to_string());
+
+    let canvas_script = env_nonempty("FIGHORSE_CANVAS_SCRIPT")
+        .or_else(|| str_field(&file_config, "canvas-script"))
+        .unwrap_or_else(|| "deny".to_string());
+
+    let canvas_port = env_nonempty("FIGHORSE_CANVAS_PORT")
+        .or_else(|| str_field(&file_config, "canvas-port"))
+        .and_then(|value| value.parse::<u16>().ok())
+        .filter(|port| *port > 0)
+        .unwrap_or(9450);
+
+    let canvas_bridge = env_nonempty("FIGHORSE_CANVAS_BRIDGE")
+        .or_else(|| str_field(&file_config, "canvas-bridge"))
+        .unwrap_or_else(|| "deny".to_string());
+
     Config {
         token,
         config_path: config_path(),
@@ -130,6 +152,10 @@ pub fn load_config() -> Config {
         mcp_mode,
         mcp_local_write,
         mcp_code_connect,
+        canvas_mode,
+        canvas_script,
+        canvas_port,
+        canvas_bridge,
     }
 }
 
@@ -151,5 +177,29 @@ pub fn mcp_code_connect_enabled() -> bool {
     matches!(
         load_config().mcp_code_connect.as_str(),
         "allow" | "true" | "1" | "yes"
+    )
+}
+
+/// True when local canvas writes through the Figma plugin bridge are allowed.
+pub fn canvas_write_enabled() -> bool {
+    matches!(
+        load_config().canvas_mode.as_str(),
+        "write" | "full" | "unsafe"
+    )
+}
+
+/// True when arbitrary Plugin API JavaScript may be sent to a paired session.
+pub fn canvas_script_enabled() -> bool {
+    matches!(
+        load_config().canvas_script.as_str(),
+        "allow" | "true" | "1" | "yes"
+    )
+}
+
+/// True when `mcp serve` should also start the canvas control bridge.
+pub fn canvas_bridge_enabled() -> bool {
+    matches!(
+        load_config().canvas_bridge.as_str(),
+        "allow" | "true" | "1" | "yes" | "write"
     )
 }

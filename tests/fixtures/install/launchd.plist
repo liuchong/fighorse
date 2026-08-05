@@ -6,7 +6,7 @@
   <key>ProgramArguments</key>
   <array><string>/tmp/fighorse</string><string>mcp</string><string>serve</string><string>--transport</string><string>http</string><string>--host</string><string>127.0.0.1</string><string>--port</string><string>9449</string></array>
   <key>EnvironmentVariables</key>
-  <dict><key>FIGHORSE_HOME</key><string>/tmp/home</string><key>FIGHORSE_MCP_MODE</key><string>readonly</string><key>FIGHORSE_MCP_LOCAL_WRITE</key><string>deny</string><key>FIGHORSE_MCP_CODE_CONNECT</key><string>deny</string><key>FIGHORSE_MCP_SERVICE</key><string>true</string></dict>
+  <dict><key>FIGHORSE_HOME</key><string>/tmp/home</string><key>FIGHORSE_MCP_MODE</key><string>readonly</string><key>FIGHORSE_MCP_LOCAL_WRITE</key><string>deny</string><key>FIGHORSE_MCP_CODE_CONNECT</key><string>deny</string><key>FIGHORSE_CANVAS_MODE</key><string>readonly</string><key>FIGHORSE_CANVAS_SCRIPT</key><string>deny</string><key>FIGHORSE_CANVAS_BRIDGE</key><string>deny</string><key>FIGHORSE_CANVAS_PORT</key><string>9450</string><key>FIGHORSE_MCP_SERVICE</key><string>true</string></dict>
   <key>WorkingDirectory</key><string>/tmp/home</string>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><true/>

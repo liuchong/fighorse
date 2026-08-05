@@ -206,7 +206,7 @@ Framelink 风格的 MCP 是描述性的和轻量的。它为 AI 提供版式和�
 
 fighorse 默认为描述性路径：事实优于生成代码。当显式启用时，它仍然可以暴露更丰富的 Figma 元数据、现代 Code Connect 模板工作流和可写端点，但主要工作流是"精确上下文输入，项目原生实现输出"。
 
-公共 REST OpenAPI 中不存在的官方专属产品表面被标记为公共 REST 不支持，而非静默近似。示例包括原生 canvas 修改、Code to Canvas、自动 Code Connect 映射发现、Make 资源和 FigJam 生成。fighorse 的 Code Connect 支持是独立的现代模板兼容层，使用观察到的 preview/publish/delete 服务协议；它不声称实现 Figma 产品内的自动映射。
+公共 REST OpenAPI 中不存在的产品能力必须写清路由，而非静默近似。原生 canvas 修改路由到 fighorse 本地插件桥。托管 Code to Canvas、自动 Code Connect 映射发现、Make 资源和其他 Remote MCP-only 工作流仍是 Figma 官方产品能力。fighorse 的 Code Connect 支持是独立的现代模板兼容层，使用观察到的 preview/publish/delete 服务协议；它不声称实现 Figma 产品内的自动映射。
 
 ## 数据保真度
 
@@ -242,7 +242,7 @@ Figma REST API 数据通常对实现事实是规范忠实的：
 
 fighorse 不旨在成为通用代码生成器。代码应由 AI agent 使用目标仓库的现有模式生成。
 
-它也不旨在替代 Figma 自己的产品集成。对于自动 Code Connect 映射、Code to Canvas、FigJam 生成或原生 Figma 修改工作流，官方 MCP 仍然是合适的。
+它也不旨在替代 Figma 自己的托管产品集成。fighorse 的原生画布修改是刻意限定在本地的能力：Rust 桥接服务、已配对的 Figma 开发插件、显式 `FIGHORSE_CANVAS_MODE=write` 写入开关、脚本执行开关 `FIGHORSE_CANVAS_SCRIPT=allow`，并且不调用私有服务端接口。对于自动 Code Connect 映射、托管 Code to Canvas、Make resources 或其他 Remote MCP-only 工作流，官方 MCP 仍然是合适的。
 
 持久的产品边界是上下文和资产管道：获取、精简、解释、导出、验证和学习。
 
@@ -250,7 +250,7 @@ fighorse 不旨在成为通用代码生成器。代码应由 AI agent 使用目�
 
 该项目应保持无需真实 Figma 令牌即可验证：
 
-- 单元与集成测试覆盖参数解析、精简、URL 解析、路径验证、OpenAPI 覆盖、操作调度、MCP 工具/资源路由、official HTTP/standard stdio、发现 manifest、安装事务、设计包诊断和文档一致性。
+- 单元与集成测试覆盖参数解析、精简、URL 解析、路径验证、OpenAPI 覆盖、操作调度、MCP 工具/资源路由、official HTTP/standard stdio、本地画布协议和会话门禁、发现 manifest、安装事务、设计包诊断和文档一致性。
 - 接触真实 Figma API 的集成测试是可选的。
 - 文档和生成的安装工件必须反映当前 CLI 行为。
 

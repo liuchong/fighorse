@@ -20,3 +20,14 @@ substantial portions of the software.
 fighorse is not an official Figma product. Compatibility with observed Figma
 Code Connect service endpoints is best-effort and may break if Figma changes
 those endpoints.
+
+## cursor-talk-to-figma-mcp
+
+fighorse's local canvas bridge uses the general plugin-bridge pattern from the
+MIT-licensed `grab/cursor-talk-to-figma-mcp` project as a design reference, but
+the runtime here is implemented in Rust and does not include the upstream Bun,
+Node.js, analytics, or unauthenticated channel protocol.
+
+- Upstream repository: https://github.com/grab/cursor-talk-to-figma-mcp
+- Reference commit: `ddd90f3a6d454ea0b2fc29f1b084f50fd062b880`
+- License: MIT

@@ -11,6 +11,7 @@ use crate::api::{
     oembed as oembed_api, operations, payments as payments_api, projects as projects_api,
     styles as styles_api, users as users_api, variables as variables_api, webhooks as webhooks_api,
 };
+use crate::canvas;
 use crate::code_connect::model::CodeConnectDocument;
 use crate::config;
 use crate::discovery;
@@ -169,7 +170,16 @@ pub fn list_tools() -> Value {
 
     if write_enabled {
         if let Some(arr) = write_tools().as_array() {
-            tools.extend(arr.iter().cloned());
+            for tool in arr {
+                let name = tool.get("name").and_then(|v| v.as_str()).unwrap_or("");
+                if policy::canvas_write_tool(name) && !config::canvas_write_enabled() {
+                    continue;
+                }
+                if policy::canvas_script_tool(name) && !config::canvas_script_enabled() {
+                    continue;
+                }
+                tools.push(tool.clone());
+            }
         }
     }
 
@@ -230,6 +240,122 @@ async fn handle_tool(name: &str, args: &Value) -> Value {
         // --- Self discovery / AI replication ---
         "discover_fighorse" => success(&discovery::manifest()),
         "check_fighorse_ready" => success(&discovery::doctor()),
+        "canvas_status" => success(&canvas::shared_manager().status_json().await),
+        "canvas_create_pairing" => {
+            let ttl = arg_i64(args, "ttl_seconds").unwrap_or(300).clamp(30, 300) as u64;
+            match canvas::shared_manager()
+                .create_pairing(std::time::Duration::from_secs(ttl))
+                .await
+            {
+                Ok(pairing) => success(&json!({
+                    "code": pairing.code,
+                    "expires_at_ms": pairing.expires_at_ms,
+                    "websocket_url": format!("ws://127.0.0.1:{}/canvas/ws?code={}", config::load_config().canvas_port, pairing.code),
+                    "manual_action": "Open the fighorse canvas plugin in Figma and enter this pairing code."
+                })),
+                Err(err) => error(&err.to_string()),
+            }
+        }
+        "canvas_list_sessions" => {
+            success(&json!({"sessions": canvas::shared_manager().sessions().await}))
+        }
+        "canvas_inspect" | "canvas_capture" | "canvas_verify" => {
+            match canvas::shared_manager()
+                .inspect(arg_str(args, "session_id"))
+                .await
+            {
+                Ok(value) => success(&value),
+                Err(err) => error(&err.to_string()),
+            }
+        }
+        "canvas_apply" => {
+            let yes = match strict_bool(args, "yes", false) {
+                Ok(value) => value,
+                Err(err) => return error(&err.to_string()),
+            };
+            if let Err(err) = canvas::policy::ensure_mcp_write(yes) {
+                return error(&err.to_string());
+            }
+            let plan_value = args.get("plan").cloned().unwrap_or_else(|| args.clone());
+            match serde_json::from_value::<canvas::CanvasPlan>(plan_value) {
+                Ok(plan) => success(
+                    &serde_json::to_value(canvas::shared_manager().apply_plan(plan).await)
+                        .unwrap_or(json!({})),
+                ),
+                Err(error_value) => error(&error_value.to_string()),
+            }
+        }
+        "canvas_upload_asset" => {
+            let yes = match strict_bool(args, "yes", false) {
+                Ok(value) => value,
+                Err(err) => return error(&err.to_string()),
+            };
+            if let Err(err) = canvas::policy::ensure_mcp_write(yes) {
+                return error(&err.to_string());
+            }
+            let path = match arg_str(args, "path") {
+                Some(path) => path,
+                None => return error("path is required"),
+            };
+            let plan = canvas::CanvasPlan {
+                version: canvas::PROTOCOL_VERSION,
+                transaction_id: None,
+                session_id: arg_str(args, "session_id").map(String::from),
+                expected_editor: None,
+                operations: vec![canvas::CanvasOperation {
+                    op: "place_asset".to_string(),
+                    op_id: Some("asset".to_string()),
+                    args: json!({"path": path}),
+                }],
+                verify: None,
+            };
+            success(
+                &serde_json::to_value(canvas::shared_manager().apply_plan(plan).await)
+                    .unwrap_or(json!({})),
+            )
+        }
+        "canvas_undo" => {
+            let yes = match strict_bool(args, "yes", false) {
+                Ok(value) => value,
+                Err(err) => return error(&err.to_string()),
+            };
+            if let Err(err) = canvas::policy::ensure_mcp_write(yes) {
+                return error(&err.to_string());
+            }
+            let transaction_id = match arg_str(args, "transaction_id") {
+                Some(value) => value,
+                None => return error("transaction_id is required"),
+            };
+            success(
+                &serde_json::to_value(
+                    canvas::shared_manager()
+                        .undo(arg_str(args, "session_id"), transaction_id)
+                        .await,
+                )
+                .unwrap_or(json!({})),
+            )
+        }
+        "canvas_execute_script" => {
+            let yes = match strict_bool(args, "yes", false) {
+                Ok(value) => value,
+                Err(err) => return error(&err.to_string()),
+            };
+            if let Err(err) = canvas::policy::ensure_script(yes) {
+                return error(&err.to_string());
+            }
+            let script = match arg_str(args, "script") {
+                Some(value) => value,
+                None => return error("script is required"),
+            };
+            success(
+                &serde_json::to_value(
+                    canvas::shared_manager()
+                        .execute_script(arg_str(args, "session_id"), script)
+                        .await,
+                )
+                .unwrap_or(json!({})),
+            )
+        }
         "parse_figma_url" => {
             success(&figma_url::parse_figma_url(arg_str(args, "figma_url").unwrap_or("")).to_json())
         }

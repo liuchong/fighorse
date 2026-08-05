@@ -393,9 +393,53 @@ fn strings(values: &[&str]) -> Vec<String> {
 
 /// Render the launchd service used by both review and apply paths.
 pub fn launchd_plist(command: &str, port: i64, home: &str, allow_local_write: bool) -> String {
+    launchd_plist_with_canvas(
+        command,
+        port,
+        home,
+        allow_local_write,
+        CanvasServiceConfig::default(),
+    )
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct CanvasServiceConfig<'a> {
+    pub mode: &'a str,
+    pub script: &'a str,
+    pub bridge: &'a str,
+    pub port: u16,
+}
+
+impl Default for CanvasServiceConfig<'_> {
+    fn default() -> Self {
+        Self {
+            mode: "readonly",
+            script: "deny",
+            bridge: "deny",
+            port: 9450,
+        }
+    }
+}
+
+pub fn launchd_plist_with_canvas(
+    command: &str,
+    port: i64,
+    home: &str,
+    allow_local_write: bool,
+    canvas: CanvasServiceConfig<'_>,
+) -> String {
     let command = xml_escape(command);
     let home = xml_escape(home);
     let local_write = if allow_local_write { "allow" } else { "deny" };
+    let mcp_mode = if canvas.mode == "write" {
+        "write"
+    } else {
+        "readonly"
+    };
+    let canvas_mode = xml_escape(canvas.mode);
+    let canvas_script = xml_escape(canvas.script);
+    let canvas_bridge = xml_escape(canvas.bridge);
+    let canvas_port = canvas.port;
     format!(
         r#"<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -405,7 +449,7 @@ pub fn launchd_plist(command: &str, port: i64, home: &str, allow_local_write: bo
   <key>ProgramArguments</key>
   <array><string>{command}</string><string>mcp</string><string>serve</string><string>--transport</string><string>http</string><string>--host</string><string>127.0.0.1</string><string>--port</string><string>{port}</string></array>
   <key>EnvironmentVariables</key>
-  <dict><key>FIGHORSE_HOME</key><string>{home}</string><key>FIGHORSE_MCP_MODE</key><string>readonly</string><key>FIGHORSE_MCP_LOCAL_WRITE</key><string>{local_write}</string><key>FIGHORSE_MCP_CODE_CONNECT</key><string>deny</string><key>FIGHORSE_MCP_SERVICE</key><string>true</string></dict>
+  <dict><key>FIGHORSE_HOME</key><string>{home}</string><key>FIGHORSE_MCP_MODE</key><string>{mcp_mode}</string><key>FIGHORSE_MCP_LOCAL_WRITE</key><string>{local_write}</string><key>FIGHORSE_MCP_CODE_CONNECT</key><string>deny</string><key>FIGHORSE_CANVAS_MODE</key><string>{canvas_mode}</string><key>FIGHORSE_CANVAS_SCRIPT</key><string>{canvas_script}</string><key>FIGHORSE_CANVAS_BRIDGE</key><string>{canvas_bridge}</string><key>FIGHORSE_CANVAS_PORT</key><string>{canvas_port}</string><key>FIGHORSE_MCP_SERVICE</key><string>true</string></dict>
   <key>WorkingDirectory</key><string>{home}</string>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><true/>
@@ -419,19 +463,48 @@ pub fn launchd_plist(command: &str, port: i64, home: &str, allow_local_write: bo
 
 /// Render the systemd user service used by both review and apply paths.
 pub fn systemd_unit(command: &str, port: i64, home: &str, allow_local_write: bool) -> String {
+    systemd_unit_with_canvas(
+        command,
+        port,
+        home,
+        allow_local_write,
+        CanvasServiceConfig::default(),
+    )
+}
+
+pub fn systemd_unit_with_canvas(
+    command: &str,
+    port: i64,
+    home: &str,
+    allow_local_write: bool,
+    canvas: CanvasServiceConfig<'_>,
+) -> String {
     let local_write = if allow_local_write { "allow" } else { "deny" };
     let command = systemd_quote(command);
     let home_value = systemd_escape(home);
     let home = systemd_quote(home);
+    let mcp_mode = if canvas.mode == "write" {
+        "write"
+    } else {
+        "readonly"
+    };
+    let canvas_mode = systemd_escape(canvas.mode);
+    let canvas_script = systemd_escape(canvas.script);
+    let canvas_bridge = systemd_escape(canvas.bridge);
+    let canvas_port = canvas.port;
     format!(
         "[Unit]\n\
 Description=fighorse MCP service\n\
 \n\
 [Service]\n\
 Environment=\"FIGHORSE_HOME={home_value}\"\n\
-Environment=\"FIGHORSE_MCP_MODE=readonly\"\n\
+Environment=\"FIGHORSE_MCP_MODE={mcp_mode}\"\n\
 Environment=\"FIGHORSE_MCP_LOCAL_WRITE={local_write}\"\n\
 Environment=\"FIGHORSE_MCP_CODE_CONNECT=deny\"\n\
+Environment=\"FIGHORSE_CANVAS_MODE={canvas_mode}\"\n\
+Environment=\"FIGHORSE_CANVAS_SCRIPT={canvas_script}\"\n\
+Environment=\"FIGHORSE_CANVAS_BRIDGE={canvas_bridge}\"\n\
+Environment=\"FIGHORSE_CANVAS_PORT={canvas_port}\"\n\
 Environment=\"FIGHORSE_MCP_SERVICE=true\"\n\
 ExecStart={command} mcp serve --transport http --host 127.0.0.1 --port {port}\n\
 Restart=always\n\

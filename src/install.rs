@@ -304,6 +304,94 @@ pub fn cursor_rule() -> String {
     )
 }
 
+fn canvas_plugin_files(canvas_port: u16) -> Vec<(String, Vec<u8>)> {
+    let port = canvas_port.to_string();
+    let manifest =
+        String::from_utf8_lossy(include_bytes!("../plugin/fighorse-canvas/manifest.json"))
+            .replace("9450", &port)
+            .into_bytes();
+    let ui = String::from_utf8_lossy(include_bytes!("../plugin/fighorse-canvas/ui.html"))
+        .replace("9450", &port)
+        .into_bytes();
+    vec![
+        ("manifest.json".to_string(), manifest),
+        (
+            "code.js".to_string(),
+            include_bytes!("../plugin/fighorse-canvas/code.js").to_vec(),
+        ),
+        ("ui.html".to_string(), ui),
+        (
+            "README.md".to_string(),
+            include_bytes!("../plugin/fighorse-canvas/README.md").to_vec(),
+        ),
+    ]
+}
+
+fn canvas_plugin_dir(home: &Path) -> PathBuf {
+    home.join("plugins").join("fighorse-canvas")
+}
+
+fn write_canvas_plugin_in_transaction(
+    transaction: &mut transaction::InstallTransaction,
+    home: &Path,
+    canvas_port: u16,
+) -> Result<Vec<Value>> {
+    let dir = canvas_plugin_dir(home);
+    let mut files = Vec::new();
+    for (name, content) in canvas_plugin_files(canvas_port) {
+        let path = dir.join(name);
+        transaction.write_managed(&path, &content)?;
+        files.push(json!({
+            "path": path,
+            "bytes": content.len(),
+        }));
+    }
+    Ok(files)
+}
+
+pub fn install_canvas_plugin(home: Option<&str>, apply: bool) -> Result<Value> {
+    let home = fighorse_home(home);
+    let dir = canvas_plugin_dir(&home);
+    let files: Vec<Value> = canvas_plugin_files(9450)
+        .iter()
+        .map(|(name, content)| {
+            json!({
+                "path": dir.join(name),
+                "bytes": content.len(),
+            })
+        })
+        .collect();
+    let applied = if apply {
+        install_home(Some(&home.to_string_lossy()))?;
+        let mut transaction = transaction::InstallTransaction::new(&home)?;
+        let files = write_canvas_plugin_in_transaction(&mut transaction, &home, 9450)?;
+        let verification = transaction.verify_changed();
+        if verification.iter().any(|check| !check.ok) {
+            let rollback = transaction.rollback_pending();
+            return Err(Error::Other(format!(
+                "Canvas plugin installation verification failed; rollback: {}",
+                serde_json::to_string(&rollback)?
+            )));
+        }
+        transaction.commit(Some(verification.clone()))?;
+        Some(json!({
+            "files": files,
+            "verification": verification,
+            "manifest": transaction::manifest_path(&home),
+        }))
+    } else {
+        None
+    };
+    Ok(json!({
+        "kind": "fighorse.install-canvas-plugin.v1",
+        "apply": apply,
+        "dir": dir,
+        "files": files,
+        "applied": applied,
+        "manual_action": "In Figma Desktop, import the generated manifest.json as a development plugin and run fighorse Canvas Bridge."
+    }))
+}
+
 // --- MCP server config shapes ---
 
 fn mcp_stdio_config(command: &str, home: Option<&str>) -> Value {
@@ -1535,10 +1623,10 @@ For capabilities not exposed by the public Figma REST API, also install the offi
 - Remote URL: `https://mcp.figma.com/mcp`\n\
 - Transport: HTTP (Streamable HTTP)\n\
 - Auth: OAuth via your Figma account\n\
-- Use for: native canvas writes, Code to Canvas, Code Connect auto-mapping, FigJam generation, Make resources\n\
+- Use for: hosted Code to Canvas, Code Connect auto-mapping, Make resources, and Remote MCP-only workflows\n\
 - Pricing: free during beta; will become usage-based paid (per Figma docs)\n\
 - Seat: Full seat required for writes to shared files; Dev seat is read-only outside drafts\n\n\
-Both fighorse and the official MCP can coexist in the same client. fighorse handles design-to-code read workflows; official MCP handles canvas mutation and product-only features.\n"
+Both fighorse and the official MCP can coexist in the same client. fighorse handles design-to-code read workflows and local paired plugin canvas writes; official MCP handles hosted product-only features.\n"
     );
     files.push(Value::String(
         write_text(&readme, &readme_body)?
@@ -1716,22 +1804,28 @@ pub fn install_service(
     }))
 }
 
-pub async fn install_service_async(
-    service_name: &str,
-    port: i64,
-    command: &str,
-    home: Option<&str>,
-    apply: bool,
-) -> Result<Value> {
-    if !apply || service_name == "none" {
-        return install_service(service_name, port, command, home, false);
+pub struct InstallServiceOpts<'a> {
+    pub service_name: &'a str,
+    pub port: i64,
+    pub command: &'a str,
+    pub home: Option<&'a str>,
+    pub canvas_plugin: bool,
+    pub canvas_mode: Option<&'a str>,
+    pub canvas_script: Option<&'a str>,
+    pub canvas_port: Option<i64>,
+    pub apply: bool,
+}
+
+pub async fn install_service_async(opts: InstallServiceOpts<'_>) -> Result<Value> {
+    if !opts.apply || opts.service_name == "none" {
+        return install_service(opts.service_name, opts.port, opts.command, opts.home, false);
     }
-    let home = fighorse_home(home);
+    let home = fighorse_home(opts.home);
     let home_string = home.to_string_lossy().into_owned();
     install_home(Some(&home_string))?;
-    let manager = service_manager(service_name);
-    let command = command_path(command, Some(&home_string));
-    let endpoint = format!("http://127.0.0.1:{port}/mcp");
+    let manager = service_manager(opts.service_name);
+    let command = command_path(opts.command, Some(&home_string));
+    let endpoint = format!("http://127.0.0.1:{}/mcp", opts.port);
     let generated = home.join("services").join(if manager == "launchd" {
         "com.groupultra.fighorse.mcp.plist"
     } else {
@@ -1745,10 +1839,31 @@ pub async fn install_service_async(
             text.contains("FIGHORSE_MCP_LOCAL_WRITE=allow")
                 || text.contains("<string>allow</string>")
         });
+    let canvas_mode = opts.canvas_mode.unwrap_or("readonly");
+    let canvas_script = opts.canvas_script.unwrap_or("deny");
+    let canvas_bridge = if opts.canvas_plugin { "allow" } else { "deny" };
+    let canvas_port = opts.canvas_port.unwrap_or(9450);
+    if !(1..=65535).contains(&canvas_port) {
+        return Err(Error::Usage(
+            "--canvas-port must be between 1 and 65535".into(),
+        ));
+    }
+    let canvas = service::CanvasServiceConfig {
+        mode: canvas_mode,
+        script: canvas_script,
+        bridge: canvas_bridge,
+        port: canvas_port as u16,
+    };
     let rendered = if manager == "launchd" {
-        service::launchd_plist(&command, port, &home_string, preserve_allow)
+        service::launchd_plist_with_canvas(
+            &command,
+            opts.port,
+            &home_string,
+            preserve_allow,
+            canvas,
+        )
     } else {
-        service::systemd_unit(&command, port, &home_string, preserve_allow)
+        service::systemd_unit_with_canvas(&command, opts.port, &home_string, preserve_allow, canvas)
     };
     let mut runner = service::ProcessCommandRunner;
     let state = service::probe_service_state(&mut runner, manager, target.clone())?;
@@ -1756,6 +1871,9 @@ pub async fn install_service_async(
     transaction.set_endpoint(Some(endpoint.clone()));
     transaction.set_service(Some(state));
     let outcome: Result<(Value, Vec<model::InstallCheck>)> = async {
+        if opts.canvas_plugin {
+            write_canvas_plugin_in_transaction(&mut transaction, &home, canvas_port as u16)?;
+        }
         transaction.write_managed(&generated, rendered.as_bytes())?;
         transaction.write_managed(&target, rendered.as_bytes())?;
         let activated = service::activate_service(
@@ -1800,6 +1918,14 @@ pub async fn install_service_async(
         "file": generated,
         "target": target,
         "apply": true,
+        "canvas": {
+            "plugin": opts.canvas_plugin,
+            "mode": canvas_mode,
+            "script": canvas_script,
+            "bridge": canvas_bridge,
+            "port": canvas_port,
+            "manual_action": if opts.canvas_plugin { "Import ~/.fighorse/plugins/fighorse-canvas/manifest.json in Figma Desktop." } else { "" }
+        },
         "applied": activated,
         "verification": checks,
         "ok": true,
@@ -1905,6 +2031,14 @@ fn install_guide(
             "endpoint": "http://127.0.0.1:9449/mcp",
             "order": ["service", "/health", "initialize + tools/list", "clients", "skills", "manifest verification"]
         },
+        "optional_canvas_bridge": {
+            "plugin_install": "fighorse install canvas-plugin --apply",
+            "service_install": "fighorse install --default --mode service --canvas-plugin --canvas-mode write --apply",
+            "cli_pairing": ["fighorse canvas serve", "fighorse canvas pair"],
+            "write_gate": "FIGHORSE_CANVAS_MODE=write",
+            "script_gate": "FIGHORSE_CANVAS_SCRIPT=allow",
+            "script_tool": "canvas_execute_script"
+        },
         "canonical_skill_targets": {
             "cursor_kimi_codex": "~/.agents/skills/fighorse/SKILL.md",
             "claude": "~/.claude/skills/fighorse/SKILL.md",
@@ -1952,6 +2086,10 @@ pub struct InstallOpts<'a> {
     pub link_dir: Option<&'a str>,
     pub link_dirs: Option<&'a str>,
     pub no_service: bool,
+    pub canvas_plugin: bool,
+    pub canvas_mode: Option<&'a str>,
+    pub canvas_script: Option<&'a str>,
+    pub canvas_port: Option<i64>,
     pub apply: bool,
 }
 
@@ -2111,7 +2249,14 @@ async fn apply_install_transaction(opts: &InstallOpts<'_>, self_install: bool) -
     let user_home = home_os();
     let mut skills_migration = None;
     let mut project_report = Value::Null;
+    let mut canvas_plugin_report = Value::Null;
     let links = requested_binary_links(opts.link_dir, opts.link_dirs);
+    let canvas_port = opts.canvas_port.unwrap_or(9450);
+    if !(1..=65535).contains(&canvas_port) {
+        return Err(Error::Usage(
+            "--canvas-port must be between 1 and 65535".into(),
+        ));
+    }
     let skill_clients = if service_mode {
         selected.clone()
     } else {
@@ -2152,6 +2297,16 @@ async fn apply_install_transaction(opts: &InstallOpts<'_>, self_install: bool) -
             }
         }
         completed.push(model::InstallStep::Binary);
+        if opts.canvas_plugin {
+            let files =
+                write_canvas_plugin_in_transaction(&mut transaction, &home, canvas_port as u16)?;
+            canvas_plugin_report = json!({
+                "dir": canvas_plugin_dir(&home),
+                "files": files,
+                "manual_action": "Import the generated manifest.json in Figma Desktop as a development plugin."
+            });
+            completed.push(model::InstallStep::CanvasPlugin);
+        }
         if !self_install {
             let project_dir = opts
                 .path
@@ -2182,10 +2337,31 @@ async fn apply_install_transaction(opts: &InstallOpts<'_>, self_install: bool) -
                     text.contains("FIGHORSE_MCP_LOCAL_WRITE=allow")
                         || text.contains("<string>allow</string>")
                 });
+            let canvas_mode = opts.canvas_mode.unwrap_or("readonly");
+            let canvas_script = opts.canvas_script.unwrap_or("deny");
+            let canvas_bridge = if opts.canvas_plugin { "allow" } else { "deny" };
+            let canvas = service::CanvasServiceConfig {
+                mode: canvas_mode,
+                script: canvas_script,
+                bridge: canvas_bridge,
+                port: canvas_port as u16,
+            };
             let rendered = if manager == "launchd" {
-                service::launchd_plist(&command, opts.port, &home_string, preserve_allow)
+                service::launchd_plist_with_canvas(
+                    &command,
+                    opts.port,
+                    &home_string,
+                    preserve_allow,
+                    canvas,
+                )
             } else {
-                service::systemd_unit(&command, opts.port, &home_string, preserve_allow)
+                service::systemd_unit_with_canvas(
+                    &command,
+                    opts.port,
+                    &home_string,
+                    preserve_allow,
+                    canvas,
+                )
             };
             transaction.write_managed(&generated, rendered.as_bytes())?;
             transaction.write_managed(&target_service, rendered.as_bytes())?;
@@ -2286,6 +2462,7 @@ async fn apply_install_transaction(opts: &InstallOpts<'_>, self_install: bool) -
         "manifest": transaction::manifest_path(&home),
         "auth": auth_report,
         "project": project_report,
+        "canvas_plugin": canvas_plugin_report,
         "service": service_result,
         "report": report,
     }))
@@ -2366,6 +2543,23 @@ pub async fn install_verify(home: Option<&str>, port: i64) -> Result<Value> {
     checks.push(executable_check(&binary));
     checks.push(binary_path_check(&binary));
     checks.push(config_permission_check(&home));
+    let plugin_manifest = canvas_plugin_dir(&home).join("manifest.json");
+    let has_canvas_plugin = manifest
+        .managed_files
+        .iter()
+        .any(|file| file.path == plugin_manifest);
+    if has_canvas_plugin {
+        checks.push(model::InstallCheck::new(
+            "canvas_plugin_bundle",
+            plugin_manifest.is_file(),
+            plugin_manifest.to_string_lossy(),
+        ));
+        checks.push(model::InstallCheck::new(
+            "canvas_plugin_manual_import",
+            true,
+            "manual action: import the fighorse-canvas manifest in Figma Desktop and run the plugin",
+        ));
+    }
     let has_service = manifest.managed_files.iter().any(|file| {
         matches!(
             file.path

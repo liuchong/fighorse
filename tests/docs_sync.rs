@@ -236,6 +236,53 @@ fn routing_and_design_scope_contracts_are_synchronized() {
 }
 
 #[test]
+fn canvas_bridge_contract_is_synchronized_across_user_and_ai_surfaces() {
+    for path in [
+        "README.md",
+        "src/main.rs",
+        "src/discovery.rs",
+        "src/guidance.rs",
+        "src/install.rs",
+        "src/install/skill.md",
+        "src/install/agents.md",
+        "src/mcp/tools_write.json",
+        "docs/specs/canvas-write-contract.md",
+        ".agents/experience/canvas-plugin-boundaries.md",
+    ] {
+        let text = read(path);
+        for token in [
+            "FIGHORSE_CANVAS_MODE",
+            "FIGHORSE_CANVAS_SCRIPT",
+            "canvas_execute_script",
+        ] {
+            assert!(text.contains(token), "{path} omits canvas token {token}");
+        }
+    }
+
+    let extra = read("src/mcp/tools_extra.json");
+    assert!(extra.contains("canvas_status"));
+    assert!(extra.contains("canvas_create_pairing"));
+
+    for name in [
+        "README.md",
+        "user-guide.md",
+        "ai-client-guide.md",
+        "design.md",
+    ] {
+        for (path, text) in localized(name) {
+            assert!(
+                text.contains("canvas") || text.contains("Canvas"),
+                "{path} omits canvas bridge guidance"
+            );
+            assert!(
+                text.contains("FIGHORSE_CANVAS_MODE"),
+                "{path} omits canvas mode guidance"
+            );
+        }
+    }
+}
+
+#[test]
 fn docs_distinguish_streamable_http_event_streams_from_legacy_sse() {
     let mut paths = vec!["README.md".to_string()];
     for language in ["en", "zh", "ru"] {

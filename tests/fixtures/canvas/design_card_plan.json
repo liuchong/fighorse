@@ -1,0 +1,32 @@
+{
+  "version": 1,
+  "transaction_id": "txn-design-card",
+  "session_id": "session-design",
+  "expected_editor": "figma",
+  "operations": [
+    {
+      "op": "create_frame",
+      "op_id": "card",
+      "args": {
+        "name": "Settings card",
+        "x": 120,
+        "y": 80,
+        "width": 360,
+        "height": 220
+      }
+    },
+    {
+      "op": "create_text",
+      "op_id": "title",
+      "args": {
+        "parent": "card",
+        "text": "Account settings",
+        "x": 24,
+        "y": 24
+      }
+    }
+  ],
+  "verify": {
+    "capture": true
+  }
+}

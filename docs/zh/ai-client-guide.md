@@ -438,3 +438,10 @@ fighorse mcp config --client generic --transport http
 常见故障：多个长驻的 stdio 进程消耗资源。对于支持它的客户端，优先使用共享的 HTTP 服务。
 
 当 AI 工具看到 Figma URL 且 fighorse 可用时，它不应手动抓取 URL、猜测 frame id 或从视觉记忆中实现。优先使用 fighorse。
+
+原生画布写入使用本地插件桥，而不是 REST token：`canvas_status`、
+`canvas_create_pairing`、`canvas_list_sessions`、`canvas_apply`、`canvas_verify`
+和 `canvas_undo`。用户必须先安装并运行 Figma 插件。写调用要求
+`FIGHORSE_MCP_MODE=write`、`FIGHORSE_CANVAS_MODE=write` 和 `yes=true`；
+脚本还要求 `FIGHORSE_CANVAS_SCRIPT=allow`。多个 session 连接时，必须询问或传入
+准确的 `session_id`。结果为 `unknown` 时，先 inspect 或 verify 再继续。

@@ -213,7 +213,7 @@ Framelink-style MCP is descriptive and lightweight. It gives AI layout and style
 
 fighorse defaults to the descriptive path: facts over generated code. It can still expose richer Figma metadata, native modern Code Connect template workflows, and write-capable endpoints when explicitly enabled, but the main workflow is "precise context in, project-native implementation out."
 
-Official-only product surfaces that are not in the public REST OpenAPI are marked as unsupported by public REST rather than silently approximated. Examples include native canvas mutation, Code to Canvas, automatic Code Connect mapping discovery, Make resources, and FigJam generation. fighorse's Code Connect support is a separate compatibility layer for modern templates and the observed preview/publish/delete service protocol; it does not claim to implement automatic product mapping.
+Product surfaces that are not in the public REST OpenAPI are marked with an explicit route rather than silently approximated. Native canvas mutation routes through the local fighorse plugin bridge. Hosted Code to Canvas, automatic Code Connect mapping discovery, Make resources, and other Remote MCP-only workflows remain official Figma product capabilities. fighorse's Code Connect support is a separate compatibility layer for modern templates and the observed preview/publish/delete service protocol; it does not claim to implement automatic product mapping.
 
 ## Data Fidelity
 
@@ -249,7 +249,12 @@ These lessons directly shaped the design package, export manifest, local-write, 
 
 fighorse does not aim to be a general code generator. Code should be produced by the AI agent using the target repository's existing patterns.
 
-It also does not aim to replace Figma's own product integrations. Official MCP remains appropriate for automatic Code Connect mapping, Code to Canvas, FigJam generation, or native Figma mutation workflows.
+It also does not aim to replace Figma's own hosted product integrations.
+fighorse native canvas mutation is deliberately local: a Rust bridge, a paired
+Figma development plugin, explicit `FIGHORSE_CANVAS_MODE=write` write gates,
+`FIGHORSE_CANVAS_SCRIPT=allow` for script execution, and no private server API.
+Official MCP remains appropriate for automatic Code Connect mapping, hosted Code
+to Canvas, Make resources, or other Remote MCP-only workflows.
 
 The durable product boundary is the context and asset pipeline: fetch, compact, explain, export, verify, and learn.
 
@@ -257,7 +262,7 @@ The durable product boundary is the context and asset pipeline: fetch, compact, 
 
 The project should remain verifiable without a real Figma token:
 
-- Unit and integration tests cover argument parsing, compacting, URL parsing, path validation, OpenAPI coverage, operation dispatch, MCP tool/resource routing, official HTTP and standard stdio transports, discovery manifest, transactional installation, design-package diagnostics, and documentation consistency.
+- Unit and integration tests cover argument parsing, compacting, URL parsing, path validation, OpenAPI coverage, operation dispatch, MCP tool/resource routing, official HTTP and standard stdio transports, local canvas protocol/session gates, discovery manifest, transactional installation, design-package diagnostics, and documentation consistency.
 - Integration tests that touch the real Figma API are opt-in.
 - Docs and generated install artifacts must reflect current CLI behavior.
 

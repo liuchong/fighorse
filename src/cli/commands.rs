@@ -15,6 +15,7 @@ use crate::api::{
     operations as api_operations, projects as projects_api, styles as styles_api,
     users as users_api, variables as variables_api, webhooks as webhooks_api,
 };
+use crate::canvas;
 use crate::code_connect::{
     generate::{GenerateRequest, generate_template},
     model::CodeConnectDocument,
@@ -22,7 +23,7 @@ use crate::code_connect::{
     template::parse_project,
 };
 use crate::config;
-use crate::error::Result;
+use crate::error::{Error, Result};
 use crate::export::{images as img_export, md as md_export};
 use crate::figma;
 use crate::transform::{compact, filter as tree_filter, schema, tokens};
@@ -82,6 +83,198 @@ pub fn cmd_auth_status(_args: &[String]) -> Result<()> {
         _ => println!("Not authenticated. Config path: {path}"),
     }
     Ok(())
+}
+
+// --- Canvas bridge ---
+
+fn canvas_endpoint(path: &str) -> String {
+    let port = config::load_config().canvas_port;
+    format!("http://127.0.0.1:{port}/canvas/{path}")
+}
+
+async fn canvas_control_get(path: &str) -> Result<Value> {
+    let secret = canvas::control::read_control_secret()?;
+    let response = reqwest::Client::new()
+        .get(canvas_endpoint(path))
+        .header("x-fighorse-canvas-control", secret)
+        .send()
+        .await?;
+    let status = response.status();
+    let body = response.json::<Value>().await?;
+    if status.is_success() {
+        Ok(body)
+    } else {
+        Err(Error::Other(body.to_string()))
+    }
+}
+
+async fn canvas_control_post(path: &str, body: &Value) -> Result<Value> {
+    let secret = canvas::control::read_control_secret()?;
+    let response = reqwest::Client::new()
+        .post(canvas_endpoint(path))
+        .header("x-fighorse-canvas-control", secret)
+        .json(body)
+        .send()
+        .await?;
+    let status = response.status();
+    let body = response.json::<Value>().await?;
+    if status.is_success() {
+        Ok(body)
+    } else {
+        Err(Error::Other(body.to_string()))
+    }
+}
+
+fn read_canvas_plan(flags: &super::args::Flags) -> Result<Value> {
+    if let Some(plan) = flags.get("plan") {
+        return Ok(serde_json::from_str(plan)?);
+    }
+    if let Some(file) = flags.get("plan_file") {
+        return Ok(serde_json::from_str(&std::fs::read_to_string(file)?)?);
+    }
+    let stdin = read_stdin();
+    if stdin.trim().is_empty() {
+        return Err(Error::Usage(
+            "canvas apply requires --plan JSON, --plan-file PATH, or JSON on stdin".into(),
+        ));
+    }
+    Ok(serde_json::from_str(&stdin)?)
+}
+
+pub async fn cmd_canvas_serve(args: &[String]) -> Result<()> {
+    let flags = parse_flags(args, &["--port"]);
+    let port = optional_int(flags.get("port")).unwrap_or(config::load_config().canvas_port as i64);
+    if !(1..=65535).contains(&port) {
+        return Err(Error::Usage("--port must be between 1 and 65535".into()));
+    }
+    let shutdown = tokio_util::sync::CancellationToken::new();
+    let signal_token = shutdown.clone();
+    tokio::spawn(async move {
+        let _ = tokio::signal::ctrl_c().await;
+        signal_token.cancel();
+    });
+    eprintln!("fighorse canvas bridge listening on http://127.0.0.1:{port}/canvas");
+    canvas::control::serve(canvas::shared_manager(), port as u16, shutdown).await
+}
+
+pub async fn cmd_canvas_status(args: &[String]) -> Result<()> {
+    let flags = parse_flags(args, &["--output"]);
+    print_data(&canvas_control_get("status").await?, flags.get("output"))
+}
+
+pub async fn cmd_canvas_pair(args: &[String]) -> Result<()> {
+    let flags = parse_flags(args, &["--ttl-seconds", "--output"]);
+    let ttl = optional_int(flags.get("ttl_seconds")).unwrap_or(300);
+    let body = json!({ "ttl_seconds": ttl });
+    print_data(
+        &canvas_control_post("pair", &body).await?,
+        flags.get("output"),
+    )
+}
+
+pub async fn cmd_canvas_sessions(args: &[String]) -> Result<()> {
+    let flags = parse_flags(args, &["--output"]);
+    print_data(&canvas_control_get("sessions").await?, flags.get("output"))
+}
+
+pub async fn cmd_canvas_inspect(args: &[String]) -> Result<()> {
+    let flags = parse_flags(args, &["--session-id", "--output"]);
+    let body = json!({ "session_id": flags.get("session_id") });
+    print_data(
+        &canvas_control_post("inspect", &body).await?,
+        flags.get("output"),
+    )
+}
+
+pub async fn cmd_canvas_apply(args: &[String]) -> Result<()> {
+    let flags = parse_flags(args, &["--plan", "--plan-file", "--session-id", "--output"]);
+    let mut plan = read_canvas_plan(&flags)?;
+    if let Some(session_id) = flags.get("session_id") {
+        if let Some(object) = plan.as_object_mut() {
+            object.insert(
+                "session_id".to_string(),
+                Value::String(session_id.to_string()),
+            );
+        }
+    }
+    if let Some(object) = plan.as_object_mut() {
+        object.insert("yes".to_string(), Value::Bool(flag_present(args, "--yes")));
+    }
+    print_data(
+        &canvas_control_post("apply", &plan).await?,
+        flags.get("output"),
+    )
+}
+
+pub async fn cmd_canvas_upload_asset(args: &[String]) -> Result<()> {
+    let flags = parse_flags(args, &["--path", "--session-id", "--output"]);
+    let path = flags
+        .get("path")
+        .or_else(|| flags.arg(0))
+        .ok_or_else(|| Error::Usage("canvas upload-asset requires --path PATH".into()))?;
+    let body = json!({
+        "version": canvas::PROTOCOL_VERSION,
+        "session_id": flags.get("session_id"),
+        "operations": [{"op": "place_asset", "op_id": "asset", "args": {"path": path}}],
+        "yes": flag_present(args, "--yes"),
+    });
+    print_data(
+        &canvas_control_post("apply", &body).await?,
+        flags.get("output"),
+    )
+}
+
+pub async fn cmd_canvas_capture(args: &[String]) -> Result<()> {
+    cmd_canvas_inspect(args).await
+}
+
+pub async fn cmd_canvas_verify(args: &[String]) -> Result<()> {
+    let flags = parse_flags(args, &["--session-id", "--output"]);
+    let body = json!({ "session_id": flags.get("session_id") });
+    print_data(
+        &canvas_control_post("verify", &body).await?,
+        flags.get("output"),
+    )
+}
+
+pub async fn cmd_canvas_undo(args: &[String]) -> Result<()> {
+    let flags = parse_flags(args, &["--transaction-id", "--session-id", "--output"]);
+    let transaction_id = flags
+        .get("transaction_id")
+        .or_else(|| flags.arg(0))
+        .ok_or_else(|| Error::Usage("canvas undo requires --transaction-id ID".into()))?;
+    let body = json!({
+        "transaction_id": transaction_id,
+        "session_id": flags.get("session_id"),
+        "yes": flag_present(args, "--yes"),
+    });
+    print_data(
+        &canvas_control_post("undo", &body).await?,
+        flags.get("output"),
+    )
+}
+
+pub async fn cmd_canvas_execute(args: &[String]) -> Result<()> {
+    let flags = parse_flags(
+        args,
+        &["--script", "--script-file", "--session-id", "--output"],
+    );
+    let script = if let Some(script) = flags.get("script") {
+        script.to_string()
+    } else if let Some(file) = flags.get("script_file") {
+        std::fs::read_to_string(file)?
+    } else {
+        read_stdin()
+    };
+    let body = json!({
+        "script": script,
+        "session_id": flags.get("session_id"),
+        "yes": flag_present(args, "--yes"),
+    });
+    print_data(
+        &canvas_control_post("execute", &body).await?,
+        flags.get("output"),
+    )
 }
 
 fn atty_stdin() -> bool {
@@ -1537,19 +1730,41 @@ pub fn cmd_install_client(args: &[String]) -> Result<()> {
 pub async fn cmd_install_service(args: &[String]) -> Result<()> {
     let flags = parse_flags(
         args,
-        &["--service", "--port", "--command", "--home", "--output"],
+        &[
+            "--service",
+            "--port",
+            "--command",
+            "--home",
+            "--canvas-mode",
+            "--canvas-script",
+            "--canvas-port",
+            "--output",
+        ],
     );
     let apply = flag_present(args, "--apply");
     let port = optional_int(flags.get("port")).unwrap_or(9449);
     print_data(
-        &install::install_service_async(
-            flags.get("service").unwrap_or("auto"),
+        &install::install_service_async(install::InstallServiceOpts {
+            service_name: flags.get("service").unwrap_or("auto"),
             port,
-            flags.get("command").unwrap_or("fighorse"),
-            flags.get("home"),
+            command: flags.get("command").unwrap_or("fighorse"),
+            home: flags.get("home"),
+            canvas_plugin: flag_present(args, "--canvas-plugin"),
+            canvas_mode: flags.get("canvas_mode"),
+            canvas_script: flags.get("canvas_script"),
+            canvas_port: optional_int(flags.get("canvas_port")),
             apply,
-        )
+        })
         .await?,
+        flags.get("output"),
+    )
+}
+
+pub fn cmd_install_canvas_plugin(args: &[String]) -> Result<()> {
+    let flags = parse_flags(args, &["--home", "--output"]);
+    let apply = flag_present(args, "--apply");
+    print_data(
+        &install::install_canvas_plugin(flags.get("home"), apply)?,
         flags.get("output"),
     )
 }
@@ -1623,6 +1838,10 @@ fn install_opts_from<'a>(
         link_dir: flags.get("link_dir"),
         link_dirs: flags.get("link_dirs"),
         no_service: flag_present(args, "--no-service"),
+        canvas_plugin: flag_present(args, "--canvas-plugin"),
+        canvas_mode: flags.get("canvas_mode"),
+        canvas_script: flags.get("canvas_script"),
+        canvas_port: optional_int(flags.get("canvas_port")),
         apply: flag_present(args, "--apply"),
     }
 }
@@ -1645,6 +1864,9 @@ pub async fn cmd_install_self(args: &[String]) -> Result<()> {
             "--service",
             "--link-dir",
             "--link-dirs",
+            "--canvas-mode",
+            "--canvas-script",
+            "--canvas-port",
             "--output",
         ],
     );
@@ -1674,6 +1896,9 @@ pub async fn cmd_install_all(args: &[String]) -> Result<()> {
             "--token",
             "--mode",
             "--output",
+            "--canvas-mode",
+            "--canvas-script",
+            "--canvas-port",
         ],
     );
     let opts = install_opts_from(&flags, args);

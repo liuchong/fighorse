@@ -111,6 +111,7 @@ cargo build --release --target aarch64-unknown-linux-gnu
 | Design Package | `design package`, `visual audit`, `project playbook`, `experience summary`, `experience add` |
 | Figma Data | `file get`, `file nodes`, `node get`, `file tree`, `file compact` |
 | Assets | `image export`, `component export`, `asset download`, `images render`, `images fills` |
+| Canvas Bridge | `canvas serve`, `canvas pair`, `canvas sessions`, `canvas apply`, `canvas verify`, `canvas undo`, `canvas execute`, `install canvas-plugin` |
 | Design System | `components`, `component-sets`, `styles`, `variables`, `tokens extract` |
 | Install | `install`, `install self`, `install home`, `install auth`, `install binary`, `install client`, `install service`, `install skill`, `install all`, `install verify`, `install rollback` |
 | MCP | `mcp serve --transport http`, explicit `stdio` compatibility mode |
@@ -120,6 +121,8 @@ cargo build --release --target aarch64-unknown-linux-gnu
 - Figma writes are disabled unless `FIGHORSE_MCP_MODE=write`.
 - MCP local file exports require `FIGHORSE_MCP_LOCAL_WRITE=allow`.
 - MCP Code Connect preview/publish requires `FIGHORSE_MCP_CODE_CONNECT=allow`; publish/unpublish also requires `FIGHORSE_MCP_MODE=write`.
+- Native canvas writes require the local Figma plugin bridge plus `FIGHORSE_CANVAS_MODE=write`; MCP canvas writes also require `FIGHORSE_MCP_MODE=write` and `yes=true`.
+- Arbitrary Plugin API JavaScript is hidden unless `FIGHORSE_CANVAS_SCRIPT=allow`, and each call still requires confirmation.
 - Export paths are limited to `./.fighorse/exports`, `./assets/fighorse`, and `~/.fighorse/exports`.
 - Installed AI clients default to the shared local HTTP MCP endpoint at `http://127.0.0.1:9449/mcp`; the MCP server uses a singleton lock to avoid duplicate long-running processes.
 - `/mcp` is the official Rust `rmcp` 2.2 Streamable HTTP service with independent stateful sessions, Host/Origin validation, JSON or event-stream responses, and graceful shutdown. The legacy `/sse` and `/messages` endpoints are not served; `--transport sse` fails with migration guidance to `--transport http`.
@@ -139,6 +142,31 @@ fighorse code-connect publish --documents docs.json --dry-run
 fighorse code-connect publish --documents docs.json --yes --force
 fighorse code-connect unpublish --node "<figma-component-url>" --label React --dry-run
 ```
+
+## Canvas Bridge
+
+`fighorse` can create and modify native nodes in open Figma Design, FigJam, and
+Slides files through a local Figma development plugin. This does not use a
+Figma REST token and does not call private Figma server APIs.
+
+```bash
+fighorse install canvas-plugin --apply
+fighorse canvas serve
+fighorse canvas pair
+FIGHORSE_CANVAS_MODE=write fighorse canvas apply --plan-file canvas-plan.json --yes
+```
+
+For MCP service mode, install the service explicitly with the bridge enabled:
+
+```bash
+fighorse install --default --mode service --canvas-plugin --canvas-mode write --apply
+```
+
+If multiple plugin sessions are connected, pass `session_id`; fighorse will not
+guess which file to edit. If a transaction returns `unknown` after a timeout or
+disconnect, inspect or verify before continuing and do not retry the same plan
+automatically. `canvas execute` and MCP `canvas_execute_script` are guarded
+escape hatches and require `FIGHORSE_CANVAS_SCRIPT=allow`.
 
 Automatic Code Connect mapping discovery remains a Figma product capability; use the official Figma Remote MCP when you need automatic mapping inside Figma's product surface.
 

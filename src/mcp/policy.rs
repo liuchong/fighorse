@@ -28,6 +28,17 @@ pub fn code_connect_egress_tool(name: &str) -> bool {
     )
 }
 
+pub fn canvas_write_tool(name: &str) -> bool {
+    matches!(
+        name,
+        "canvas_apply" | "canvas_upload_asset" | "canvas_undo" | "canvas_execute_script"
+    )
+}
+
+pub fn canvas_script_tool(name: &str) -> bool {
+    name == "canvas_execute_script"
+}
+
 /// Return a policy violation message for `name`, or None if allowed.
 pub fn violation(legacy_write_names: &HashSet<String>, name: &str) -> Option<String> {
     if code_connect_egress_tool(name) && !config::mcp_code_connect_enabled() {
@@ -38,6 +49,16 @@ pub fn violation(legacy_write_names: &HashSet<String>, name: &str) -> Option<Str
     if write_tool(legacy_write_names, name) && !config::mcp_write_enabled() {
         return Some(format!(
             "Tool {name} is disabled in readonly mode. Set FIGHORSE_MCP_MODE=write to enable Figma write tools."
+        ));
+    }
+    if canvas_write_tool(name) && !config::canvas_write_enabled() {
+        return Some(format!(
+            "Tool {name} writes through the local Figma canvas plugin and requires FIGHORSE_CANVAS_MODE=write."
+        ));
+    }
+    if canvas_script_tool(name) && !config::canvas_script_enabled() {
+        return Some(format!(
+            "Tool {name} executes Plugin API JavaScript and requires FIGHORSE_CANVAS_SCRIPT=allow."
         ));
     }
     if local_write_tool(name) && !config::mcp_local_write_enabled() {

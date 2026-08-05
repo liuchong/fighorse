@@ -137,6 +137,19 @@ fighorse code-connect unpublish --node "<figma-component-url>" --label React --d
 
 自动 Code Connect 映射发现仍是 Figma 产品能力；需要 Figma 产品内自动映射时，使用官方 Figma Remote MCP。
 
+## Canvas Bridge
+
+`fighorse` 可以通过本地 Figma 开发插件，在已打开的 Figma Design、FigJam
+和 Slides 文件里创建和修改原生节点。先运行 `fighorse install canvas-plugin --apply`
+安装插件包，再运行 `fighorse canvas serve`，用 `fighorse canvas pair` 生成配对码，
+然后在 Figma 中运行已导入的插件并输入配对码。
+
+画布写入要求 `FIGHORSE_CANVAS_MODE=write`；MCP 写入还要求
+`FIGHORSE_MCP_MODE=write` 和 `yes=true`。`canvas_execute_script` 与
+`fighorse canvas execute` 还必须显式设置 `FIGHORSE_CANVAS_SCRIPT=allow`。
+如果有多个插件会话，必须传入 `session_id`。事务返回 `unknown` 时，只能先 inspect
+或 verify，不得自动重试同一计划。
+
 ## 开发
 
 ```bash
