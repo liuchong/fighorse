@@ -48,6 +48,7 @@ for (const page of pages) {
   assert.match(html, /<meta\s+property="og:image"\s+content="https:\/\/liuchong\.github\.io\/fighorse\/pages\/social-preview\.png"/i, `${page.file} needs the social card`);
   assert.match(html, /<meta\s+name="twitter:card"\s+content="summary_large_image"/i, `${page.file} needs X/Twitter metadata`);
   assert.match(html, /<link\s+rel="sitemap"/i, `${page.file} needs a sitemap link`);
+  assert.match(html, /<link\s+rel="icon"[^>]+logo\.svg/i, `${page.file} needs the official horse logo favicon`);
   assert.match(html, /<script\s+type="application\/ld\+json">[\s\S]*?<\/script>/i, `${page.file} needs JSON-LD`);
   assert.match(html, /<a\s+class="skip-link"\s+href="#main-content"/i, `${page.file} needs a skip link`);
   assert.match(html, /<main\b[^>]*\bid="main-content"/i, `${page.file} needs a main landmark`);
@@ -70,7 +71,7 @@ for (const page of pages) {
   }
 }
 
-for (const asset of ["styles.css", "site.js", "social-preview.png", "site.webmanifest", "sitemap.xml", "robots.txt"]) {
+for (const asset of ["styles.css", "site.js", "logo.svg", "social-preview.png", "site.webmanifest", "sitemap.xml", "robots.txt"]) {
   assert.ok(existsSync(resolve(here, asset)), `Missing site asset: ${asset}`);
 }
 
@@ -86,6 +87,11 @@ assert.equal(manifest.start_url, "../index.html");
 
 const css = readFileSync(resolve(here, "styles.css"), "utf8");
 const javascript = readFileSync(resolve(here, "site.js"), "utf8");
+for (const brandColor of ["#172033", "#f7f3e8", "#ff6b6b", "#a678ff", "#29a9e8", "#31c991"]) {
+  assert.ok(css.includes(brandColor), `Styles must use the official logo color ${brandColor}`);
+}
+assert.ok(!css.includes("#b8ff33"), "The first-version acid green must be replaced by the logo palette");
+assert.match(css, /\.brand-logo\s*\{/, "Navigation must style the official horse logo");
 assert.match(javascript, /document\.documentElement\.classList\.add\("js"\)/, "JavaScript must opt into enhanced navigation");
 assert.match(css, /\.js\s+\.site-nav/, "The collapsed mobile navigation must only apply when JavaScript is available");
 assert.match(css, /\.reveal\s*\{[^}]*opacity:\s*1/s, "Content must remain visible without JavaScript");

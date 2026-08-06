@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-labelledby="title desc">
+  <title id="title">fighorse logo</title>
+  <desc id="desc">An original minimal horse-head profile with a colorful segmented mane inspired by digital design tools.</desc>
+  <rect width="128" height="128" rx="30" fill="#172033"/>
+  <path
+    d="M43 45 40 19l16 16 8-23 10 28c11 4 20 13 24 25l13 12c5 5 4 13-3 17l-15 8c-8 4-17 2-23-5l-3-4c-7 5-11 11-12 18H36c4-12 3-22-1-31-6-14-3-27 8-35Z"
+    fill="#f7f3e8"
+    stroke="#f7f3e8"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    stroke-width="2"
+  />
+  <path d="M43 45c-5 5-8 11-9 18" fill="none" stroke="#ff6b6b" stroke-linecap="round" stroke-width="7"/>
+  <path d="M34 68c0 7 3 14 5 20" fill="none" stroke="#a678ff" stroke-linecap="round" stroke-width="7"/>
+  <path d="M40 93c2 6 1 12-1 18" fill="none" stroke="#29a9e8" stroke-linecap="round" stroke-width="7"/>
+  <path d="M56 109c2-7 6-12 11-16" fill="none" stroke="#31c991" stroke-linecap="round" stroke-width="7"/>
+  <circle cx="80" cy="59" r="3.5" fill="#172033"/>
+  <path d="M99 83c3 1 5 1 8-1" fill="none" stroke="#172033" stroke-linecap="round" stroke-width="3"/>
+</svg>

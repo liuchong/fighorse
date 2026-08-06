@@ -7,9 +7,10 @@
   <meta name="description" content="深入理解 fighorse 的四层架构、Rust CLI 与 MCP 共享业务能力的方式、Streamable HTTP 服务、事务安装和相互独立的安全授权边界。">
   <meta name="keywords" content="fighorse 架构,MCP 服务器,Rust CLI,Streamable HTTP,Figma API,安全边界">
   <meta name="robots" content="index,follow,max-image-preview:large">
-  <meta name="theme-color" content="#43e8e1">
+  <meta name="theme-color" content="#172033">
   <link rel="canonical" href="https://liuchong.github.io/fighorse/pages/architecture.html">
   <link rel="manifest" href="./site.webmanifest">
+  <link rel="icon" type="image/svg+xml" href="./logo.svg">
   <link rel="sitemap" type="application/xml" href="./sitemap.xml">
   <link rel="stylesheet" href="./styles.css">
   <meta property="og:type" content="article">
@@ -44,7 +45,7 @@
 </head>
 <body>
   <a class="skip-link" href="#main-content">跳到主要内容</a>
-  <header class="site-header"><div class="shell nav-wrap"><a class="brand" href="../index.html" aria-label="fighorse 首页"><span class="brand-mark" aria-hidden="true">FH</span><strong>fighorse</strong><span>/ context engine</span></a><button class="menu-toggle" type="button" aria-label="打开导航" aria-expanded="false" aria-controls="site-navigation" data-menu-toggle><span></span></button><nav class="site-nav" id="site-navigation" aria-label="主导航" data-navigation data-open="false"><a href="./capabilities.html">能力</a><a href="./workflow.html">工作流</a><a href="./architecture.html" aria-current="page">架构</a><a href="./getting-started.html">开始使用</a><a class="nav-github" href="https://github.com/liuchong/fighorse" target="_blank" rel="noopener noreferrer">GitHub</a></nav></div></header>
+  <header class="site-header"><div class="shell nav-wrap"><a class="brand" href="../index.html" aria-label="fighorse 首页"><img class="brand-logo" src="./logo.svg" alt="" width="42" height="42"><strong>fighorse</strong><span>/ context engine</span></a><button class="menu-toggle" type="button" aria-label="打开导航" aria-expanded="false" aria-controls="site-navigation" data-menu-toggle><span></span></button><nav class="site-nav" id="site-navigation" aria-label="主导航" data-navigation data-open="false"><a href="./capabilities.html">能力</a><a href="./workflow.html">工作流</a><a href="./architecture.html" aria-current="page">架构</a><a href="./getting-started.html">开始使用</a><a class="nav-github" href="https://github.com/liuchong/fighorse" target="_blank" rel="noopener noreferrer">GitHub</a></nav></div></header>
 
   <main class="site-main" id="main-content">
     <header class="page-hero"><div class="shell"><nav class="breadcrumb" aria-label="面包屑"><a href="../index.html">首页</a><span>/</span><span>架构</span></nav><span class="eyebrow">Architecture / inspect every layer</span><h1>白盒内核。<br><span class="acid">开放接口。</span></h1><p class="lede">fighorse 把 API 访问、数据转换、上下文生成和客户端适配分开。人类可以检查每一步，AI 可以调用同一套能力，安全授权不会在层级之间偷偷扩散。</p></div></header>
