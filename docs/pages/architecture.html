@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>架构与安全｜fighorse CLI 内核、MCP 外壳设计</title>
+  <meta name="description" content="深入理解 fighorse 的四层架构、Rust CLI 与 MCP 共享业务能力的方式、Streamable HTTP 服务、事务安装和相互独立的安全授权边界。">
+  <meta name="keywords" content="fighorse 架构,MCP 服务器,Rust CLI,Streamable HTTP,Figma API,安全边界">
+  <meta name="robots" content="index,follow,max-image-preview:large">
+  <meta name="theme-color" content="#43e8e1">
+  <link rel="canonical" href="https://liuchong.github.io/fighorse/pages/architecture.html">
+  <link rel="manifest" href="./site.webmanifest">
+  <link rel="sitemap" type="application/xml" href="./sitemap.xml">
+  <link rel="stylesheet" href="./styles.css">
+  <meta property="og:type" content="article">
+  <meta property="og:site_name" content="fighorse">
+  <meta property="og:locale" content="zh_CN">
+  <meta property="og:title" content="fighorse 架构｜CLI 为核，MCP 为壳">
+  <meta property="og:description" content="白盒数据管道、共享业务能力、独立会话与显式写入边界。">
+  <meta property="og:url" content="https://liuchong.github.io/fighorse/pages/architecture.html">
+  <meta property="og:image" content="https://liuchong.github.io/fighorse/pages/social-preview.png">
+  <meta property="og:image:type" content="image/png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="fighorse — Figma to context to code">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="fighorse 架构与安全设计">
+  <meta name="twitter:description" content="从 Figma REST API 到 AI 客户端的四层白盒管道。">
+  <meta name="twitter:image" content="https://liuchong.github.io/fighorse/pages/social-preview.png">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "TechArticle",
+    "headline": "fighorse 架构与安全设计",
+    "description": "fighorse 的 CLI 内核、MCP 适配、上下文生成、传输与授权边界。",
+    "url": "https://liuchong.github.io/fighorse/pages/architecture.html",
+    "inLanguage": "zh-CN",
+    "proficiencyLevel": "Expert",
+    "about": ["Figma REST API", "Model Context Protocol", "Rust CLI", "AI design context"],
+    "isPartOf": { "@type": "WebSite", "name": "fighorse", "url": "https://liuchong.github.io/fighorse/" }
+  }
+  </script>
+  <script defer src="./site.js"></script>
+</head>
+<body>
+  <a class="skip-link" href="#main-content">跳到主要内容</a>
+  <header class="site-header"><div class="shell nav-wrap"><a class="brand" href="../index.html" aria-label="fighorse 首页"><span class="brand-mark" aria-hidden="true">FH</span><strong>fighorse</strong><span>/ context engine</span></a><button class="menu-toggle" type="button" aria-label="打开导航" aria-expanded="false" aria-controls="site-navigation" data-menu-toggle><span></span></button><nav class="site-nav" id="site-navigation" aria-label="主导航" data-navigation data-open="false"><a href="./capabilities.html">能力</a><a href="./workflow.html">工作流</a><a href="./architecture.html" aria-current="page">架构</a><a href="./getting-started.html">开始使用</a><a class="nav-github" href="https://github.com/liuchong/fighorse" target="_blank" rel="noopener noreferrer">GitHub</a></nav></div></header>
+
+  <main class="site-main" id="main-content">
+    <header class="page-hero"><div class="shell"><nav class="breadcrumb" aria-label="面包屑"><a href="../index.html">首页</a><span>/</span><span>架构</span></nav><span class="eyebrow">Architecture / inspect every layer</span><h1>白盒内核。<br><span class="acid">开放接口。</span></h1><p class="lede">fighorse 把 API 访问、数据转换、上下文生成和客户端适配分开。人类可以检查每一步，AI 可以调用同一套能力，安全授权不会在层级之间偷偷扩散。</p></div></header>
+
+    <section class="section" aria-labelledby="layers-title">
+      <div class="shell">
+        <div class="section-head reveal"><div><span class="kicker">01 / Four layers</span><h2 id="layers-title">从原始事实，<br><span class="violet">到可行动上下文。</span></h2></div><p>主要差异不只是包装 REST 接口，而是在转换层和上下文层把庞大、嘈杂的数据重塑成 AI 能安全使用的信号。</p></div>
+        <div class="diagram reveal" role="img" aria-label="fighorse 从 Figma API 到客户端适配器的四层架构">
+          <article class="diagram-node"><small>L1 / SOURCE</small><h3>Figma API 与资产</h3><p>公开 REST 操作、files、nodes、images、components、styles、variables、webhooks 与下载。</p></article>
+          <article class="diagram-node"><small>L2 / TRANSFORM</small><h3>转换与诊断</h3><p>compact、filter、diff、token 提取、覆盖报告、经验匹配与预算控制。</p></article>
+          <article class="diagram-node"><small>L3 / CONTEXT</small><h3>实现级上下文</h3><p>设计包、视觉审计、项目 playbook、资源目录、schema 和资产 manifest。</p></article>
+          <article class="diagram-node"><small>L4 / ADAPTER</small><h3>CLI 与 MCP</h3><p>终端命令、共享 HTTP 服务、标准 stdio、资源、prompt、安装器和客户端 skill。</p></article>
+        </div>
+      </div>
+    </section>
+
+    <section class="section section--line" aria-labelledby="kernel-title">
+      <div class="shell">
+        <div class="section-head reveal"><div><span class="kicker">02 / One behavior, two surfaces</span><h2 id="kernel-title">CLI 是内核。<br><span class="accent">MCP 是适配器。</span></h2></div><p>终端和 AI 工具不各自维护一套产品逻辑。它们共享 URL 解析、设计包、资源目录、资产导出和诊断行为。</p></div>
+        <div class="grid-2 reveal">
+          <article class="feature-card feature-card--acid"><span class="feature-index">CLI / WHITE BOX</span><h3>可脚本、可调试</h3><p>开发者、CI 和非 MCP agent 可以直接运行二进制文件。数据命令保持机器可读输出，诊断写入标准错误。</p></article>
+          <article class="feature-card"><span class="feature-index">MCP / SHARED ACCESS</span><h3>AI 直接调用</h3><p>Cursor、Codex、Kimi、Claude、opencode 等客户端复用本机 <code>http://127.0.0.1:9449/mcp</code>，避免重复常驻进程。</p></article>
+        </div>
+        <div class="callout reveal spacer-top"><h3>一次性命令仍然是一次性进程。</h3><p>普通 CLI 工作不会启动 MCP 服务、绑定端口或占用服务单例锁。只有显式选择 service 模式，才安装和启动长期运行的本地 HTTP 服务。</p></div>
+      </div>
+    </section>
+
+    <section class="section" aria-labelledby="transport-title">
+      <div class="shell">
+        <div class="section-head reveal"><div><span class="kicker">03 / Transport</span><h2 id="transport-title">标准会话。<br><span class="violet">单一端点。</span></h2></div><p>共享服务使用 Rust <code>rmcp 2.2</code> 的 Streamable HTTP。每个客户端拥有独立有状态会话，同时保持一个可管理的本地服务。</p></div>
+        <div class="grid-3 reveal">
+          <article class="feature-card"><span class="feature-index">SESSION</span><h3>独立会话</h3><p>重复初始化不会共享错误状态；不同 AI 客户端保持自己的协议会话。</p></article>
+          <article class="feature-card"><span class="feature-index">BOUNDARY</span><h3>请求校验</h3><p>在分发前检查 Host 与 Origin，并按标准协商 JSON 或事件流响应。</p></article>
+          <article class="feature-card feature-card--acid"><span class="feature-index">LIFECYCLE</span><h3>干净退出</h3><p>SIGINT、SIGTERM 和标准输入关闭都有明确生命周期，不留下孤儿服务。</p></article>
+        </div>
+        <div class="terminal reveal spacer-top"><div class="terminal-head"><div class="terminal-dots" aria-hidden="true"><i></i><i></i><i></i></div><span>transport / canonical</span></div><div class="terminal-body"><button class="copy-button" type="button" data-copy-target="serve-command" aria-label="复制 MCP 服务命令">复制</button><pre id="serve-command"><span class="comment"># 推荐：共享 Streamable HTTP 服务</span>
+<span class="prompt">$</span> fighorse mcp serve --transport http --port 9449
+
+<span class="comment"># 仅作显式兼容：标准 stdio</span>
+<span class="prompt">$</span> fighorse mcp serve --transport stdio</pre></div></div>
+      </div>
+    </section>
+
+    <section class="section section--line" aria-labelledby="security-title">
+      <div class="shell">
+        <div class="section-head reveal"><div><span class="kicker">04 / Safety domains</span><h2 id="security-title">核心安全域，<br><span class="accent">逐层显式授权。</span></h2></div><p>读取设计、修改 Figma、写本地文件和外发模板代码不是同一件事。它们构成四类核心安全域；Canvas Bridge 在此基础上还有更细的路径级门禁。</p></div>
+        <div class="grid-4 reveal">
+          <article class="feature-card"><span class="feature-index">DOMAIN / READ</span><h3>Figma 读取</h3><p>使用个人访问令牌读取当前用户有权访问的公开 REST 数据，是正常工作模式。</p></article>
+          <article class="feature-card"><span class="feature-index">DOMAIN / WRITE</span><h3>Figma 写入</h3><p>只有设置 <code>FIGHORSE_MCP_MODE=write</code> 才暴露已实现的写工具。</p></article>
+          <article class="feature-card feature-card--acid"><span class="feature-index">DOMAIN / FILE</span><h3>本地导出</h3><p>MCP 下还需要 <code>FIGHORSE_MCP_LOCAL_WRITE=allow</code>，并限制在三个批准根目录。</p></article>
+          <article class="feature-card"><span class="feature-index">DOMAIN / CODE</span><h3>模板外发</h3><p>Code Connect 预览或发布需单独设置 <code>FIGHORSE_MCP_CODE_CONNECT=allow</code>。</p></article>
+        </div>
+        <div class="callout reveal spacer-top"><h3>Canvas 写入还有额外门禁。</h3><p>本地画布修改必须设置 <code>FIGHORSE_CANVAS_MODE=write</code>；从 MCP 发起时还需要 <code>FIGHORSE_MCP_MODE=write</code> 和逐次 <code>yes=true</code> 确认。执行 Plugin API 脚本必须再设置 <code>FIGHORSE_CANVAS_SCRIPT=allow</code>。多插件会话必须指定 <code>session_id</code>；事务结果为 <code>unknown</code> 时只能先检查或验证，不得自动重试同一计划。</p></div>
+      </div>
+    </section>
+
+    <section class="section section--line" aria-labelledby="install-title">
+      <div class="shell">
+        <div class="section-head reveal"><div><span class="kicker">05 / Transactional install</span><h2 id="install-title">先验证服务，<br><span class="violet">再触碰客户端。</span></h2></div><p>服务安装不会先写一堆客户端配置再祈祷服务能启动。它按确定顺序执行，记录托管文件，并支持安全回滚。</p></div>
+        <div class="flow reveal">
+          <article class="flow-step"><h3>预检与备份</h3><p>确认来源、目标和冲突，保存需要恢复的旧内容。</p></article>
+          <article class="flow-step"><h3>二进制与服务</h3><p>先落二进制和服务定义，再启动本地服务。</p></article>
+          <article class="flow-step"><h3>真实就绪</h3><p>等待 <code>/health</code>，并完成真实 <code>initialize</code> 与 <code>tools/list</code> 握手。</p></article>
+          <article class="flow-step"><h3>客户端与技能</h3><p>只有服务可用后，才写 Cursor、Codex、Kimi、Claude 等客户端配置和指导文件。</p></article>
+          <article class="flow-step"><h3>清单与回滚</h3><p>manifest 记录哈希、备份和顺序；回滚只恢复仍未被用户修改的托管文件与先前服务状态。</p></article>
+        </div>
+      </div>
+    </section>
+
+    <section class="section section--line" aria-labelledby="position-title">
+      <div class="shell">
+        <div class="section-head reveal"><div><span class="kicker">06 / Ecosystem position</span><h2 id="position-title">专注上下文，<br><span class="accent">不冒充整个 Figma。</span></h2></div><p>fighorse 与官方 Figma Remote MCP 可以共存。两者边界清楚，才能避免把未公开能力包装成并不存在的“兼容”。</p></div>
+        <div class="matrix-wrap reveal"><table class="matrix"><thead><tr><th>领域</th><th>fighorse</th><th>官方 Figma Remote MCP</th></tr></thead><tbody><tr><td>数据管道</td><td>白盒 CLI、精简上下文、资产 manifest、视觉审计、本地经验。</td><td>深度绑定 Figma 产品表面的托管体验。</td></tr><tr><td>代码生成</td><td>不生成目标代码；由 AI 按目标仓库原生实现。</td><td>可提供产品内 Code to Canvas 等工作流。</td></tr><tr><td>Code Connect</td><td>现代模板兼容层，支持明确的生成、解析、预览和发布。</td><td>适合自动映射发现等产品内能力。</td></tr><tr><td>画布写入</td><td>通过本地 Figma 开发插件桥，权限逐层开启。</td><td>官方托管能力与席位规则。</td></tr></tbody></table></div>
+      </div>
+    </section>
+
+    <section class="cta" aria-labelledby="cta-title"><div class="shell cta-grid"><div><span class="kicker" style="color:#0a0b0c">Next / install</span><h2 id="cta-title">现在，让它跑起来。</h2><p>先完成 CLI 快速开始，再按需要接入共享 MCP 服务。</p></div><a class="button" href="./getting-started.html">进入快速开始 <span class="arrow" aria-hidden="true">→</span></a></div></section>
+  </main>
+
+  <footer class="site-footer"><div class="shell"><div class="footer-grid"><div class="footer-brand">fig<span>horse</span></div><nav class="footer-links" aria-label="页脚导航"><a href="./capabilities.html">能力</a><a href="./workflow.html">工作流</a><a href="./architecture.html">架构</a><a href="./getting-started.html">开始使用</a><a href="https://github.com/liuchong/fighorse">GitHub</a></nav></div><div class="footer-meta"><span>© <span data-year>2026</span> fighorse contributors</span><span>Figma data, shaped for AI consumption.</span></div></div></footer>
+</body>
+</html>

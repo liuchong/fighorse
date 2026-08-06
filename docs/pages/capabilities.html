@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>核心能力｜fighorse Figma 数据与 AI 上下文工具箱</title>
+  <meta name="description" content="全面了解 fighorse 的设计包、资源目录、设计令牌、资产导出、视觉审计、Code Connect、Canvas Bridge 与完整 Figma REST API 能力。">
+  <meta name="keywords" content="fighorse 功能,Figma 设计包,设计令牌,资源导出,Code Connect,Canvas Bridge,视觉审计">
+  <meta name="robots" content="index,follow,max-image-preview:large">
+  <meta name="theme-color" content="#b8ff33">
+  <link rel="canonical" href="https://liuchong.github.io/fighorse/pages/capabilities.html">
+  <link rel="manifest" href="./site.webmanifest">
+  <link rel="sitemap" type="application/xml" href="./sitemap.xml">
+  <link rel="stylesheet" href="./styles.css">
+  <meta property="og:type" content="article">
+  <meta property="og:site_name" content="fighorse">
+  <meta property="og:locale" content="zh_CN">
+  <meta property="og:title" content="fighorse 核心能力｜从设计包到视觉审计">
+  <meta property="og:description" content="一条从 Figma 数据读取、精简、导出到视觉验证的完整 AI 上下文管道。">
+  <meta property="og:url" content="https://liuchong.github.io/fighorse/pages/capabilities.html">
+  <meta property="og:image" content="https://liuchong.github.io/fighorse/pages/social-preview.png">
+  <meta property="og:image:type" content="image/png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="fighorse — Figma to context to code">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="fighorse 核心能力">
+  <meta name="twitter:description" content="设计包、资源目录、资产导出、视觉审计、Code Connect 与 Canvas Bridge。">
+  <meta name="twitter:image" content="https://liuchong.github.io/fighorse/pages/social-preview.png">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "TechArticle",
+    "headline": "fighorse 核心能力",
+    "description": "fighorse 面向 Figma 数据与 AI 实现上下文的完整能力说明。",
+    "url": "https://liuchong.github.io/fighorse/pages/capabilities.html",
+    "inLanguage": "zh-CN",
+    "about": { "@type": "SoftwareApplication", "name": "fighorse", "codeRepository": "https://github.com/liuchong/fighorse" },
+    "isPartOf": { "@type": "WebSite", "name": "fighorse", "url": "https://liuchong.github.io/fighorse/" }
+  }
+  </script>
+  <script defer src="./site.js"></script>
+</head>
+<body>
+  <a class="skip-link" href="#main-content">跳到主要内容</a>
+  <header class="site-header">
+    <div class="shell nav-wrap">
+      <a class="brand" href="../index.html" aria-label="fighorse 首页"><span class="brand-mark" aria-hidden="true">FH</span><strong>fighorse</strong><span>/ context engine</span></a>
+      <button class="menu-toggle" type="button" aria-label="打开导航" aria-expanded="false" aria-controls="site-navigation" data-menu-toggle><span></span></button>
+      <nav class="site-nav" id="site-navigation" aria-label="主导航" data-navigation data-open="false">
+        <a href="./capabilities.html" aria-current="page">能力</a><a href="./workflow.html">工作流</a><a href="./architecture.html">架构</a><a href="./getting-started.html">开始使用</a><a class="nav-github" href="https://github.com/liuchong/fighorse" target="_blank" rel="noopener noreferrer">GitHub</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="site-main" id="main-content">
+    <header class="page-hero">
+      <div class="shell">
+        <nav class="breadcrumb" aria-label="面包屑"><a href="../index.html">首页</a><span>/</span><span>核心能力</span></nav>
+        <span class="eyebrow">Capabilities / what it actually does</span>
+        <h1>设计事实，<br><span class="acid">全程在线。</span></h1>
+        <p class="lede">从一个 Figma 链接开始，得到范围明确、带诊断、可导出、可验证的上下文。fighorse 的能力不是孤立命令，而是一条连贯的数据链。</p>
+      </div>
+    </header>
+
+    <section class="section" aria-labelledby="overview-title">
+      <div class="shell">
+        <div class="section-head reveal"><div><span class="kicker">01 / Capability map</span><h2 id="overview-title">八个模块。<br><span class="violet">同一个事实源。</span></h2></div><p>高级产品工具负责把原始数据变成可行动的上下文；底层接口保留 Figma 公共 REST 语义，供精确查询和调试。</p></div>
+        <div class="grid-4 reveal">
+          <article class="feature-card feature-card--acid"><span class="feature-index">01</span><h3>设计包</h3><p>结构、令牌、截图、范围、资产计划和风险诊断的统一入口。</p></article>
+          <article class="feature-card"><span class="feature-index">02</span><h3>资源目录</h3><p>查看可访问的团队、项目、文件、分支和团队设计库。</p></article>
+          <article class="feature-card"><span class="feature-index">03</span><h3>结构精简</h3><p>按深度和上下文预算提炼节点树，降低原始 JSON 噪声。</p></article>
+          <article class="feature-card"><span class="feature-index">04</span><h3>设计系统</h3><p>提取颜色、排版、间距、效果、组件、样式和变量。</p></article>
+          <article class="feature-card"><span class="feature-index">05</span><h3>资产管道</h3><p>导出截图、组件和图片填充，并生成机器可读 manifest。</p></article>
+          <article class="feature-card"><span class="feature-index">06</span><h3>视觉反馈</h3><p>比较实现截图和设计参考，形成结构化修正清单。</p></article>
+          <article class="feature-card"><span class="feature-index">07</span><h3>Code Connect</h3><p>现代模板的生成、解析、验证、预览、发布和删除。</p></article>
+          <article class="feature-card"><span class="feature-index">08</span><h3>Canvas Bridge</h3><p>通过本地开发插件，在显式授权后创建或修改原生节点。</p></article>
+        </div>
+      </div>
+    </section>
+
+    <section class="section section--line" id="design-package" aria-labelledby="package-title">
+      <div class="shell">
+        <div class="section-head reveal"><div><span class="kicker">02 / Design package</span><h2 id="package-title">一份包，<br><span class="accent">回答实现前的问题。</span></h2></div><p><code>design package</code> 是首选高级接口。它不仅告诉 AI 看到了什么，也明确当前范围是否可实现、缺少什么、下一步应导出什么。</p></div>
+        <div class="matrix-wrap reveal">
+          <table class="matrix">
+            <thead><tr><th>输出区域</th><th>回答的问题</th><th>下游用途</th></tr></thead>
+            <tbody>
+              <tr><td>target + scope</td><td>当前节点是谁？是否过于宽泛？</td><td>避免把整个页面或用户流程误当作单个屏幕。</td></tr>
+              <tr><td>context + tokens</td><td>结构、尺寸、颜色、字体和约束是什么？</td><td>提供布局和样式实现事实。</td></tr>
+              <tr><td>screenshots</td><td>设计的真实视觉参考是什么？</td><td>支持实现后的截图对比。</td></tr>
+              <tr><td>asset_export_plan</td><td>哪些节点需要导出？用什么格式？</td><td>生成准确 CLI 命令和 MCP 调用。</td></tr>
+              <tr><td>diagnostics</td><td>令牌、字体、截图或范围哪里还不完整？</td><td>在写代码前暴露风险。</td></tr>
+              <tr><td>learned_experience</td><td>过去类似任务踩过什么坑？</td><td>复用本地、透明、可审查的经验。</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="terminal reveal spacer-top">
+          <div class="terminal-head"><div class="terminal-dots" aria-hidden="true"><i></i><i></i><i></i></div><span>design / package</span></div>
+          <div class="terminal-body"><button class="copy-button" type="button" data-copy-target="package-command" aria-label="复制设计包命令">复制</button><pre id="package-command"><span class="prompt">$</span> fighorse design package \
+  "https://www.figma.com/design/&lt;fileKey&gt;/&lt;name&gt;?node-id=&lt;node-id&gt;" \
+  --platform web-react \
+  --asset-format svg \
+  --output ./.fighorse/exports/package.json</pre></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="resource-catalog" aria-labelledby="catalog-title">
+      <div class="shell">
+        <div class="section-head reveal"><div><span class="kicker">03 / Resource catalog</span><h2 id="catalog-title">先看地图，<br><span class="violet">再选目标。</span></h2></div><p>当入口是团队或项目链接时，资源目录先做只读盘点。它不缓存、不批量下载，也不会绕过 Figma 的权限范围。</p></div>
+        <div class="grid-3 reveal">
+          <article class="feature-card"><span class="feature-index">READY</span><h3>完整可用</h3><p>项目、文件和设计库探测成功，可以继续选择具体设计文件或节点。</p></article>
+          <article class="feature-card feature-card--acid"><span class="feature-index">PARTIAL</span><h3>保留结果</h3><p>部分权限不足时保留已经成功的数据，并指出缺少的具体访问范围。</p></article>
+          <article class="feature-card"><span class="feature-index">BLOCKED</span><h3>明确受阻</h3><p>无法枚举的浏览器根链接不会被误判为团队 ID，而是给出可执行的修正路径。</p></article>
+        </div>
+      </div>
+    </section>
+
+    <section class="section section--line" id="assets" aria-labelledby="asset-title">
+      <div class="shell">
+        <div class="section-head reveal"><div><span class="kicker">04 / Assets + tokens</span><h2 id="asset-title">资产可定位，<br><span class="accent">设计可复现。</span></h2></div><p>图片、组件渲染和图片填充可以导出到受控目录。manifest 记录真实文件结果，让脚本和 AI 不必推断名称。</p></div>
+        <div class="grid-2 reveal">
+          <article class="feature-card"><span class="feature-index">EXPORT</span><h3>带清单的资产</h3><p>支持 png、svg、pdf、jpg 等目标格式；目录限定在项目导出区、项目资产区或用户级 fighorse 导出区。</p><div class="tag-row"><span class="tag">image export</span><span class="tag">component export</span><span class="tag">asset download</span></div></article>
+          <article class="feature-card" id="visual-loop"><span class="feature-index">AUDIT</span><h3>结构化视觉审计</h3><p>把 Figma URL 与应用截图组合，检查尺寸、排版、滚动、裁剪、系统 UI 和字体风险，并产出经验建议。</p><div class="tag-row"><span class="tag">visual audit</span><span class="tag">project playbook</span><span class="tag">experience</span></div></article>
+        </div>
+      </div>
+    </section>
+
+    <section class="section section--line" aria-labelledby="write-title">
+      <div class="shell">
+        <div class="section-head reveal"><div><span class="kicker">05 / Explicit write paths</span><h2 id="write-title">能写，但绝不<br><span class="violet">偷偷写。</span></h2></div><p>写能力被拆成互不替代的授权域。启用其中一个，不会顺带打开另一个。</p></div>
+        <div class="grid-2 reveal">
+          <article class="feature-card" id="code-connect"><span class="feature-index">CODE CONNECT</span><h3>模板连接</h3><p>生成模板时由 AI 明确提供代码组件上下文；fighorse 本地解析但不执行项目代码。预览和发布需要单独允许模板外发，发布还需要 Figma 写模式。</p></article>
+          <article class="feature-card feature-card--acid" id="canvas"><span class="feature-index">CANVAS BRIDGE</span><h3>原生画布修改</h3><p>Rust 桥接服务连接已配对的本地 Figma 开发插件。画布写入、MCP 写入和脚本执行分别要求明确开关，多会话必须指定目标。</p></article>
+        </div>
+        <div class="callout reveal spacer-top"><h3>边界同样是一种能力。</h3><p>fighorse 不声称替代 Figma 官方 Remote MCP 的 Code to Canvas、自动 Code Connect 映射、Make 资源等托管能力。公共 REST 不存在的能力会被明确分流，而不是静默近似。</p></div>
+      </div>
+    </section>
+
+    <section class="cta" aria-labelledby="cta-title">
+      <div class="shell cta-grid"><div><span class="kicker" style="color:#0a0b0c">Next / workflow</span><h2 id="cta-title">把能力串成闭环。</h2><p>查看 fighorse 如何从资源发现一路走到视觉验证和经验沉淀。</p></div><a class="button" href="./workflow.html">查看完整工作流 <span class="arrow" aria-hidden="true">→</span></a></div>
+    </section>
+  </main>
+
+  <footer class="site-footer"><div class="shell"><div class="footer-grid"><div class="footer-brand">fig<span>horse</span></div><nav class="footer-links" aria-label="页脚导航"><a href="./capabilities.html">能力</a><a href="./workflow.html">工作流</a><a href="./architecture.html">架构</a><a href="./getting-started.html">开始使用</a><a href="https://github.com/liuchong/fighorse">GitHub</a></nav></div><div class="footer-meta"><span>© <span data-year>2026</span> fighorse contributors</span><span>Figma data, shaped for AI consumption.</span></div></div></footer>
+</body>
+</html>

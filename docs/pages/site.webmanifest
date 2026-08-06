@@ -1,0 +1,12 @@
+{
+  "name": "fighorse",
+  "short_name": "fighorse",
+  "description": "Figma 数据的瑞士军刀，把设计事实整理成 AI 可执行的上下文。",
+  "start_url": "../index.html",
+  "scope": "../",
+  "display": "standalone",
+  "background_color": "#0a0b0c",
+  "theme_color": "#b8ff33",
+  "lang": "zh-CN"
+}
+

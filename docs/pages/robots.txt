@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://liuchong.github.io/fighorse/pages/sitemap.xml
