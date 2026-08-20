@@ -817,7 +817,11 @@ fn symlink_or_copy(target: &Path, link: &Path) -> Result<PathBuf> {
     Ok(link.to_path_buf())
 }
 
-fn requested_binary_links(link_dir: Option<&str>, link_dirs: Option<&str>) -> Vec<PathBuf> {
+fn requested_binary_links(
+    link_dir: Option<&str>,
+    link_dirs: Option<&str>,
+    home: Option<&str>,
+) -> Vec<PathBuf> {
     let mut requested: Vec<String> = split_list(link_dirs.unwrap_or(""));
     if let Some(link_dir) = link_dir {
         requested.push(link_dir.to_string());
@@ -832,8 +836,13 @@ fn requested_binary_links(link_dir: Option<&str>, link_dirs: Option<&str>) -> Ve
         Vec::new()
     } else if explicit {
         requested
-    } else {
+    } else if fighorse_home(home) == fighorse_home(None) {
         path_preferred_link_dirs()
+    } else {
+        // A caller-supplied home outside the default one is a sandboxed install.
+        // Guessing PATH link dirs from the real user home would repoint the
+        // global `fighorse` command at a binary the sandbox owns and may delete.
+        Vec::new()
     };
     let mut seen = std::collections::HashSet::new();
     directories
@@ -859,7 +868,7 @@ pub fn install_binary(
         .map(PathBuf::from)
         .unwrap_or_else(|| default_binary_target(home));
 
-    let links = requested_binary_links(link_dir, link_dirs);
+    let links = requested_binary_links(link_dir, link_dirs, home);
     let all_dirs: Vec<String> = links
         .iter()
         .filter_map(|link| link.parent())
@@ -2416,7 +2425,10 @@ fn executable_check(path: &Path) -> model::InstallCheck {
     model::InstallCheck::new("binary", exists && executable, path.to_string_lossy())
 }
 
-fn binary_path_check(path: &Path) -> model::InstallCheck {
+/// `path_links_requested` records whether this install was asked to publish PATH
+/// symlinks at all. When it was not, PATH discoverability is advisory rather than
+/// a verification failure, so opting out of links cannot roll back the install.
+fn binary_path_check(path: &Path, path_links_requested: bool) -> model::InstallCheck {
     let parent_on_path = path
         .parent()
         .map(|parent| path_dirs().iter().any(|item| Path::new(item) == parent))
@@ -2433,7 +2445,7 @@ fn binary_path_check(path: &Path) -> model::InstallCheck {
     let discoverable = parent_on_path || resolved_matches_target;
     model::InstallCheck::new(
         "binary_path",
-        path.is_file() && discoverable,
+        path.is_file() && (discoverable || !path_links_requested),
         if discoverable {
             "fighorse is discoverable on PATH".to_string()
         } else {
@@ -2523,7 +2535,7 @@ async fn apply_install_transaction(opts: &InstallOpts<'_>, self_install: bool) -
     let mut skills_migration = None;
     let mut project_report = Value::Null;
     let mut canvas_plugin_report = Value::Null;
-    let links = requested_binary_links(opts.link_dir, opts.link_dirs);
+    let links = requested_binary_links(opts.link_dir, opts.link_dirs, opts.home);
     let canvas_port = opts.canvas_port.unwrap_or(9450);
     if !(1..=65535).contains(&canvas_port) {
         return Err(Error::Usage(
@@ -2700,7 +2712,7 @@ async fn apply_install_transaction(opts: &InstallOpts<'_>, self_install: bool) -
 
     verification.extend(transaction.verify_changed());
     verification.push(executable_check(&target));
-    verification.push(binary_path_check(&target));
+    verification.push(binary_path_check(&target, !links.is_empty()));
     verification.push(config_permission_check(&home));
     let ok = verification.iter().all(|check| check.ok);
     if !ok {
@@ -2813,8 +2825,12 @@ pub async fn install_verify(home: Option<&str>, port: i64) -> Result<Value> {
         .find(|file| file.path.file_name().and_then(|name| name.to_str()) == Some("fighorse"))
         .map(|file| file.path.clone())
         .unwrap_or_else(|| home.join("bin").join("fighorse"));
+    let path_links_installed = manifest.managed_files.iter().any(|file| {
+        file.kind == transaction::ManagedFileKind::Symlink
+            && file.path.file_name().and_then(|name| name.to_str()) == Some("fighorse")
+    });
     checks.push(executable_check(&binary));
-    checks.push(binary_path_check(&binary));
+    checks.push(binary_path_check(&binary, path_links_installed));
     checks.push(config_permission_check(&home));
     let plugin_manifest = canvas_plugin_dir(&home).join("manifest.json");
     let has_canvas_plugin = manifest
@@ -3263,6 +3279,25 @@ mod tests {
         let error = opencode_mcp_payload(&sse).unwrap_err().to_string();
         assert!(error.contains("--transport http"));
         assert!(error.contains("/mcp"));
+    }
+
+    #[test]
+    fn sandboxed_home_never_guesses_links_in_the_real_user_home() {
+        let sandbox = std::env::temp_dir().join(format!("fh-sandbox-{}", std::process::id()));
+        let links = requested_binary_links(None, None, Some(&sandbox.to_string_lossy()));
+        assert!(
+            links.is_empty(),
+            "a non-default home must not auto-link into the user PATH, got {links:?}"
+        );
+        assert_eq!(
+            requested_binary_links(None, None, None),
+            requested_binary_links(
+                None,
+                None,
+                Some(&config::fighorse_home().to_string_lossy())
+            ),
+            "the default home must keep guessing PATH link dirs"
+        );
     }
 
     #[test]
