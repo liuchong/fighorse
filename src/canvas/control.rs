@@ -15,7 +15,7 @@ use axum::{Json, Router};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::collections::HashMap;
-use std::net::SocketAddr;
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
@@ -85,6 +85,8 @@ struct PluginHello {
     editor_type: super::EditorType,
     #[serde(default)]
     document_name: Option<String>,
+    #[serde(default)]
+    file_key: Option<String>,
     #[serde(default)]
     current_page: Option<String>,
     #[serde(default)]
@@ -217,14 +219,31 @@ pub async fn serve(manager: CanvasManager, port: u16, shutdown: CancellationToke
         .route("/canvas/execute", post(execute))
         .route("/canvas/ws", get(ws))
         .with_state(server);
-    let addr: SocketAddr = ([127, 0, 0, 1], port).into();
-    let listener = TcpListener::bind(addr).await?;
-    axum::serve(listener, app)
-        .with_graceful_shutdown(async move {
-            shutdown.cancelled().await;
-        })
+    // The Figma plugin manifest may only declare hostname patterns, so the
+    // plugin connects through `localhost`. That resolves to ::1 before
+    // 127.0.0.1 on macOS, so both loopback families must be accepted while
+    // still refusing every non-loopback interface.
+    let v4 = TcpListener::bind(SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port)).await?;
+    let v6 = TcpListener::bind(SocketAddr::new(IpAddr::V6(Ipv6Addr::LOCALHOST), port))
         .await
-        .map_err(Error::from)
+        .ok();
+
+    let v4_shutdown = shutdown.clone();
+    let v4_server = axum::serve(v4, app.clone()).with_graceful_shutdown(async move {
+        v4_shutdown.cancelled().await;
+    });
+
+    match v6 {
+        Some(v6) => {
+            let v6_server = axum::serve(v6, app).with_graceful_shutdown(async move {
+                shutdown.cancelled().await;
+            });
+            tokio::try_join!(v4_server, v6_server)
+                .map(|_| ())
+                .map_err(Error::from)
+        }
+        None => v4_server.await.map_err(Error::from),
+    }
 }
 
 async fn status(State(server): State<Arc<ControlServer>>, headers: HeaderMap) -> impl IntoResponse {
@@ -236,7 +255,7 @@ async fn status(State(server): State<Arc<ControlServer>>, headers: HeaderMap) ->
         Json(json!({
             "ok": true,
             "endpoint": format!("http://127.0.0.1:{}/canvas", server.port),
-            "websocket": format!("ws://127.0.0.1:{}/canvas/ws", server.port),
+            "websocket": format!("ws://localhost:{}/canvas/ws", server.port),
             "protocol_version": PROTOCOL_VERSION,
             "plugin_version": PLUGIN_VERSION,
             "canvas_mode": config::load_config().canvas_mode,
@@ -262,7 +281,7 @@ async fn pair(
                 "ok": true,
                 "code": pairing.code,
                 "expires_at_ms": pairing.expires_at_ms,
-                "websocket_url": format!("ws://127.0.0.1:{}/canvas/ws?code={}", server.port, pairing.code),
+                "websocket_url": format!("ws://localhost:{}/canvas/ws?code={}", server.port, pairing.code),
                 "manual_action": "Open the fighorse canvas plugin in Figma and enter this pairing code.",
             })),
         ),
@@ -417,6 +436,7 @@ async fn handle_socket(server: Arc<ControlServer>, code: String, mut socket: Web
         document_name: hello
             .document_name
             .unwrap_or_else(|| "Untitled Figma document".to_string()),
+        file_key: hello.file_key.filter(|key| !key.trim().is_empty()),
         current_page: hello.current_page,
         selection_count: hello.selection_count.unwrap_or(0),
         capabilities: hello.capabilities,

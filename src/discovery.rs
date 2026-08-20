@@ -166,7 +166,7 @@ fn canvas_bridge_status(cfg: &config::Config) -> Value {
         "bridge_enabled": config::canvas_bridge_enabled(),
         "port": port,
         "endpoint": format!("http://127.0.0.1:{port}/canvas"),
-        "websocket": format!("ws://127.0.0.1:{port}/canvas/ws"),
+        "websocket": format!("ws://localhost:{port}/canvas/ws"),
         "listener_reachable": listener_reachable,
         "plugin_manifest": plugin_manifest.to_string_lossy(),
         "plugin_installed": plugin_manifest.is_file(),
@@ -723,7 +723,7 @@ pub fn manifest() -> Value {
             },
             "local_write": {"env": "FIGHORSE_MCP_LOCAL_WRITE=allow", "allowed_roots": ["./.fighorse/exports", "./assets/fighorse", "~/.fighorse/exports"], "default": "deny unless explicitly enabled"},
             "code_connect_egress": {"env": "FIGHORSE_MCP_CODE_CONNECT=allow", "default": "deny unless explicitly enabled", "reason": "preview/publish sends Code Connect template code to Figma"},
-            "canvas": {"endpoint": "http://127.0.0.1:9450/canvas", "websocket": "ws://127.0.0.1:9450/canvas/ws", "mode_env": "FIGHORSE_CANVAS_MODE=write", "script_env": "FIGHORSE_CANVAS_SCRIPT=allow", "bridge_env": "FIGHORSE_CANVAS_BRIDGE=allow", "default": "readonly and script-denied", "session_rule": "write calls must pass session_id when multiple plugin sessions are connected"},
+            "canvas": {"endpoint": "http://127.0.0.1:9450/canvas", "websocket": "ws://localhost:9450/canvas/ws", "mode_env": "FIGHORSE_CANVAS_MODE=write", "script_env": "FIGHORSE_CANVAS_SCRIPT=allow", "bridge_env": "FIGHORSE_CANVAS_BRIDGE=allow", "default": "readonly and script-denied", "session_rule": "write calls must pass session_id when multiple plugin sessions are connected"},
             "default_mode": "readonly",
             "write_mode": "Set FIGHORSE_MCP_MODE=write only when the AI client is allowed to mutate Figma resources.",
             "tool_visibility": {

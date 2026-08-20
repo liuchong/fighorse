@@ -252,6 +252,10 @@ pub struct CanvasSession {
     pub plugin_version: String,
     pub editor_type: EditorType,
     pub document_name: String,
+    /// Lets callers verify their own writes through the REST API without asking a
+    /// human for the file URL. Absent when the plugin context withholds it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub file_key: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub current_page: Option<String>,
     #[serde(default)]
@@ -269,6 +273,8 @@ pub struct CanvasSessionSummary {
     pub editor_type: EditorType,
     pub document_name: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub file_key: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub current_page: Option<String>,
     #[serde(default)]
     pub selection_count: u32,
@@ -285,6 +291,7 @@ impl From<CanvasSession> for CanvasSessionSummary {
             plugin_version: value.plugin_version,
             editor_type: value.editor_type,
             document_name: value.document_name,
+            file_key: value.file_key,
             current_page: value.current_page,
             selection_count: value.selection_count,
             capabilities: value.capabilities,

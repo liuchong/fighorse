@@ -76,6 +76,31 @@ fn canvas_plugin_install_writes_managed_bundle() {
     let _ = fs::remove_dir_all(root);
 }
 
+/// Figma rejects the whole manifest when `networkAccess` declares an IP literal
+/// such as `http://127.0.0.1:9450`; only hostname patterns are accepted.
+#[test]
+fn canvas_plugin_manifest_declares_hostname_not_ip_literal() {
+    let root = temp_root("canvas-plugin-network-access");
+    let home = root.to_string_lossy().to_string();
+
+    install::install_canvas_plugin(Some(&home), true).unwrap();
+    let manifest: Value = serde_json::from_str(
+        &fs::read_to_string(root.join("plugins/fighorse-canvas/manifest.json")).unwrap(),
+    )
+    .unwrap();
+
+    let network_access = manifest["networkAccess"].to_string();
+    assert!(!network_access.contains("127.0.0.1"));
+    assert!(network_access.contains("ws://localhost:9450"));
+
+    let dev_domains = manifest["networkAccess"]["devAllowedDomains"]
+        .as_array()
+        .unwrap();
+    assert!(!dev_domains.is_empty());
+
+    let _ = fs::remove_dir_all(root);
+}
+
 #[tokio::test]
 async fn service_canvas_plugin_uses_configured_bridge_port() {
     let root = temp_root("canvas-plugin-port");
@@ -96,7 +121,7 @@ async fn service_canvas_plugin_uses_configured_bridge_port() {
         mode: Some("service"),
         service: "none",
         link_dir: None,
-        link_dirs: None,
+        link_dirs: Some("none"),
         no_service: false,
         canvas_plugin: true,
         canvas_mode: Some("write"),
@@ -110,8 +135,9 @@ async fn service_canvas_plugin_uses_configured_bridge_port() {
     let manifest =
         fs::read_to_string(root.join("home/plugins/fighorse-canvas/manifest.json")).unwrap();
     let ui = fs::read_to_string(root.join("home/plugins/fighorse-canvas/ui.html")).unwrap();
-    assert!(manifest.contains("127.0.0.1:9560"));
-    assert!(ui.contains("127.0.0.1:9560"));
+    assert!(manifest.contains("ws://localhost:9560"));
+    assert!(manifest.contains("http://localhost:9560"));
+    assert!(ui.contains("ws://localhost:9560"));
 
     let _ = fs::remove_dir_all(root);
 }

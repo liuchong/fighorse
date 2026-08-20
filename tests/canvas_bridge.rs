@@ -10,6 +10,7 @@ fn session(id: &str, editor: EditorType) -> CanvasSession {
         plugin_version: "0.1.0".to_string(),
         editor_type: editor,
         document_name: "Redacted document".to_string(),
+        file_key: Some("redacted-file-key".to_string()),
         current_page: Some("Page 1".to_string()),
         selection_count: 0,
         capabilities: vec!["inspect".to_string(), "apply".to_string()],

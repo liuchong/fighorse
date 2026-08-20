@@ -7,9 +7,10 @@
   "editorType": ["figma", "figjam", "slides"],
   "documentAccess": "dynamic-page",
   "networkAccess": {
-    "allowedDomains": [
-      "http://127.0.0.1:9450",
-      "ws://127.0.0.1:9450"
+    "allowedDomains": ["none"],
+    "devAllowedDomains": [
+      "http://localhost:9450",
+      "ws://localhost:9450"
     ]
   }
 }

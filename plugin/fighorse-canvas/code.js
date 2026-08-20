@@ -27,6 +27,7 @@ function describeSession() {
     plugin_version: VERSION,
     editor_type: figma.editorType || "figma",
     document_name: figma.root && figma.root.name ? figma.root.name : "Untitled Figma document",
+    file_key: typeof figma.fileKey === "string" ? figma.fileKey : null,
     current_page: figma.currentPage ? figma.currentPage.name : null,
     selection_count: figma.currentPage && figma.currentPage.selection ? figma.currentPage.selection.length : 0,
     capabilities: [
@@ -71,6 +72,10 @@ function inspectCanvas() {
   return {
     editor_type: currentEditor(),
     document_name: figma.root.name,
+    // Reported so callers can close the write/verify loop through the REST API
+    // instead of asking a human for the file URL. Absent in editors or plugin
+    // contexts that withhold it.
+    file_key: typeof figma.fileKey === "string" ? figma.fileKey : null,
     current_page: figma.currentPage ? summarizeNode(figma.currentPage) : null,
     selection
   };
@@ -142,7 +147,7 @@ async function executeOperation(operation) {
   let node = null;
   switch (operation.op) {
     case "create_page":
-      node = createPage(args);
+      node = await createPage(args);
       break;
     case "create_frame":
       node = createFrame(args);
@@ -166,14 +171,14 @@ async function executeOperation(operation) {
       node = await createText(args);
       break;
     case "set_auto_layout":
-      node = requireNode(args.node);
+      node = await requireNode(args.node);
       setAutoLayout(node, args);
       break;
     case "create_component":
       node = createBasic("createComponent", args);
       break;
     case "create_instance":
-      node = createInstance(args);
+      node = await createInstance(args);
       break;
     case "create_variant":
       node = createVariant(args);
@@ -185,7 +190,7 @@ async function executeOperation(operation) {
       node = await bindVariable(args);
       break;
     case "set_style":
-      node = setStyle(args);
+      node = await setStyle(args);
       break;
     case "create_sticky":
       node = createBasic("createSticky", args);
@@ -194,7 +199,7 @@ async function executeOperation(operation) {
       node = createShapeWithText(args);
       break;
     case "create_connector":
-      node = createConnector(args);
+      node = await createConnector(args);
       break;
     case "create_table":
       node = createBasic("createTable", args);
@@ -206,7 +211,7 @@ async function executeOperation(operation) {
       node = createBasic("createSlideRow", args);
       break;
     case "create_slide":
-      node = createSlide(args);
+      node = await createSlide(args);
       break;
     case "create_shape":
       node = createShape(args);
@@ -215,48 +220,48 @@ async function executeOperation(operation) {
       node = createLayout(args);
       break;
     case "create_speaker_notes":
-      node = setSpeakerNotes(args);
+      node = await setSpeakerNotes(args);
       break;
     case "set_skip_slide":
-      node = setSkipSlide(args);
+      node = await setSkipSlide(args);
       break;
     case "reorder_slide":
-      node = reorderSlide(args);
+      node = await reorderSlide(args);
       break;
     case "rename_node":
-      node = requireNode(args.node);
+      node = await requireNode(args.node);
       node.name = String(args.name || node.name);
       break;
     case "move_node":
-      node = requireNode(args.node);
+      node = await requireNode(args.node);
       setGeometry(node, args);
       break;
     case "resize_node":
-      node = requireNode(args.node);
+      node = await requireNode(args.node);
       resizeIfPossible(node, args.width, args.height);
       break;
     case "delete_node":
-      node = requireNode(args.node);
+      node = await requireNode(args.node);
       node.remove();
       break;
     case "duplicate_node":
-      node = requireNode(args.node).clone();
-      appendToParent(node, args.parent);
+      node = (await requireNode(args.node)).clone();
+      await appendToParent(node, args.parent);
       break;
     case "reparent_node":
-      node = requireNode(args.node);
-      appendToParent(node, args.parent);
+      node = await requireNode(args.node);
+      await appendToParent(node, args.parent);
       break;
     case "set_opacity":
-      node = requireNode(args.node);
+      node = await requireNode(args.node);
       if ("opacity" in node && typeof args.opacity === "number") node.opacity = args.opacity;
       break;
     case "set_fill":
-      node = requireNode(args.node);
+      node = await requireNode(args.node);
       setPaints(node, "fills", args);
       break;
     case "set_stroke":
-      node = requireNode(args.node);
+      node = await requireNode(args.node);
       setPaints(node, "strokes", args);
       break;
     case "place_asset":
@@ -282,7 +287,7 @@ async function executeOperation(operation) {
     } else {
       applyName(node, args);
       setGeometry(node, args);
-      if (shouldAppendNode(operation.op)) appendToParent(node, args.parent);
+      if (shouldAppendNode(operation.op)) await appendToParent(node, args.parent);
       if (operation.op_id) nodeByOpId.set(operation.op_id, node.id);
       created.push(node.id);
     }
@@ -306,11 +311,17 @@ function createFrame(args) {
   return node;
 }
 
-function createPage(args) {
+async function createPage(args) {
   if (!figma.createPage) throw coded("unsupported_operation", "createPage is unavailable.");
   const node = figma.createPage();
   if (args.name) node.name = String(args.name);
-  if (args.make_current !== false) figma.currentPage = node;
+  if (args.make_current !== false) {
+    if (typeof figma.setCurrentPageAsync === "function") {
+      await figma.setCurrentPageAsync(node);
+    } else {
+      figma.currentPage = node;
+    }
+  }
   return node;
 }
 
@@ -340,8 +351,8 @@ function setAutoLayout(node, args) {
   if (typeof args.padding_bottom === "number") node.paddingBottom = args.padding_bottom;
 }
 
-function createInstance(args) {
-  const component = requireNode(args.component || args.node);
+async function createInstance(args) {
+  const component = await requireNode(args.component || args.node);
   if (typeof component.createInstance !== "function") {
     throw coded("unsupported_operation", "createInstance is unavailable for this component.");
   }
@@ -371,7 +382,7 @@ function createVariableCollection(args) {
 }
 
 async function bindVariable(args) {
-  const node = requireNode(args.node);
+  const node = await requireNode(args.node);
   const variableId = String(args.variable_id || args.variable || "");
   const field = String(args.field || "fills");
   if (!variableId || typeof node.setBoundVariable !== "function") {
@@ -388,8 +399,8 @@ async function bindVariable(args) {
   return node;
 }
 
-function setStyle(args) {
-  const node = requireNode(args.node);
+async function setStyle(args) {
+  const node = await requireNode(args.node);
   if (args.fill_style_id && "fillStyleId" in node) node.fillStyleId = String(args.fill_style_id);
   if (args.stroke_style_id && "strokeStyleId" in node) node.strokeStyleId = String(args.stroke_style_id);
   if (args.text_style_id && "textStyleId" in node) node.textStyleId = String(args.text_style_id);
@@ -444,19 +455,19 @@ function createShapeWithText(args) {
   return node;
 }
 
-function createConnector(args) {
+async function createConnector(args) {
   const node = createBasic("createConnector", args);
-  const from = maybeNode(args.from);
-  const to = maybeNode(args.to);
+  const from = await maybeNode(args.from);
+  const to = await maybeNode(args.to);
   if (from && "connectorStart" in node) node.connectorStart = { endpointNodeId: from.id, magnet: "AUTO" };
   if (to && "connectorEnd" in node) node.connectorEnd = { endpointNodeId: to.id, magnet: "AUTO" };
   return node;
 }
 
-function createSlide(args) {
+async function createSlide(args) {
   const node = createBasic("createSlide", args);
   if (args.title && figma.createText) {
-    createText({ text: args.title, x: 40, y: 40 }).then((text) => node.appendChild(text));
+    node.appendChild(await createText({ text: args.title, x: 40, y: 40 }));
   }
   return node;
 }
@@ -472,8 +483,8 @@ function createLayout(args) {
   return node;
 }
 
-function setSpeakerNotes(args) {
-  const slide = requireNode(args.slide);
+async function setSpeakerNotes(args) {
+  const slide = await requireNode(args.slide);
   if ("speakerNotes" in slide) {
     slide.speakerNotes = String(args.text || "");
     return slide;
@@ -481,8 +492,8 @@ function setSpeakerNotes(args) {
   throw coded("unsupported_operation", "speakerNotes is unavailable for this node.");
 }
 
-function setSkipSlide(args) {
-  const slide = requireNode(args.slide || args.node);
+async function setSkipSlide(args) {
+  const slide = await requireNode(args.slide || args.node);
   if ("skipSlide" in slide) {
     slide.skipSlide = Boolean(args.skip);
     return slide;
@@ -494,8 +505,8 @@ function setSkipSlide(args) {
   throw coded("unsupported_operation", "Skip slide is unavailable for this node.");
 }
 
-function reorderSlide(args) {
-  const slide = requireNode(args.slide || args.node);
+async function reorderSlide(args) {
+  const slide = await requireNode(args.slide || args.node);
   const parent = slide.parent;
   if (!parent || typeof parent.insertChild !== "function") {
     throw coded("unsupported_operation", "Slide reordering is unavailable for this node.");
@@ -627,9 +638,9 @@ function resizeIfPossible(node, width, height) {
   }
 }
 
-function appendToParent(node, parentRef) {
+async function appendToParent(node, parentRef) {
   if (node.type === "PAGE") return;
-  const parent = maybeNode(parentRef);
+  const parent = await maybeNode(parentRef);
   if (parent && typeof parent.appendChild === "function" && node.parent !== parent) {
     parent.appendChild(node);
     return;
@@ -639,15 +650,16 @@ function appendToParent(node, parentRef) {
   }
 }
 
-function maybeNode(ref) {
+async function maybeNode(ref) {
   if (!ref) return null;
   const id = nodeByOpId.get(ref) || ref;
-  if (figma.getNodeById) return figma.getNodeById(id);
+  if (typeof figma.getNodeByIdAsync === "function") return await figma.getNodeByIdAsync(id);
+  if (typeof figma.getNodeById === "function") return figma.getNodeById(id);
   return null;
 }
 
-function requireNode(ref) {
-  const node = maybeNode(ref);
+async function requireNode(ref) {
+  const node = await maybeNode(ref);
   if (!node) throw coded("invalid_plan", `Node not found: ${ref}`);
   return node;
 }

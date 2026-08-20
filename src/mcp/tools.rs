@@ -250,7 +250,7 @@ async fn handle_tool(name: &str, args: &Value) -> Value {
                 Ok(pairing) => success(&json!({
                     "code": pairing.code,
                     "expires_at_ms": pairing.expires_at_ms,
-                    "websocket_url": format!("ws://127.0.0.1:{}/canvas/ws?code={}", config::load_config().canvas_port, pairing.code),
+                    "websocket_url": format!("ws://localhost:{}/canvas/ws?code={}", config::load_config().canvas_port, pairing.code),
                     "manual_action": "Open the fighorse canvas plugin in Figma and enter this pairing code."
                 })),
                 Err(err) => error(&err.to_string()),
