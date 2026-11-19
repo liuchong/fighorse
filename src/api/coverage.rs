@@ -6,7 +6,7 @@
 
 use serde_json::{Value, json};
 
-pub const OPENAPI_VERSION: &str = "0.41.0";
+pub const OPENAPI_VERSION: &str = "0.47.0";
 
 /// A single covered Figma REST operation.
 #[derive(Debug, Clone)]
@@ -111,11 +111,19 @@ pub fn official_operations() -> Vec<Operation> {
             None,
         ),
         op(
+            "Files",
+            "POST",
+            "/v1/files/{file_key}/duplicate",
+            "postFileDuplicate",
+            false,
+            None,
+        ),
+        op(
             "Projects",
             "GET",
             "/v1/teams/{team_id}/projects",
             "getTeamProjects",
-            false,
+            true,
             None,
         ),
         op(
@@ -123,7 +131,7 @@ pub fn official_operations() -> Vec<Operation> {
             "GET",
             "/v1/projects/{project_id}/files",
             "getProjectFiles",
-            false,
+            true,
             None,
         ),
         op(
@@ -131,6 +139,63 @@ pub fn official_operations() -> Vec<Operation> {
             "GET",
             "/v1/projects/{project_id}/meta",
             "getProjectMeta",
+            true,
+            None,
+        ),
+        op(
+            "Folders",
+            "GET",
+            "/v2/teams/{team_id}/folders",
+            "getTeamFolders",
+            false,
+            None,
+        ),
+        op(
+            "Folders",
+            "POST",
+            "/v1/teams/{team_id}/folders",
+            "postTeamFolder",
+            false,
+            None,
+        ),
+        op(
+            "Folders",
+            "GET",
+            "/v2/folders/{folder_id}/folders",
+            "getFolderFolders",
+            false,
+            None,
+        ),
+        op(
+            "Folders",
+            "GET",
+            "/v2/folders/{folder_id}/files",
+            "getFolderFiles",
+            false,
+            None,
+        ),
+        op(
+            "Folders",
+            "GET",
+            "/v2/folders/{folder_id}/meta",
+            "getFolderMeta",
+            false,
+            None,
+        ),
+        op(
+            "Teams",
+            "GET",
+            "/v1/teams/{team_id}",
+            "getTeam",
+            false,
+            None,
+        ),
+        op("Teams", "POST", "/v1/teams", "postTeam", false, None),
+        op(
+            "Teams",
+            "POST",
+            "/v1/teams/{team_id}/invites",
+            "postTeamInvites",
             false,
             None,
         ),
@@ -460,16 +525,34 @@ pub fn official_mcp_only_capabilities() -> Value {
          "reason": "Figma native canvas mutations are not exposed by the public REST OpenAPI; fighorse provides them through a paired local Figma plugin bridge using the Plugin API."},
         {"capability": "code_to_canvas",
          "status": "unsupported-by-public-rest-api",
-         "reason": "generate_figma_design is an official MCP product capability, not a public REST endpoint."},
+         "reason": "generate_figma_design is an official Remote MCP product capability, not a public REST endpoint."},
+        {"capability": "html_to_figma_and_code_layers",
+         "status": "unsupported-by-public-rest-api",
+         "reason": "html_to_figma and send_code_to_figma (runnable Design Code Layers and standalone Make imports) are official Remote MCP product capabilities."},
         {"capability": "code_connect_auto_mapping",
          "status": "unsupported-by-public-rest-api",
-         "reason": "Automatic Code Connect mapping discovery is tied to Figma's product integration."},
+         "reason": "Automatic Code Connect mapping discovery (get_code_connect_suggestions / send_code_connect_mappings) is tied to Figma's product integration."},
         {"capability": "make_resources",
          "status": "unsupported-by-public-rest-api",
          "reason": "Make resources are exposed through official MCP product surfaces, not this REST snapshot."},
+        {"capability": "figma_specs",
+         "status": "unsupported-by-public-rest-api",
+         "reason": "Standalone figspec files and embedded figma.spec blocks are exposed through official Remote MCP use_figma, not public REST."},
         {"capability": "figjam_generation",
          "status": "unsupported-by-public-rest-api",
-         "reason": "FigJam generation is not present in the public REST OpenAPI snapshot."}
+         "reason": "Hosted Mermaid/prompt generate_diagram is not present in the public REST OpenAPI snapshot; local FigJam node creation is available via the fighorse canvas bridge."},
+        {"capability": "motion_context_and_video_export",
+         "status": "unsupported-by-public-rest-api",
+         "reason": "get_motion_context and asynchronous MP4 export_video are official Remote MCP surfaces."},
+        {"capability": "generative_plugins_and_shaders",
+         "status": "unsupported-by-public-rest-api",
+         "reason": "Account-library generative plugins and WebGPU shader authoring (list/get/create/update_generative_plugin, list/get/create/update_shader, list_file_shaders) are official Remote MCP surfaces."},
+        {"capability": "figma_weave",
+         "status": "unsupported-by-public-rest-api",
+         "reason": "Figma Weave recipe and model execution tools (weave_*) require a standalone Weave account on the official Remote MCP server."},
+        {"capability": "ai_image_and_vector_generation",
+         "status": "unsupported-by-public-rest-api",
+         "reason": "generate_image and generate_vector_illustration consume Figma AI credits on the official Remote MCP server."}
     ])
 }
 
@@ -683,15 +766,16 @@ mod tests {
 
     #[test]
     fn registry_is_complete() {
-        assert_eq!(OPENAPI_VERSION, "0.41.0");
+        assert_eq!(OPENAPI_VERSION, "0.47.0");
         let ops = official_operations();
-        assert_eq!(ops.len(), 50);
+        assert_eq!(ops.len(), 59);
         let distinct: std::collections::HashSet<_> = ops.iter().map(|o| o.operation_id).collect();
-        assert_eq!(distinct.len(), 50);
+        assert_eq!(distinct.len(), 59);
 
         let report = coverage_report();
-        assert_eq!(report["summary"]["covered_count"], 50);
-        assert_eq!(report["summary"]["write_count"], 11);
+        assert_eq!(report["summary"]["covered_count"], 59);
+        assert_eq!(report["summary"]["write_count"], 15);
+        assert_eq!(report["summary"]["deprecated_count"], 4);
     }
 
     #[test]
@@ -708,6 +792,15 @@ mod tests {
             "putWebhook",
             "getWebhookRequests",
             "getLibraryAnalyticsStyleActions",
+            "postFileDuplicate",
+            "getTeamFolders",
+            "postTeamFolder",
+            "getFolderFolders",
+            "getFolderFiles",
+            "getFolderMeta",
+            "getTeam",
+            "postTeam",
+            "postTeamInvites",
         ] {
             assert!(ids.contains(id), "missing {id}");
         }

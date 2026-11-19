@@ -77,12 +77,15 @@ pub struct ParsedUrl {
     pub valid: bool,
     pub input: String,
     pub file_key: Option<String>,
+    pub main_file_key: Option<String>,
+    pub branch_key: Option<String>,
     pub node_id: Option<String>,
     pub raw_node_id: Option<String>,
     pub kind: Option<String>,
     pub browser_root_id: Option<String>,
     pub team_id: Option<String>,
     pub project_id: Option<String>,
+    pub folder_id: Option<String>,
     pub embedded_url: Option<String>,
     pub error: Option<String>,
 }
@@ -93,12 +96,15 @@ impl ParsedUrl {
             valid: false,
             input: input.to_string(),
             file_key: None,
+            main_file_key: None,
+            branch_key: None,
             node_id: None,
             raw_node_id: None,
             kind: None,
             browser_root_id: None,
             team_id: None,
             project_id: None,
+            folder_id: None,
             embedded_url: None,
             error: Some(error.to_string()),
         }
@@ -109,12 +115,15 @@ impl ParsedUrl {
             valid: false,
             input: input.to_string(),
             file_key: None,
+            main_file_key: None,
+            branch_key: None,
             node_id: None,
             raw_node_id: None,
             kind,
             browser_root_id: None,
             team_id: None,
             project_id: None,
+            folder_id: None,
             embedded_url: None,
             error: Some(error.to_string()),
         }
@@ -156,8 +165,17 @@ impl ParsedUrl {
         if let Some(project_id) = &self.project_id {
             map.insert("project_id".into(), Value::String(project_id.clone()));
         }
+        if let Some(folder_id) = &self.folder_id {
+            map.insert("folder_id".into(), Value::String(folder_id.clone()));
+        }
         if let Some(fk) = &self.file_key {
             map.insert("file_key".into(), Value::String(fk.clone()));
+        }
+        if let Some(mfk) = &self.main_file_key {
+            map.insert("main_file_key".into(), Value::String(mfk.clone()));
+        }
+        if let Some(bk) = &self.branch_key {
+            map.insert("branch_key".into(), Value::String(bk.clone()));
         }
         if let Some(raw) = &self.raw_node_id {
             map.insert("raw_node_id".into(), Value::String(raw.clone()));
@@ -174,18 +192,25 @@ impl ParsedUrl {
         Value::Object(map)
     }
 
-    fn url_role(&self) -> &'static str {
+    pub fn url_role(&self) -> &'static str {
         if self.kind.as_deref() == Some("file_key") && self.file_key.is_some() {
             return "file_key";
         }
         if self.file_key.is_some() {
             return "design_target";
         }
-        if self.team_id.is_some() {
-            return "team_browser";
+        if self.folder_id.is_some()
+            && (self.project_id.is_none()
+                || self.kind.as_deref() == Some("folder")
+                || (self.kind.as_deref() == Some("files") && self.input.contains("/folder/")))
+        {
+            return "folder_browser";
         }
         if self.project_id.is_some() {
             return "project_browser";
+        }
+        if self.team_id.is_some() {
+            return "team_browser";
         }
         if self.kind.as_deref() == Some("files") && self.browser_root_id.is_some() {
             return "browser_root";
@@ -194,7 +219,8 @@ impl ParsedUrl {
     }
 
     fn catalog_eligible(&self) -> bool {
-        self.file_key.is_none() && (self.team_id.is_some() || self.project_id.is_some())
+        self.file_key.is_none()
+            && (self.team_id.is_some() || self.project_id.is_some() || self.folder_id.is_some())
     }
 
     fn design_target(&self) -> bool {
@@ -204,7 +230,7 @@ impl ParsedUrl {
     fn next_action(&self) -> &'static str {
         match self.url_role() {
             "browser_root" => "ask_for_team_or_file_url",
-            "team_browser" | "project_browser" => "get_resource_catalog",
+            "team_browser" | "project_browser" | "folder_browser" => "get_resource_catalog",
             "design_target" | "file_key" => "get_design_package",
             _ => "ask_for_figma_url",
         }
@@ -213,18 +239,56 @@ impl ParsedUrl {
     fn error_code(&self) -> Option<&'static str> {
         match self.url_role() {
             "browser_root" => Some("browser_root_not_enumerable"),
-            "team_browser" | "project_browser" => Some("browser_url_not_design_target"),
+            "team_browser" | "project_browser" | "folder_browser" => {
+                Some("browser_url_not_design_target")
+            }
             _ if !self.valid => Some("figma_file_key_not_found"),
             _ => None,
         }
     }
 }
 
-fn file_key_from_segments(segments: &[String]) -> Option<String> {
-    for pair in segments.windows(2) {
+fn is_file_target_kind(kind: &str) -> bool {
+    matches!(
+        kind,
+        "design"
+            | "file"
+            | "proto"
+            | "board"
+            | "slides"
+            | "deck"
+            | "make"
+            | "site"
+            | "buzz"
+            | "spec"
+            | "figspec"
+    )
+}
+
+/// Extract `(effective_file_key, main_file_key, branch_key)` from URL path segments.
+///
+/// For branch URLs such as `/design/<main_key>/branch/<branch_key>/<name>`, Figma's
+/// REST API and Code Connect use `<branch_key>` as the target file key.
+fn file_keys_from_segments(
+    segments: &[String],
+) -> Option<(String, Option<String>, Option<String>)> {
+    for (idx, pair) in segments.windows(2).enumerate() {
         let kind = &pair[0];
-        if matches!(kind.as_str(), "design" | "file" | "proto" | "board") {
-            return Some(pair[1].clone());
+        if is_file_target_kind(kind.as_str()) {
+            let primary = pair[1].clone();
+            if primary.is_empty() {
+                continue;
+            }
+            if segments.get(idx + 2).map(String::as_str) == Some("branch") {
+                if let Some(branch) = segments.get(idx + 3).filter(|s| !s.is_empty()) {
+                    return Some((
+                        branch.clone(),
+                        Some(primary),
+                        Some(branch.clone()),
+                    ));
+                }
+            }
+            return Some((primary, None, None));
         }
     }
     None
@@ -241,22 +305,24 @@ fn segment_after(segments: &[String], marker: &str) -> Option<String> {
         .windows(2)
         .find(|pair| pair[0] == marker)
         .map(|pair| pair[1].clone())
+        .filter(|value| !value.is_empty())
 }
 
 fn figma_browser_url_error(
     kind: Option<&str>,
     team_id: Option<&str>,
     project_id: Option<&str>,
+    folder_id: Option<&str>,
 ) -> Option<&'static str> {
     match kind {
-        _ if project_id.is_some() => Some(
-            "This is a Figma project browser URL, not a design target. It includes a project ID but no design file key or selected node. Use `fighorse resource catalog <figma-url>` to enumerate its files, then open a concrete file or selection.",
+        _ if folder_id.is_some() || project_id.is_some() => Some(
+            "This is a Figma folder/project browser URL, not a design target. It includes a folder/project ID but no design file key or selected node. Use `fighorse resource catalog <figma-url>` to enumerate its subfolders and files, then open a concrete file or selection.",
         ),
         Some("files") if team_id.is_some() => Some(
-            "This is a Figma team browser URL, not a design target. It includes a team ID but no design file key or selected node. Use `fighorse resource catalog <figma-url>` to enumerate visible projects and files. The Projects API requires the `projects:read` scope and may require Figma Projects endpoint approval; HTTP 403 means the token lacks the required scope or approval, or its user cannot access the team.",
+            "This is a Figma team browser URL, not a design target. It includes a team ID but no design file key or selected node. Use `fighorse resource catalog <figma-url>` to enumerate visible folders/projects and files. Folder/project enumeration requires the `folders:read` (or legacy `projects:read`) scope; HTTP 403 means the token lacks the required scope or approval, or its user cannot access the team.",
         ),
         Some("files") => Some(
-            "This is a Figma file browser root or project URL, not a design target. The identifier after `/files/` is not a team ID, and the public REST API cannot discover team IDs from this page. Open a Figma team page and copy a URL containing `/team/<team-id>`, or open the concrete Figma file and copy a link to the selected frame, component, or group.",
+            "This is a Figma file browser root URL, not a design target. The identifier after `/files/` is not a team ID, and the public REST API cannot discover team IDs from this page. Open a Figma team page and copy a URL containing `/team/<team-id>`, or open the concrete Figma file and copy a link to the selected frame, component, or group.",
         ),
         _ => None,
     }
@@ -275,12 +341,15 @@ pub fn parse_figma_url(input: &str) -> ParsedUrl {
             valid: true,
             input: raw.clone(),
             file_key: Some(raw),
+            main_file_key: None,
+            branch_key: None,
             node_id: None,
             raw_node_id: None,
             kind: Some("file_key".to_string()),
             browser_root_id: None,
             team_id: None,
             project_id: None,
+            folder_id: None,
             embedded_url: None,
             error: None,
         };
@@ -309,7 +378,7 @@ pub fn parse_figma_url(input: &str) -> ParsedUrl {
         .map(percent_decode)
         .collect();
 
-    let file_key = file_key_from_segments(&segments);
+    let file_keys = file_keys_from_segments(&segments);
     let raw_node_id = parsed
         .query_pairs()
         .find(|(k, _)| k == "node-id")
@@ -318,29 +387,41 @@ pub fn parse_figma_url(input: &str) -> ParsedUrl {
     let browser_root_id = if kind.as_deref() == Some("files") {
         segments
             .get(1)
-            .filter(|segment| !matches!(segment.as_str(), "project" | "team"))
+            .filter(|segment| !matches!(segment.as_str(), "project" | "folder" | "team"))
             .cloned()
     } else {
         None
     };
     let team_id = segment_after(&segments, "team");
-    let project_id = match kind.as_deref() {
-        Some("project") => segments.get(1).cloned(),
+    let explicit_folder_id = match kind.as_deref() {
+        Some("folder") => segments.get(1).cloned().filter(|s| !s.is_empty()),
+        Some("files") => segment_after(&segments, "folder"),
+        _ => None,
+    };
+    let explicit_project_id = match kind.as_deref() {
+        Some("project") => segments.get(1).cloned().filter(|s| !s.is_empty()),
         Some("files") => segment_after(&segments, "project"),
         _ => None,
     };
+    let folder_id = explicit_folder_id
+        .clone()
+        .or_else(|| explicit_project_id.clone());
+    let project_id = explicit_project_id.or(explicit_folder_id);
 
-    match file_key {
-        Some(fk) => ParsedUrl {
+    match file_keys {
+        Some((fk, main_fk, branch_fk)) => ParsedUrl {
             valid: true,
             input: raw,
             file_key: Some(fk),
+            main_file_key: main_fk,
+            branch_key: branch_fk,
             node_id: raw_node_id.as_deref().map(normalize_node_id),
             raw_node_id,
             kind,
             browser_root_id,
             team_id,
             project_id,
+            folder_id,
             embedded_url: None,
             error: None,
         },
@@ -350,11 +431,13 @@ pub fn parse_figma_url(input: &str) -> ParsedUrl {
                     kind.as_deref(),
                     team_id.as_deref(),
                     project_id.as_deref(),
+                    folder_id.as_deref(),
                 ) {
                     let mut invalid = ParsedUrl::invalid_with_kind(&raw, kind, error);
                     invalid.browser_root_id = browser_root_id;
                     invalid.team_id = team_id;
                     invalid.project_id = project_id;
+                    invalid.folder_id = folder_id;
                     return invalid;
                 }
             }
@@ -598,5 +681,33 @@ mod tests {
     #[test]
     fn encode_component_matches_js() {
         assert_eq!(encode_uri_component("a/b?c=d"), "a%2Fb%3Fc%3Dd");
+    }
+
+    #[test]
+    fn parse_slides_make_site_buzz_spec_branch_and_folder_urls() {
+        for kind in ["slides", "deck", "make", "site", "buzz", "spec", "figspec"] {
+            let url = format!("https://www.figma.com/{kind}/Key123/Title?node-id=4-5");
+            let parsed = parse_figma_url(&url);
+            assert!(parsed.valid, "failed for {kind}");
+            assert_eq!(parsed.file_key.as_deref(), Some("Key123"));
+            assert_eq!(parsed.node_id.as_deref(), Some("4:5"));
+            assert_eq!(parsed.url_role(), "design_target");
+        }
+
+        let branch = parse_figma_url(
+            "https://www.figma.com/design/MainKey999/branch/BranchKey777/Experiment?node-id=12-34",
+        );
+        assert!(branch.valid);
+        assert_eq!(branch.file_key.as_deref(), Some("BranchKey777"));
+        assert_eq!(branch.main_file_key.as_deref(), Some("MainKey999"));
+        assert_eq!(branch.branch_key.as_deref(), Some("BranchKey777"));
+        assert_eq!(branch.node_id.as_deref(), Some("12:34"));
+
+        let folder = parse_figma_url("https://www.figma.com/files/team/42/folder/Folder88/Mobile");
+        assert!(!folder.valid);
+        assert_eq!(folder.folder_id.as_deref(), Some("Folder88"));
+        assert_eq!(folder.url_role(), "folder_browser");
+        assert_eq!(folder.to_json()["catalog_eligible"], true);
+        assert_eq!(folder.to_json()["next_action"], "get_resource_catalog");
     }
 }

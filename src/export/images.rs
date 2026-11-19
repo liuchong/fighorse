@@ -428,3 +428,230 @@ pub async fn download_image_fills(
     }
     Ok(rows)
 }
+
+const MAX_ASSET_BUNDLE_NODES: usize = 20;
+const MAX_RAW_SOURCE_IMAGES: usize = 20;
+
+#[derive(Debug, Clone, Copy)]
+pub struct DownloadAssetsOptions<'a> {
+    pub format: &'a str,
+    pub scale: &'a str,
+    pub dest_dir: Option<&'a str>,
+    pub manifest: bool,
+    pub prefix: Option<&'a str>,
+}
+
+impl Default for DownloadAssetsOptions<'_> {
+    fn default() -> Self {
+        Self {
+            format: "png",
+            scale: "2",
+            dest_dir: None,
+            manifest: false,
+            prefix: None,
+        }
+    }
+}
+
+fn collect_node_image_refs(
+    node: &Value,
+    seen: &mut std::collections::HashSet<String>,
+    ordered: &mut Vec<String>,
+) {
+    if node.get("visible") == Some(&Value::Bool(false)) {
+        return;
+    }
+    for key in ["fills", "strokes", "background"] {
+        if let Some(paints) = node.get(key).and_then(Value::as_array) {
+            for paint in paints {
+                if paint.get("visible") == Some(&Value::Bool(false)) {
+                    continue;
+                }
+                if paint.get("type").and_then(Value::as_str) == Some("IMAGE")
+                    && let Some(image_ref) = paint
+                        .get("imageRef")
+                        .and_then(Value::as_str)
+                        .map(str::trim)
+                        .filter(|s| !s.is_empty())
+                    && seen.insert(image_ref.to_string())
+                {
+                    ordered.push(image_ref.to_string());
+                }
+            }
+        }
+    }
+    if let Some(children) = node.get("children").and_then(Value::as_array) {
+        for child in children {
+            collect_node_image_refs(child, seen, ordered);
+        }
+    }
+}
+
+/// Export rendered node images plus original `imageRef` source fills inside those nodes' subtrees.
+///
+/// When `options.dest_dir` is `None`, returns remote URLs without writing to disk.
+/// When `options.dest_dir` is `Some(...)`, enforces allowed export roots and downloads both sets.
+pub async fn download_assets(
+    token: &str,
+    file_key: &str,
+    node_ids: &[String],
+    options: &DownloadAssetsOptions<'_>,
+) -> Result<Value> {
+    let file_key = file_key.trim();
+    if file_key.is_empty() {
+        return Err(Error::Usage("file_key is required".into()));
+    }
+    let cleaned_ids: Vec<String> = node_ids
+        .iter()
+        .map(|id| id.trim().to_string())
+        .filter(|id| !id.is_empty())
+        .collect();
+    if cleaned_ids.is_empty() {
+        return Err(Error::Usage("At least one node_id is required".into()));
+    }
+    if cleaned_ids.len() > MAX_ASSET_BUNDLE_NODES {
+        return Err(Error::Usage(format!(
+            "download_assets accepts at most {MAX_ASSET_BUNDLE_NODES} node IDs per call"
+        )));
+    }
+
+    let dir = match options.dest_dir {
+        Some(dest) if !dest.trim().is_empty() => Some(safe_export_dir(Some(dest))?),
+        _ => None,
+    };
+    let format = normalize_format(options.format);
+    let ext = format_extension(&format);
+    let filename_prefix = match options.prefix {
+        Some(p) if !p.trim().is_empty() => safe_name(p),
+        _ => String::new(),
+    };
+    let ids_joined = cleaned_ids.join(",");
+
+    let (renders_resp, nodes_resp) = tokio::try_join!(
+        files::get_images(
+            token,
+            file_key,
+            &ids_joined,
+            None,
+            Some(options.scale),
+            Some(&format),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        ),
+        files::get_file_nodes(token, file_key, &ids_joined, None, None, None, None),
+    )?;
+
+    let mut seen_refs = std::collections::HashSet::new();
+    let mut ordered_refs = Vec::new();
+    if let Some(nodes_obj) = nodes_resp.get("nodes").and_then(Value::as_object) {
+        for id in &cleaned_ids {
+            if let Some(doc) = nodes_obj.get(id).and_then(|entry| entry.get("document")) {
+                collect_node_image_refs(doc, &mut seen_refs, &mut ordered_refs);
+            }
+        }
+        // Fallback if Figma normalized keys differently from requested IDs.
+        if ordered_refs.is_empty() {
+            for entry in nodes_obj.values() {
+                if let Some(doc) = entry.get("document") {
+                    collect_node_image_refs(doc, &mut seen_refs, &mut ordered_refs);
+                }
+            }
+        }
+    }
+
+    let total_raw_refs = ordered_refs.len();
+    let raw_images_truncated = total_raw_refs > MAX_RAW_SOURCE_IMAGES;
+    ordered_refs.truncate(MAX_RAW_SOURCE_IMAGES);
+
+    let fills_map = if ordered_refs.is_empty() {
+        serde_json::Map::new()
+    } else {
+        let fills_resp = files::get_image_fills(token, file_key).await?;
+        fills_resp
+            .get("meta")
+            .and_then(|m| m.get("images"))
+            .or_else(|| fills_resp.get("images"))
+            .and_then(Value::as_object)
+            .cloned()
+            .unwrap_or_default()
+    };
+
+    let mut export_renders = Vec::new();
+    let mut raw_source_images = Vec::new();
+    let mut manifest_entries = Vec::new();
+
+    if let Some(images_obj) = renders_resp.get("images").and_then(Value::as_object) {
+        for node_id in &cleaned_ids {
+            let url_val = images_obj.get(node_id).unwrap_or(&Value::Null);
+            let url = url_val.as_str().filter(|u| !u.is_empty());
+            let written_path = match (&dir, url) {
+                (Some(d), Some(u)) => {
+                    let target = d.join(format!(
+                        "{filename_prefix}render_{}{ext}",
+                        safe_name(node_id)
+                    ));
+                    Some(fetch_image(u, &target.to_string_lossy(), ext).await?)
+                }
+                _ => None,
+            };
+            let entry = json!({
+                "kind": "render",
+                "node_id": node_id,
+                "format": format,
+                "scale": options.scale,
+                "source_url": url,
+                "path": written_path,
+            });
+            if written_path.is_some() {
+                manifest_entries.push(entry.clone());
+            }
+            export_renders.push(entry);
+        }
+    }
+
+    for image_ref in &ordered_refs {
+        let url = fills_map
+            .get(image_ref)
+            .and_then(Value::as_str)
+            .filter(|u| !u.is_empty());
+        let written_path = match (&dir, url) {
+            (Some(d), Some(u)) => {
+                let target = d.join(format!("{filename_prefix}source_{}", safe_name(image_ref)));
+                Some(fetch_image(u, &target.to_string_lossy(), "").await?)
+            }
+            _ => None,
+        };
+        let entry = json!({
+            "kind": "source_image_fill",
+            "image_ref": image_ref,
+            "source_url": url,
+            "path": written_path,
+        });
+        if written_path.is_some() {
+            manifest_entries.push(entry.clone());
+        }
+        raw_source_images.push(entry);
+    }
+
+    if let Some(d) = &dir
+        && options.manifest
+    {
+        write_manifest(d, "fighorse.download_assets", &manifest_entries)?;
+    }
+
+    Ok(json!({
+        "kind": "fighorse.download_assets.v1",
+        "file_key": file_key,
+        "format": format,
+        "scale": options.scale,
+        "downloaded_to": dir.map(|d| d.to_string_lossy().into_owned()),
+        "export_renders": export_renders,
+        "raw_source_images": raw_source_images,
+        "raw_images_truncated": raw_images_truncated,
+        "total_raw_image_refs": total_raw_refs,
+    }))
+}

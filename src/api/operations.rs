@@ -6,7 +6,7 @@
 use super::coverage;
 use super::{
     activity_logs, ai_usage, analytics, comments, components, dev_resources, developer_logs, files,
-    oembed, payments, projects, styles, users, variables, webhooks,
+    folders, oembed, payments, projects, styles, teams, users, variables, webhooks,
 };
 use crate::error::{Error, Result};
 use serde_json::Value;
@@ -150,6 +150,14 @@ pub async fn call_operation(
         }
         "getImageFills" => files::get_image_fills(token, &p!("file_key").unwrap_or_default()).await,
         "getFileMeta" => files::get_file_meta(token, &p!("file_key").unwrap_or_default()).await,
+        "postFileDuplicate" => {
+            let folder_id = body_str(body, "folder_id")
+                .or_else(|| p!("folder_id"))
+                .ok_or_else(|| {
+                    Error::Usage("Operation postFileDuplicate requires `folder_id` in body".into())
+                })?;
+            files::duplicate_file(token, &p!("file_key").unwrap_or_default(), &folder_id).await
+        }
         "getTeamProjects" => {
             projects::get_team_projects(token, &p!("team_id").unwrap_or_default()).await
         }
@@ -163,6 +171,31 @@ pub async fn call_operation(
         }
         "getProjectMeta" => {
             projects::get_project_meta(token, &p!("project_id").unwrap_or_default()).await
+        }
+        "getTeamFolders" => {
+            folders::get_team_folders(token, &p!("team_id").unwrap_or_default()).await
+        }
+        "postTeamFolder" => {
+            folders::post_team_folder_body(token, &p!("team_id").unwrap_or_default(), body).await
+        }
+        "getFolderFolders" => {
+            folders::get_folder_folders(token, &p!("folder_id").unwrap_or_default()).await
+        }
+        "getFolderFiles" => {
+            folders::get_folder_files(
+                token,
+                &p!("folder_id").unwrap_or_default(),
+                p!("branch_data").as_deref(),
+            )
+            .await
+        }
+        "getFolderMeta" => {
+            folders::get_folder_meta(token, &p!("folder_id").unwrap_or_default()).await
+        }
+        "getTeam" => teams::get_team(token, &p!("team_id").unwrap_or_default()).await,
+        "postTeam" => teams::post_team(token, body).await,
+        "postTeamInvites" => {
+            teams::post_team_invites(token, &p!("team_id").unwrap_or_default(), body).await
         }
         "getFileVersions" => {
             files::get_file_versions(

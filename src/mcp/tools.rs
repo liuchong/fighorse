@@ -8,8 +8,9 @@ use crate::api::{
     activity_logs as activity_logs_api, analytics as analytics_api,
     code_connect as code_connect_api, comments as comments_api, components as components_api,
     dev_resources as dev_resources_api, developer_logs as developer_logs_api, files as files_api,
-    oembed as oembed_api, operations, payments as payments_api, projects as projects_api,
-    styles as styles_api, users as users_api, variables as variables_api, webhooks as webhooks_api,
+    folders as folders_api, oembed as oembed_api, operations, payments as payments_api,
+    projects as projects_api, styles as styles_api, teams as teams_api, users as users_api,
+    variables as variables_api, webhooks as webhooks_api,
 };
 use crate::canvas;
 use crate::code_connect::model::CodeConnectDocument;
@@ -20,7 +21,7 @@ use crate::experience::{self, Filters, ScopeOpts};
 use crate::export::images as img_export;
 use crate::figma;
 use crate::mcp::{policy, registry};
-use crate::product::{design_package, playbook, resource_catalog, visual_audit};
+use crate::product::{design_package, library_search, playbook, resource_catalog, visual_audit};
 use crate::transform::{compact, tokens};
 use crate::url as figma_url;
 use serde_json::{Value, json};
@@ -203,7 +204,7 @@ pub fn list_tools() -> Value {
 /// Execute a tool call for `tools/call`.
 pub async fn call_tool(name: &str, args: &Value) -> Value {
     // Policy gating first.
-    if let Some(msg) = policy::violation(&write_tool_names(), name) {
+    if let Some(msg) = policy::violation_with_args(&write_tool_names(), name, args) {
         return error(&msg);
     }
 
@@ -387,6 +388,7 @@ async fn handle_tool(name: &str, args: &Value) -> Value {
         }
         "get_design_package" => handle_design_package(args).await,
         "get_resource_catalog" => handle_resource_catalog(args).await,
+        "search_design_system" => handle_search_design_system(args).await,
         "visual_audit" => success(&visual_audit::audit(
             arg_str(args, "figma_url"),
             arg_str(args, "screenshot_path"),
@@ -569,8 +571,108 @@ async fn handle_tool(name: &str, args: &Value) -> Value {
         ),
         "export_images" | "export_component" => handle_export_images(args).await,
         "download_image_fills" => handle_download_image_fills(args).await,
+        "download_assets" => handle_download_assets(args).await,
+        "duplicate_file" => handle(
+            with_token(|t| async move {
+                files_api::duplicate_file(
+                    &t,
+                    arg_str(args, "file_key").unwrap_or(""),
+                    arg_str(args, "folder_id").unwrap_or(""),
+                )
+                .await
+            })
+            .await,
+        ),
 
-        // --- Projects ---
+        // --- Folders (v2) & Teams ---
+        "get_team_folders" => handle(
+            with_token(|t| async move {
+                folders_api::get_team_folders(&t, arg_str(args, "team_id").unwrap_or("")).await
+            })
+            .await,
+        ),
+        "get_folder_folders" => handle(
+            with_token(|t| async move {
+                folders_api::get_folder_folders(&t, arg_str(args, "folder_id").unwrap_or("")).await
+            })
+            .await,
+        ),
+        "get_folder_files" => {
+            let branch_data = arg_bool(args, "branch_data").map(|b| b.to_string());
+            handle(
+                with_token(|t| async move {
+                    folders_api::get_folder_files(
+                        &t,
+                        arg_str(args, "folder_id").unwrap_or(""),
+                        branch_data.as_deref(),
+                    )
+                    .await
+                })
+                .await,
+            )
+        }
+        "get_folder_meta" => handle(
+            with_token(|t| async move {
+                folders_api::get_folder_meta(&t, arg_str(args, "folder_id").unwrap_or("")).await
+            })
+            .await,
+        ),
+        "create_team_folder" => handle(
+            with_token(|t| async move {
+                folders_api::post_team_folder(
+                    &t,
+                    arg_str(args, "team_id").unwrap_or(""),
+                    arg_str(args, "name").unwrap_or(""),
+                    arg_str(args, "sharing_audience_control").unwrap_or("plan_view"),
+                )
+                .await
+            })
+            .await,
+        ),
+        "get_team" => handle(
+            with_token(|t| async move {
+                teams_api::get_team(&t, arg_str(args, "team_id").unwrap_or("")).await
+            })
+            .await,
+        ),
+        "create_team" => {
+            let body = teams_api::build_create_team_body(
+                arg_str(args, "name").unwrap_or(""),
+                arg_str(args, "sharing_audience_control").unwrap_or("org_view"),
+                arg_str(args, "description"),
+                arg_str(args, "org_discoverability"),
+                arg_str(args, "workspace_id"),
+            );
+            handle(with_token(|t| async move { teams_api::post_team(&t, &body).await }).await)
+        }
+        "invite_team_members" => {
+            let emails: Vec<String> = args
+                .get("emails")
+                .and_then(|v| v.as_array())
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|v| v.as_str().map(String::from))
+                        .collect()
+                })
+                .unwrap_or_default();
+            let body = teams_api::build_invite_body(
+                &emails,
+                arg_str(args, "role").unwrap_or("viewer"),
+            );
+            handle(
+                with_token(|t| async move {
+                    teams_api::post_team_invites(
+                        &t,
+                        arg_str(args, "team_id").unwrap_or(""),
+                        &body,
+                    )
+                    .await
+                })
+                .await,
+            )
+        }
+
+        // --- Projects (legacy v1) ---
         "get_team_projects" => handle(
             with_token(|t| async move {
                 projects_api::get_team_projects(&t, arg_str(args, "team_id").unwrap_or("")).await
@@ -677,14 +779,22 @@ async fn handle_tool(name: &str, args: &Value) -> Value {
         // --- Comments ---
         "get_comments" => {
             let as_md = arg_bool(args, "as_md").map(|b| b.to_string());
+            let filter_opts = comments_api::CommentFilterOpts {
+                node_id: arg_str(args, "node_id"),
+                author: arg_str(args, "author"),
+                query: arg_str(args, "query"),
+                unresolved_only: arg_bool(args, "unresolved_only").unwrap_or(false),
+                threads_only: arg_bool(args, "threads_only").unwrap_or(false),
+            };
             handle(
                 with_token(|t| async move {
-                    comments_api::get_comments(
+                    let raw = comments_api::get_comments(
                         &t,
                         arg_str(args, "file_key").unwrap_or(""),
                         as_md.as_deref(),
                     )
-                    .await
+                    .await?;
+                    Ok(comments_api::filter_comments(&raw, &filter_opts))
                 })
                 .await,
             )
@@ -1087,6 +1197,13 @@ async fn handle_resource_catalog(args: &Value) -> Value {
     if max_probes < 0 {
         return error("max_probes must be zero or greater");
     }
+    let max_folders = match args.get("max_folders") {
+        Some(_) => match arg_i64(args, "max_folders") {
+            Some(value) if value >= 0 => value as usize,
+            _ => return error("max_folders must be zero or greater"),
+        },
+        None => 200,
+    };
     let include_libraries = match strict_bool(args, "include_libraries", true) {
         Ok(value) => value,
         Err(err) => return error(&err.to_string()),
@@ -1098,11 +1215,13 @@ async fn handle_resource_catalog(args: &Value) -> Value {
     let opts = resource_catalog::CatalogOpts {
         figma_url: arg_str(args, "figma_url"),
         team_id: arg_str(args, "team_id"),
+        folder_id: arg_str(args, "folder_id"),
         project_id: arg_str(args, "project_id"),
         include_libraries,
         branch_data: true,
         probe_file_access,
         max_probes: max_probes as usize,
+        max_folders,
     };
     match resource_catalog::local_catalog_outcome(&opts) {
         Ok(Some(outcome)) => return success(&outcome.report),
@@ -1250,6 +1369,81 @@ async fn handle_download_image_fills(args: &Value) -> Value {
         Ok(rows) => success(&rows_to_map(rows)),
         Err(e) => error(&e.to_string()),
     }
+}
+
+async fn handle_download_assets(args: &Value) -> Value {
+    let token = match get_token() {
+        Ok(t) => t,
+        Err(e) => return error(&e.to_string()),
+    };
+    let node_ids: Vec<String> = arg_str(args, "node_ids")
+        .unwrap_or("")
+        .split(',')
+        .map(String::from)
+        .collect();
+    let format = arg_str(args, "format").unwrap_or("png");
+    let scale = num_str(arg_f64(args, "scale").unwrap_or(2.0));
+    let manifest = arg_bool(args, "manifest").unwrap_or(false);
+    handle(
+        img_export::download_assets(
+            &token,
+            arg_str(args, "file_key").unwrap_or(""),
+            &node_ids,
+            &img_export::DownloadAssetsOptions {
+                format,
+                scale: &scale,
+                dest_dir: arg_str(args, "dest_dir"),
+                manifest,
+                prefix: arg_str(args, "prefix"),
+            },
+        )
+        .await,
+    )
+}
+
+async fn handle_search_design_system(args: &Value) -> Value {
+    let token = match get_token() {
+        Ok(t) => t,
+        Err(e) => return error(&e.to_string()),
+    };
+    let mut queries: Vec<String> = args
+        .get("queries")
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect()
+        })
+        .unwrap_or_default();
+    if let Some(single) = arg_str(args, "query")
+        && !single.trim().is_empty()
+    {
+        queries.push(single.to_string());
+    }
+    let kinds: Vec<String> = args
+        .get("kinds")
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect()
+        })
+        .unwrap_or_default();
+    let limit = arg_i64(args, "limit").unwrap_or(50).clamp(1, 500) as usize;
+    handle(
+        library_search::search_design_system(
+            &token,
+            library_search::DesignSystemSearchOpts {
+                figma_url: arg_str(args, "figma_url"),
+                team_id: arg_str(args, "team_id"),
+                file_key: arg_str(args, "file_key"),
+                queries,
+                kinds,
+                limit,
+            },
+        )
+        .await,
+    )
 }
 
 fn rows_to_map(rows: Vec<(String, String)>) -> Value {

@@ -2,15 +2,15 @@
   "kind": "fighorse.api-coverage.v1",
   "source": {
     "name": "Figma REST OpenAPI",
-    "version": "0.41.0",
+    "version": "0.47.0",
     "url": "https://github.com/figma/rest-api-spec/blob/main/openapi/openapi.yaml"
   },
   "summary": {
-    "openapi_version": "0.41.0",
-    "operation_count": 50,
-    "covered_count": 50,
-    "write_count": 11,
-    "deprecated_count": 1,
+    "openapi_version": "0.47.0",
+    "operation_count": 59,
+    "covered_count": 59,
+    "write_count": 15,
+    "deprecated_count": 4,
     "by_tag": {
       "AI Usage": {
         "total": 1,
@@ -53,8 +53,13 @@
         "deprecated": 0
       },
       "Files": {
-        "total": 6,
-        "write": 0,
+        "total": 7,
+        "write": 1,
+        "deprecated": 0
+      },
+      "Folders": {
+        "total": 5,
+        "write": 1,
         "deprecated": 0
       },
       "Library Analytics": {
@@ -70,11 +75,16 @@
       "Projects": {
         "total": 3,
         "write": 0,
-        "deprecated": 0
+        "deprecated": 3
       },
       "Styles": {
         "total": 3,
         "write": 0,
+        "deprecated": 0
+      },
+      "Teams": {
+        "total": 3,
+        "write": 2,
         "deprecated": 0
       },
       "Users": {
@@ -156,13 +166,24 @@
       "tag": "Files"
     },
     {
+      "path": "/v1/files/{file_key}/duplicate",
+      "method": "POST",
+      "cli_command": "fighorse figma api postFileDuplicate --params '{...}'",
+      "policy": "write",
+      "operation_id": "postFileDuplicate",
+      "status": "covered",
+      "deprecated": false,
+      "mcp_tool": "figma_post_file_duplicate",
+      "tag": "Files"
+    },
+    {
       "path": "/v1/teams/{team_id}/projects",
       "method": "GET",
       "cli_command": "fighorse figma api getTeamProjects --params '{...}'",
       "policy": "readonly",
       "operation_id": "getTeamProjects",
       "status": "covered",
-      "deprecated": false,
+      "deprecated": true,
       "mcp_tool": "figma_get_team_projects",
       "tag": "Projects"
     },
@@ -173,7 +194,7 @@
       "policy": "readonly",
       "operation_id": "getProjectFiles",
       "status": "covered",
-      "deprecated": false,
+      "deprecated": true,
       "mcp_tool": "figma_get_project_files",
       "tag": "Projects"
     },
@@ -184,9 +205,97 @@
       "policy": "readonly",
       "operation_id": "getProjectMeta",
       "status": "covered",
-      "deprecated": false,
+      "deprecated": true,
       "mcp_tool": "figma_get_project_meta",
       "tag": "Projects"
+    },
+    {
+      "path": "/v2/teams/{team_id}/folders",
+      "method": "GET",
+      "cli_command": "fighorse figma api getTeamFolders --params '{...}'",
+      "policy": "readonly",
+      "operation_id": "getTeamFolders",
+      "status": "covered",
+      "deprecated": false,
+      "mcp_tool": "figma_get_team_folders",
+      "tag": "Folders"
+    },
+    {
+      "path": "/v1/teams/{team_id}/folders",
+      "method": "POST",
+      "cli_command": "fighorse figma api postTeamFolder --params '{...}'",
+      "policy": "write",
+      "operation_id": "postTeamFolder",
+      "status": "covered",
+      "deprecated": false,
+      "mcp_tool": "figma_post_team_folder",
+      "tag": "Folders"
+    },
+    {
+      "path": "/v2/folders/{folder_id}/folders",
+      "method": "GET",
+      "cli_command": "fighorse figma api getFolderFolders --params '{...}'",
+      "policy": "readonly",
+      "operation_id": "getFolderFolders",
+      "status": "covered",
+      "deprecated": false,
+      "mcp_tool": "figma_get_folder_folders",
+      "tag": "Folders"
+    },
+    {
+      "path": "/v2/folders/{folder_id}/files",
+      "method": "GET",
+      "cli_command": "fighorse figma api getFolderFiles --params '{...}'",
+      "policy": "readonly",
+      "operation_id": "getFolderFiles",
+      "status": "covered",
+      "deprecated": false,
+      "mcp_tool": "figma_get_folder_files",
+      "tag": "Folders"
+    },
+    {
+      "path": "/v2/folders/{folder_id}/meta",
+      "method": "GET",
+      "cli_command": "fighorse figma api getFolderMeta --params '{...}'",
+      "policy": "readonly",
+      "operation_id": "getFolderMeta",
+      "status": "covered",
+      "deprecated": false,
+      "mcp_tool": "figma_get_folder_meta",
+      "tag": "Folders"
+    },
+    {
+      "path": "/v1/teams/{team_id}",
+      "method": "GET",
+      "cli_command": "fighorse figma api getTeam --params '{...}'",
+      "policy": "readonly",
+      "operation_id": "getTeam",
+      "status": "covered",
+      "deprecated": false,
+      "mcp_tool": "figma_get_team",
+      "tag": "Teams"
+    },
+    {
+      "path": "/v1/teams",
+      "method": "POST",
+      "cli_command": "fighorse figma api postTeam --params '{...}'",
+      "policy": "write",
+      "operation_id": "postTeam",
+      "status": "covered",
+      "deprecated": false,
+      "mcp_tool": "figma_post_team",
+      "tag": "Teams"
+    },
+    {
+      "path": "/v1/teams/{team_id}/invites",
+      "method": "POST",
+      "cli_command": "fighorse figma api postTeamInvites --params '{...}'",
+      "policy": "write",
+      "operation_id": "postTeamInvites",
+      "status": "covered",
+      "deprecated": false,
+      "mcp_tool": "figma_post_team_invites",
+      "tag": "Teams"
     },
     {
       "path": "/v1/files/{file_key}/versions",
@@ -660,12 +769,17 @@
     {
       "capability": "code_to_canvas",
       "status": "unsupported-by-public-rest-api",
-      "reason": "generate_figma_design is an official MCP product capability, not a public REST endpoint."
+      "reason": "generate_figma_design is an official Remote MCP product capability, not a public REST endpoint."
+    },
+    {
+      "capability": "html_to_figma_and_code_layers",
+      "status": "unsupported-by-public-rest-api",
+      "reason": "html_to_figma and send_code_to_figma (runnable Design Code Layers and standalone Make imports) are official Remote MCP product capabilities."
     },
     {
       "capability": "code_connect_auto_mapping",
       "status": "unsupported-by-public-rest-api",
-      "reason": "Automatic Code Connect mapping discovery is tied to Figma's product integration."
+      "reason": "Automatic Code Connect mapping discovery (get_code_connect_suggestions / send_code_connect_mappings) is tied to Figma's product integration."
     },
     {
       "capability": "make_resources",
@@ -673,9 +787,34 @@
       "reason": "Make resources are exposed through official MCP product surfaces, not this REST snapshot."
     },
     {
+      "capability": "figma_specs",
+      "status": "unsupported-by-public-rest-api",
+      "reason": "Standalone figspec files and embedded figma.spec blocks are exposed through official Remote MCP use_figma, not public REST."
+    },
+    {
       "capability": "figjam_generation",
       "status": "unsupported-by-public-rest-api",
-      "reason": "FigJam generation is not present in the public REST OpenAPI snapshot."
+      "reason": "Hosted Mermaid/prompt generate_diagram is not present in the public REST OpenAPI snapshot; local FigJam node creation is available via the fighorse canvas bridge."
+    },
+    {
+      "capability": "motion_context_and_video_export",
+      "status": "unsupported-by-public-rest-api",
+      "reason": "get_motion_context and asynchronous MP4 export_video are official Remote MCP surfaces."
+    },
+    {
+      "capability": "generative_plugins_and_shaders",
+      "status": "unsupported-by-public-rest-api",
+      "reason": "Account-library generative plugins and WebGPU shader authoring (list/get/create/update_generative_plugin, list/get/create/update_shader, list_file_shaders) are official Remote MCP surfaces."
+    },
+    {
+      "capability": "figma_weave",
+      "status": "unsupported-by-public-rest-api",
+      "reason": "Figma Weave recipe and model execution tools (weave_*) require a standalone Weave account on the official Remote MCP server."
+    },
+    {
+      "capability": "ai_image_and_vector_generation",
+      "status": "unsupported-by-public-rest-api",
+      "reason": "generate_image and generate_vector_illustration consume Figma AI credits on the official Remote MCP server."
     }
   ],
   "code_connect_compatibility": [

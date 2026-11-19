@@ -36,7 +36,7 @@ pub fn ai_contract() -> Value {
             "Call discover_fighorse or `fighorse discover --format json` before using low-level tools.",
             "Call list_experiences or `fighorse experience summary` before implementation and after a mismatch.",
             "After parse_figma_url, follow url_role/catalog_eligible/next_action. A browser_root_not_enumerable result cannot be used for get_resource_catalog.",
-            "For a Figma team/project browser URL, call get_resource_catalog or `fighorse resource catalog` before selecting a concrete file; preserve ready/partial/blocked diagnostics.",
+            "For a Figma team/folder/project browser URL, call get_resource_catalog or `fighorse resource catalog` before selecting a concrete file; preserve ready/partial/blocked diagnostics.",
             "Use get_design_package or `fighorse design package` as the default source of truth for implementation.",
             "If get_design_package returns scope.status=needs_narrowing for SECTION, CANVAS, DOCUMENT, or SELECTION, choose a screen_candidates item with implementable=true and call get_design_package again.",
             "Pass platform and asset_format explicitly; if either is unknown, ask the developer before implementing.",

@@ -149,9 +149,17 @@ pub mod files {
         )
         .await
     }
+
+    /// POST /v1/files/{file_key}/duplicate - duplicate a main file or branch into a folder.
+    pub async fn duplicate_file(token: &str, file_key: &str, folder_id: &str) -> Result<Value> {
+        let path = format!("/v1/files/{}/duplicate", http::path_segment(file_key));
+        let body = serde_json::json!({ "folder_id": folder_id });
+        http::post(&path, Some(token), &[], Some(&body)).await
+    }
 }
 
 pub mod projects {
+    //! Legacy Figma Projects API (deprecated by Figma in favor of `folders`).
     use super::opt;
     use crate::error::Result;
     use crate::http;
@@ -175,6 +183,128 @@ pub mod projects {
     pub async fn get_project_meta(token: &str, project_id: &str) -> Result<Value> {
         let path = format!("/v1/projects/{}/meta", http::path_segment(project_id));
         http::get(&path, Some(token), &[]).await
+    }
+}
+
+pub mod folders {
+    //! Figma v2 Folders API (replaces deprecated Projects endpoints and adds nested subfolder traversal).
+    use super::opt;
+    use crate::error::Result;
+    use crate::http;
+    use serde_json::{Value, json};
+
+    /// GET /v2/teams/{team_id}/folders - top-level folders in a team.
+    pub async fn get_team_folders(token: &str, team_id: &str) -> Result<Value> {
+        let path = format!("/v2/teams/{}/folders", http::path_segment(team_id));
+        http::get(&path, Some(token), &[]).await
+    }
+
+    /// POST /v1/teams/{team_id}/folders - create a top-level folder in a team.
+    pub async fn post_team_folder(
+        token: &str,
+        team_id: &str,
+        name: &str,
+        sharing_audience_control: &str,
+    ) -> Result<Value> {
+        let path = format!("/v1/teams/{}/folders", http::path_segment(team_id));
+        let body = json!({
+            "name": name,
+            "sharing_audience_control": sharing_audience_control,
+        });
+        http::post(&path, Some(token), &[], Some(&body)).await
+    }
+
+    /// POST /v1/teams/{team_id}/folders accepting a raw JSON body.
+    pub async fn post_team_folder_body(
+        token: &str,
+        team_id: &str,
+        body: &Value,
+    ) -> Result<Value> {
+        let path = format!("/v1/teams/{}/folders", http::path_segment(team_id));
+        http::post(&path, Some(token), &[], Some(body)).await
+    }
+
+    /// GET /v2/folders/{folder_id}/folders - direct subfolders within a folder.
+    pub async fn get_folder_folders(token: &str, folder_id: &str) -> Result<Value> {
+        let path = format!("/v2/folders/{}/folders", http::path_segment(folder_id));
+        http::get(&path, Some(token), &[]).await
+    }
+
+    /// GET /v2/folders/{folder_id}/files - files directly within a folder.
+    pub async fn get_folder_files(
+        token: &str,
+        folder_id: &str,
+        branch_data: Option<&str>,
+    ) -> Result<Value> {
+        let path = format!("/v2/folders/{}/files", http::path_segment(folder_id));
+        http::get(&path, Some(token), &[("branch_data", opt(branch_data))]).await
+    }
+
+    /// GET /v2/folders/{folder_id}/meta - folder metadata.
+    pub async fn get_folder_meta(token: &str, folder_id: &str) -> Result<Value> {
+        let path = format!("/v2/folders/{}/meta", http::path_segment(folder_id));
+        http::get(&path, Some(token), &[]).await
+    }
+}
+
+pub mod teams {
+    //! Figma Teams management API.
+    use crate::error::Result;
+    use crate::http;
+    use serde_json::{Value, json};
+
+    /// GET /v1/teams/{team_id} - retrieve team metadata.
+    pub async fn get_team(token: &str, team_id: &str) -> Result<Value> {
+        let path = format!("/v1/teams/{}", http::path_segment(team_id));
+        http::get(&path, Some(token), &[]).await
+    }
+
+    /// POST /v1/teams - create a team in an Enterprise plan.
+    pub async fn post_team(token: &str, body: &Value) -> Result<Value> {
+        http::post("/v1/teams", Some(token), &[], Some(body)).await
+    }
+
+    /// POST /v1/teams/{team_id}/invites - invite users to a team.
+    pub async fn post_team_invites(token: &str, team_id: &str, body: &Value) -> Result<Value> {
+        let path = format!("/v1/teams/{}/invites", http::path_segment(team_id));
+        http::post(&path, Some(token), &[], Some(body)).await
+    }
+
+    /// Build a `CreateTeamRequest` JSON payload.
+    pub fn build_create_team_body(
+        name: &str,
+        sharing_audience_control: &str,
+        description: Option<&str>,
+        org_discoverability: Option<&str>,
+        workspace_id: Option<&str>,
+    ) -> Value {
+        let mut map = serde_json::Map::new();
+        map.insert("name".into(), Value::String(name.to_string()));
+        map.insert(
+            "sharing_audience_control".into(),
+            Value::String(sharing_audience_control.to_string()),
+        );
+        if let Some(desc) = description {
+            map.insert("description".into(), Value::String(desc.to_string()));
+        }
+        if let Some(disc) = org_discoverability {
+            map.insert(
+                "org_discoverability".into(),
+                Value::String(disc.to_string()),
+            );
+        }
+        if let Some(ws) = workspace_id {
+            map.insert("workspace_id".into(), Value::String(ws.to_string()));
+        }
+        Value::Object(map)
+    }
+
+    /// Build an `InviteTeamMembersRequest` JSON payload.
+    pub fn build_invite_body(emails: &[String], role: &str) -> Value {
+        json!({
+            "emails": emails,
+            "role": role,
+        })
     }
 }
 
@@ -369,6 +499,156 @@ pub mod comments {
             http::path_segment(comment_id)
         );
         http::delete(&path, Some(token), &[("emoji", opt(emoji))]).await
+    }
+
+    /// Optional client-side filters over `/v1/files/{file_key}/comments`.
+    #[derive(Debug, Clone, Default)]
+    pub struct CommentFilterOpts<'a> {
+        pub node_id: Option<&'a str>,
+        pub author: Option<&'a str>,
+        pub query: Option<&'a str>,
+        pub unresolved_only: bool,
+        pub threads_only: bool,
+    }
+
+    impl CommentFilterOpts<'_> {
+        pub fn is_active(&self) -> bool {
+            self.node_id.is_some_and(|v| !v.trim().is_empty())
+                || self.author.is_some_and(|v| !v.trim().is_empty())
+                || self.query.is_some_and(|v| !v.trim().is_empty())
+                || self.unresolved_only
+                || self.threads_only
+        }
+    }
+
+    /// Filter a raw `get_comments` JSON payload while preserving complete matching threads.
+    pub fn filter_comments(raw: &Value, opts: &CommentFilterOpts<'_>) -> Value {
+        if !opts.is_active() {
+            return raw.clone();
+        }
+        let comments = raw
+            .get("comments")
+            .and_then(|v| v.as_array())
+            .cloned()
+            .unwrap_or_default();
+        let target_node = opts
+            .node_id
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(crate::url::normalize_node_id);
+        let target_author = opts
+            .author
+            .map(|s| s.trim().to_ascii_lowercase())
+            .filter(|s| !s.is_empty());
+        let target_query = opts
+            .query
+            .map(|s| s.trim().to_ascii_lowercase())
+            .filter(|s| !s.is_empty());
+
+        let is_root = |c: &Value| {
+            c.get("parent_id")
+                .and_then(|v| v.as_str())
+                .map(|s| s.is_empty())
+                .unwrap_or(true)
+        };
+
+        // Determine matching thread root IDs so replies stay attached to matching threads.
+        let mut matched_roots = std::collections::HashSet::new();
+        for c in &comments {
+            let id = c.get("id").and_then(|v| v.as_str()).unwrap_or("");
+            let root_id = c
+                .get("parent_id")
+                .and_then(|v| v.as_str())
+                .filter(|s| !s.is_empty())
+                .unwrap_or(id);
+
+            let node_ok = match &target_node {
+                Some(nid) => c
+                    .get("client_meta")
+                    .and_then(|m| m.get("node_id"))
+                    .and_then(|v| v.as_str())
+                    .map(|v| crate::url::normalize_node_id(v) == *nid)
+                    .unwrap_or(false),
+                None => true,
+            };
+            let author_ok = match &target_author {
+                Some(author) => c
+                    .get("user")
+                    .and_then(|u| u.get("handle").or_else(|| u.get("id")))
+                    .and_then(|v| v.as_str())
+                    .map(|h| h.to_ascii_lowercase().contains(author))
+                    .unwrap_or(false),
+                None => true,
+            };
+            let query_ok = match &target_query {
+                Some(q) => c
+                    .get("message")
+                    .and_then(|v| v.as_str())
+                    .map(|m| m.to_ascii_lowercase().contains(q))
+                    .unwrap_or(false),
+                None => true,
+            };
+
+            if node_ok && author_ok && query_ok && !root_id.is_empty() {
+                matched_roots.insert(root_id.to_string());
+            }
+        }
+
+        // Apply unresolved filter against thread roots.
+        let mut unresolved_roots = std::collections::HashSet::new();
+        if opts.unresolved_only {
+            for c in &comments {
+                if is_root(c) {
+                    let resolved = c
+                        .get("resolved_at")
+                        .and_then(|v| v.as_str())
+                        .is_some_and(|s| !s.is_empty());
+                    if !resolved {
+                        if let Some(id) = c.get("id").and_then(|v| v.as_str()) {
+                            unresolved_roots.insert(id.to_string());
+                        }
+                    }
+                }
+            }
+        }
+
+        let filtered: Vec<Value> = comments
+            .iter()
+            .filter(|c| {
+                let id = c.get("id").and_then(|v| v.as_str()).unwrap_or("");
+                let root_id = c
+                    .get("parent_id")
+                    .and_then(|v| v.as_str())
+                    .filter(|s| !s.is_empty())
+                    .unwrap_or(id);
+                if (target_node.is_some() || target_author.is_some() || target_query.is_some())
+                    && !matched_roots.contains(root_id)
+                {
+                    return false;
+                }
+                if opts.unresolved_only && !unresolved_roots.contains(root_id) {
+                    return false;
+                }
+                if opts.threads_only && !is_root(c) {
+                    return false;
+                }
+                true
+            })
+            .cloned()
+            .collect();
+
+        json!({
+            "comments": filtered,
+            "filter_summary": {
+                "total_comments": comments.len(),
+                "matched_comments": filtered.len(),
+                "node_id": target_node,
+                "author": opts.author,
+                "query": opts.query,
+                "unresolved_only": opts.unresolved_only,
+                "threads_only": opts.threads_only,
+            }
+        })
     }
 }
 
@@ -797,5 +1077,43 @@ pub mod oembed {
             ],
         )
         .await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::comments::{CommentFilterOpts, filter_comments};
+    use serde_json::json;
+
+    #[test]
+    fn filter_comments_preserves_thread_replies_unless_threads_only() {
+        let raw = json!({
+            "comments": [
+                {"id": "1", "message": "Header spacing", "client_meta": {"node_id": "5:10"}, "user": {"handle": "Alice"}, "resolved_at": null},
+                {"id": "2", "parent_id": "1", "message": "Updated to 16px", "user": {"handle": "Bob"}, "resolved_at": null},
+                {"id": "3", "message": "Resolved thread", "client_meta": {"node_id": "5:10"}, "user": {"handle": "Alice"}, "resolved_at": "2026-11-01T00:00:00Z"}
+            ]
+        });
+
+        let full_thread = filter_comments(
+            &raw,
+            &CommentFilterOpts {
+                node_id: Some("5-10"),
+                unresolved_only: true,
+                ..Default::default()
+            },
+        );
+        assert_eq!(full_thread["comments"].as_array().unwrap().len(), 2);
+
+        let roots_only = filter_comments(
+            &raw,
+            &CommentFilterOpts {
+                author: Some("bob"),
+                threads_only: true,
+                ..Default::default()
+            },
+        );
+        assert_eq!(roots_only["comments"].as_array().unwrap().len(), 1);
+        assert_eq!(roots_only["comments"][0]["id"], "1");
     }
 }

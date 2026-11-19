@@ -103,6 +103,7 @@ async fn async_main() -> ExitCode {
         (Some("url"), Some("parse")) => finish(commands::cmd_url_parse(&rest2)),
         (Some("design"), Some("package")) => finish(commands::cmd_design_package(&rest2).await),
         (Some("resource"), Some("catalog")) => finish(commands::cmd_resource_catalog(&rest2).await),
+        (Some("library"), Some("search")) => finish(commands::cmd_library_search(&rest2).await),
         (Some("mcp"), Some("config")) => finish(commands::cmd_mcp_config(&rest2)),
         (Some("figma-api"), Some("coverage")) => finish(commands::cmd_figma_api_coverage(&rest2)),
         (Some("figma"), Some("api")) => finish(commands::cmd_figma_api_call(&rest2).await),
@@ -163,6 +164,7 @@ async fn async_main() -> ExitCode {
         (Some("file"), Some("get")) => finish(commands::cmd_file_get(&rest2).await),
         (Some("file"), Some("nodes")) => finish(commands::cmd_file_nodes(&rest2).await),
         (Some("file"), Some("meta")) => finish(commands::cmd_file_meta(&rest2).await),
+        (Some("file"), Some("duplicate")) => finish(commands::cmd_file_duplicate(&rest2).await),
         (Some("file"), Some("versions")) => finish(commands::cmd_file_versions(&rest2).await),
         (Some("file"), Some("compact")) => finish(commands::cmd_file_compact(&rest2).await),
         (Some("file"), Some("filter")) => finish(commands::cmd_file_filter(&rest2).await),
@@ -182,13 +184,22 @@ async fn async_main() -> ExitCode {
         (Some("images"), Some("fills")) => finish(commands::cmd_images_fills(&rest2).await),
         (Some("images"), Some("export")) => finish(commands::cmd_images_export(&rest2).await),
         (Some("asset"), Some("download")) => finish(commands::cmd_assets_download(&rest2).await),
+        (Some("asset"), Some("bundle")) => finish(commands::cmd_asset_bundle(&rest2).await),
 
         // Comment commands
         (Some("comments"), Some("list")) => finish(commands::cmd_comments_list(&rest2).await),
         (Some("comments"), Some("post")) => finish(commands::cmd_comments_post(&rest2).await),
         (Some("comments"), Some("delete")) => finish(commands::cmd_comments_delete(&rest2).await),
 
-        // Project commands
+        // Folders (v2), Teams & legacy Project commands
+        (Some("folders"), Some("list")) => finish(commands::cmd_folders_list(&rest2).await),
+        (Some("folder"), Some("folders")) => finish(commands::cmd_folder_folders(&rest2).await),
+        (Some("folder"), Some("files")) => finish(commands::cmd_folder_files(&rest2).await),
+        (Some("folder"), Some("meta")) => finish(commands::cmd_folder_meta(&rest2).await),
+        (Some("folder"), Some("create")) => finish(commands::cmd_folder_create(&rest2).await),
+        (Some("team"), Some("get")) => finish(commands::cmd_team_get(&rest2).await),
+        (Some("team"), Some("create")) => finish(commands::cmd_team_create(&rest2).await),
+        (Some("team"), Some("invite")) => finish(commands::cmd_team_invite(&rest2).await),
         (Some("projects"), Some("list")) => finish(commands::cmd_projects_list(&rest2).await),
         (Some("project"), Some("files")) => finish(commands::cmd_project_files(&rest2).await),
 
@@ -262,9 +273,10 @@ Self Discovery and AI Replication:
   discover [--format json|md]                  Describe capabilities for AI tools
   doctor [--format json]                       Check runtime/auth readiness
   smoke <figma-url>                            Verify real Figma access and design package readiness
-  url parse <figma-url>                        Parse file_key/node_id plus url_role/catalog_eligible/next_action
+  url parse <figma-url>                        Parse file_key/node_id/branch_key/folder_id plus url_role/catalog_eligible/next_action
   design package <figma-url> [--platform P] [--asset-format F]  Build AI replication package with scope/needs_narrowing diagnostics
-  resource catalog <team-or-project-url> [--probe-file-access]  Enumerate accessible design resources
+  resource catalog <team-or-folder-url> [--probe-file-access]   Enumerate accessible v2 folders, subfolders, files, and libraries
+  library search [figma-url] [--team-id ID] [--file-key K] [--query Q]  Search components, component sets, styles, and variables
   canvas status|pair|sessions|inspect|apply|verify|undo  Local Figma plugin canvas bridge
   mcp config [--client C] [--transport T]      Emit MCP client config
   figma-api coverage [--format json|md]        Report official Figma REST OpenAPI coverage
@@ -309,9 +321,9 @@ Install:
   Canonical skills: ~/.agents/skills/fighorse/SKILL.md (Cursor/Kimi/Codex), ~/.claude/skills/fighorse/SKILL.md, ~/.cursor/rules/fighorse.mdc
 
 Auth:
-  auth login --token <token>                    Save Figma token
+  auth login --token <token> [--scheme auto|pat|bearer]  Save Figma PAT, Plan Access Token, or OAuth Bearer token
   auth logout                                   Remove saved token
-  auth status                                   Show auth status
+  auth status                                   Show auth status and resolved header scheme
 
 Canvas Bridge:
   canvas serve [--port N]                       Start local plugin bridge on 127.0.0.1:9450
@@ -331,6 +343,7 @@ File Operations:
   file nodes <file-key> <ids> [--depth N]       Fetch specific nodes
   node get <file-key> <id> [--depth N]          Fetch a specific node
   file meta <file-key>                          Get file metadata
+  file duplicate <file-key> <folder-id> --yes   Duplicate a file into a destination folder
   file versions <file-key> [--page-size N]      Get version history
   file compact <file-key> [depth] [--max-tokens N]  Smart truncation for AI
   compact < input.json [--max-tokens N]       Compact JSON from stdin
@@ -348,22 +361,30 @@ Image Operations:
   images fills <file-key>                        Get image fill URLs
   images export <file-key> <ids> [--format F] [--scale S] [--dir D] [--manifest]  Download node slices
   asset download <file-key> [--dir D] [--manifest]  Download all image fills
+  asset bundle <file-key> <ids> [--format F] [--scale S] [--dir D] [--url-only] [--manifest]  Bundle rendered exports + subtree source image fills
 
 Comments:
-  comments list <file-key> [--as-md]            List comments
+  comments list <file-key> [--as-md] [--node-id ID] [--author A] [--query Q] [--unresolved] [--threads-only]  List/filter comments
   comments post <file-key> <message> [--reply-to ID]  Post comment
   comments delete <file-key> <comment-id>       Delete comment
 
-Projects:
-  resource catalog <figma-url> [--team-id ID|--project-id ID] [--no-libraries]
-                   [--probe-file-access] [--max-probes N] [--output P]
-                                                Build a read-only project/file/library catalog
-  projects list <team-id>                       List team projects
-  project files <project-id>                    List project files
-  Team/project enumeration requires projects:read; libraries require
+Folders, Teams & Projects:
+  resource catalog <figma-url> [--team-id ID|--folder-id ID|--project-id ID] [--no-libraries]
+                   [--probe-file-access] [--max-probes N] [--max-folders N] [--output P]
+                                                Build a read-only v2 folder/file/library catalog
+  folders list <team-id>                        List top-level team folders (v2)
+  folder folders <folder-id>                    List nested child folders (v2)
+  folder files <folder-id> [--branch-data]      List files in a folder (v2)
+  folder meta <folder-id>                       Get folder metadata (v2)
+  folder create <team-id> <name> [--audience A] --yes  Create a team folder
+  team get <team-id>                            Get team metadata
+  team create <name> [--audience A] --yes       Create an organization team
+  team invite <team-id> <emails-csv> --role R --yes  Invite users to a team
+  projects list <team-id>                       List team projects (deprecated v1)
+  project files <project-id>                    List project files (deprecated v1)
+  Team/folder enumeration requires folders:read (or legacy projects:read); libraries require
   team_library_content:read; optional depth-1 probes require file_content:read.
-  Parse /files/.../team/<team-id> with `url parse`; enumeration may require
-  Figma Projects endpoint approval. /files/<browser-root> alone
+  Parse /files/.../team/<team-id> or /folder/<folder-id> with `url parse`. /files/<browser-root> alone
   cannot be used to discover team IDs through the public REST API and returns
   browser_root_not_enumerable. SECTION/CANVAS design packages use
   scope.status=needs_narrowing; choose screen_candidates where implementable=true.

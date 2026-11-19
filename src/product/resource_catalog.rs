@@ -1,26 +1,29 @@
-//! High-level Figma team/project resource catalog.
+//! High-level Figma team/folder resource catalog (OpenAPI 0.47.0 v2 Folders).
 
 use crate::api::{
-    components as components_api, files as files_api, projects as projects_api,
-    styles as styles_api, users as users_api,
+    components as components_api, files as files_api, folders as folders_api, styles as styles_api,
+    users as users_api,
 };
 use crate::error::{Error, Result};
 use crate::url as figma_url;
 use serde_json::{Value, json};
-use std::collections::HashSet;
+use std::collections::{HashSet, VecDeque};
 
 const LIBRARY_PAGE_SIZE: &str = "1000";
 const MAX_LIBRARY_PAGES: usize = 100;
+const DEFAULT_MAX_FOLDERS: usize = 200;
 
 #[derive(Debug, Clone)]
 pub struct CatalogOpts<'a> {
     pub figma_url: Option<&'a str>,
     pub team_id: Option<&'a str>,
+    pub folder_id: Option<&'a str>,
     pub project_id: Option<&'a str>,
     pub include_libraries: bool,
     pub branch_data: bool,
     pub probe_file_access: bool,
     pub max_probes: usize,
+    pub max_folders: usize,
 }
 
 impl Default for CatalogOpts<'_> {
@@ -28,11 +31,13 @@ impl Default for CatalogOpts<'_> {
         Self {
             figma_url: None,
             team_id: None,
+            folder_id: None,
             project_id: None,
             include_libraries: true,
             branch_data: true,
             probe_file_access: false,
             max_probes: 25,
+            max_folders: DEFAULT_MAX_FOLDERS,
         }
     }
 }
@@ -46,7 +51,7 @@ pub struct CatalogOutcome {
 #[derive(Debug, Clone)]
 enum SourceKind {
     Team(String),
-    Project(String),
+    Folder(String),
     BrowserRoot,
 }
 
@@ -62,10 +67,18 @@ fn non_empty(value: Option<&str>) -> Option<&str> {
 
 fn resolve_source(opts: &CatalogOpts<'_>) -> Result<Source> {
     let team_id = non_empty(opts.team_id);
+    let folder_id = non_empty(opts.folder_id);
     let project_id = non_empty(opts.project_id);
-    if team_id.is_some() && project_id.is_some() {
+
+    if folder_id.is_some() && project_id.is_some() && folder_id != project_id {
         return Err(Error::Usage(
-            "Use exactly one of team_id or project_id".to_string(),
+            "Provide either folder_id or project_id, not conflicting IDs".to_string(),
+        ));
+    }
+    let explicit_folder = folder_id.or(project_id);
+    if team_id.is_some() && explicit_folder.is_some() {
+        return Err(Error::Usage(
+            "Use exactly one of team_id or folder_id/project_id".to_string(),
         ));
     }
     if let Some(team_id) = team_id {
@@ -74,26 +87,42 @@ fn resolve_source(opts: &CatalogOpts<'_>) -> Result<Source> {
             input_kind: "team_id",
         });
     }
-    if let Some(project_id) = project_id {
+    if let Some(fid) = explicit_folder {
         return Ok(Source {
-            kind: SourceKind::Project(project_id.to_string()),
-            input_kind: "project_id",
+            kind: SourceKind::Folder(fid.to_string()),
+            input_kind: if folder_id.is_some() {
+                "folder_id"
+            } else {
+                "project_id"
+            },
         });
     }
 
-    let input = non_empty(opts.figma_url)
-        .ok_or_else(|| Error::Usage("figma_url, team_id, or project_id required".to_string()))?;
+    let input = non_empty(opts.figma_url).ok_or_else(|| {
+        Error::Usage("figma_url, team_id, folder_id, or project_id required".to_string())
+    })?;
     let parsed = figma_url::parse_figma_url(input);
-    if let Some(team_id) = parsed.team_id {
+    if let Some(folder_id) = parsed.folder_id.clone() {
+        let input_kind = if parsed.url_role() == "folder_browser" {
+            "folder_url"
+        } else {
+            "project_url"
+        };
         return Ok(Source {
-            kind: SourceKind::Team(team_id),
-            input_kind: "team_url",
+            kind: SourceKind::Folder(folder_id),
+            input_kind,
         });
     }
     if let Some(project_id) = parsed.project_id {
         return Ok(Source {
-            kind: SourceKind::Project(project_id),
+            kind: SourceKind::Folder(project_id),
             input_kind: "project_url",
+        });
+    }
+    if let Some(team_id) = parsed.team_id {
+        return Ok(Source {
+            kind: SourceKind::Team(team_id),
+            input_kind: "team_url",
         });
     }
     if parsed.browser_root_id.is_some() && parsed.kind.as_deref() == Some("files") {
@@ -103,22 +132,31 @@ fn resolve_source(opts: &CatalogOpts<'_>) -> Result<Source> {
         });
     }
     Err(Error::Usage(
-        "The catalog source must be a Figma team/project browser URL or an explicit team_id/project_id"
+        "The catalog source must be a Figma team/folder/project browser URL or an explicit team_id/folder_id/project_id"
             .to_string(),
     ))
 }
 
 fn source_json(source: &Source) -> Value {
     match &source.kind {
-        SourceKind::Team(team_id) => {
-            json!({"input_kind": source.input_kind, "team_id": team_id, "project_id": null})
-        }
-        SourceKind::Project(project_id) => {
-            json!({"input_kind": source.input_kind, "team_id": null, "project_id": project_id})
-        }
-        SourceKind::BrowserRoot => {
-            json!({"input_kind": source.input_kind, "team_id": null, "project_id": null})
-        }
+        SourceKind::Team(team_id) => json!({
+            "input_kind": source.input_kind,
+            "team_id": team_id,
+            "folder_id": null,
+            "project_id": null,
+        }),
+        SourceKind::Folder(folder_id) => json!({
+            "input_kind": source.input_kind,
+            "team_id": null,
+            "folder_id": folder_id,
+            "project_id": folder_id,
+        }),
+        SourceKind::BrowserRoot => json!({
+            "input_kind": source.input_kind,
+            "team_id": null,
+            "folder_id": null,
+            "project_id": null,
+        }),
     }
 }
 
@@ -128,6 +166,7 @@ fn request_json(opts: &CatalogOpts<'_>) -> Value {
         "branch_data": opts.branch_data,
         "probe_file_access": opts.probe_file_access,
         "max_probes": opts.max_probes,
+        "max_folders": opts.max_folders,
     })
 }
 
@@ -159,6 +198,7 @@ fn base_report(source: &Source, opts: &CatalogOpts<'_>) -> Value {
         "request": request_json(opts),
         "auth_probe": {"ok": null},
         "summary": {
+            "folders": 0,
             "projects": 0,
             "files": 0,
             "branches": 0,
@@ -169,6 +209,7 @@ fn base_report(source: &Source, opts: &CatalogOpts<'_>) -> Value {
             "readable_files": 0,
             "failed_probes": 0,
         },
+        "folders": [],
         "projects": [],
         "team_library": {
             "components": {"status": "skipped", "items": []},
@@ -179,27 +220,32 @@ fn base_report(source: &Source, opts: &CatalogOpts<'_>) -> Value {
         "next_tools": [
             {
                 "tool": "get_design_package",
-                "for_each": "projects[].files[].key",
+                "for_each": "folders[].files[].key",
                 "reason": "Build implementation context for a selected file or node."
             },
             {
+                "tool": "search_design_system",
+                "for_each": "source.team_id or folders[].files[].key",
+                "reason": "Search published components, component sets, styles, and variables."
+            },
+            {
                 "tool": "get_file",
-                "for_each": "projects[].files[].key",
+                "for_each": "folders[].files[].key",
                 "reason": "Read the full document tree only for files that need inspection."
             },
             {
                 "tool": "get_local_variables",
-                "for_each": "projects[].files[].key",
+                "for_each": "folders[].files[].key",
                 "reason": "Read variables explicitly when the Figma plan and token permit it."
             },
             {
                 "tool": "get_dev_resources",
-                "for_each": "projects[].files[].key",
+                "for_each": "folders[].files[].key",
                 "reason": "Read file dev-resource links explicitly."
             },
             {
                 "tool": "get_image_fills",
-                "for_each": "projects[].files[].key",
+                "for_each": "folders[].files[].key",
                 "reason": "Discover original image fills without downloading them automatically."
             }
         ],
@@ -209,12 +255,12 @@ fn base_report(source: &Source, opts: &CatalogOpts<'_>) -> Value {
 fn blocked_outcome(
     source: &Source,
     opts: &CatalogOpts<'_>,
-    auth_ok: Option<bool>,
-    diagnostic: Value,
+    auth_probe: Value,
+    diagnostics: Vec<Value>,
 ) -> CatalogOutcome {
     let mut report = base_report(source, opts);
-    report["auth_probe"]["ok"] = auth_ok.map(Value::Bool).unwrap_or(Value::Null);
-    report["diagnostics"] = Value::Array(vec![diagnostic]);
+    report["auth_probe"] = auth_probe;
+    report["diagnostics"] = Value::Array(diagnostics);
     CatalogOutcome {
         report,
         blocked: true,
@@ -245,10 +291,11 @@ fn normalize_file(file: &Value) -> Value {
     })
 }
 
-fn normalize_project(project: &Value, files: Vec<Value>, status: &str) -> Value {
+fn normalize_folder(folder: &Value, files: Vec<Value>, status: &str) -> Value {
     json!({
-        "id": project.get("id").cloned().unwrap_or(Value::Null),
-        "name": project.get("name").cloned().unwrap_or(Value::Null),
+        "id": folder.get("id").cloned().unwrap_or(Value::Null),
+        "name": folder.get("name").cloned().unwrap_or(Value::Null),
+        "parent_folder_id": folder.get("parent_folder_id").cloned().unwrap_or(Value::Null),
         "status": status,
         "files": files,
     })
@@ -366,14 +413,14 @@ fn library_failure_diagnostic(kind: &str, error: &Error) -> Value {
         ),
         kind,
         error,
-        "Check `team_library_content:read`, team access, and Figma rate limits; the project/file catalog remains usable.",
+        "Check `team_library_content:read`, team access, and Figma rate limits; the folder/file catalog remains usable.",
     )
 }
 
-fn count_branches(projects: &[Value]) -> usize {
-    projects
+fn count_branches(folders: &[Value]) -> usize {
+    folders
         .iter()
-        .filter_map(|project| project["files"].as_array())
+        .filter_map(|folder| folder["files"].as_array())
         .flatten()
         .filter_map(|file| file["branches"].as_array())
         .map(Vec::len)
@@ -382,7 +429,7 @@ fn count_branches(projects: &[Value]) -> usize {
 
 async fn probe_files(
     token: &str,
-    projects: &mut [Value],
+    folders: &mut [Value],
     max_probes: usize,
     diagnostics: &mut Vec<Value>,
 ) -> (usize, usize, usize, bool) {
@@ -390,8 +437,8 @@ async fn probe_files(
     let mut readable = 0;
     let mut failed = 0;
     let mut truncated = false;
-    for project in projects {
-        let Some(files) = project["files"].as_array_mut() else {
+    for folder in folders {
+        let Some(files) = folder["files"].as_array_mut() else {
             continue;
         };
         for file in files {
@@ -463,16 +510,24 @@ pub fn local_catalog_outcome(opts: &CatalogOpts<'_>) -> Result<Option<CatalogOut
         return Ok(Some(blocked_outcome(
             &source,
             opts,
-            None,
-            local_diagnostic(
+            json!({"ok": null}),
+            vec![local_diagnostic(
                 "browser_root_not_enumerable",
                 "source",
                 "The public Figma REST API cannot discover team IDs from a files browser root.",
-                "Open a team page and provide a URL containing `/team/<team-id>`.",
-            ),
+                "Open a team or folder page and provide a URL containing `/team/<team-id>` or `/folder/<folder-id>`.",
+            )],
         )));
     }
     Ok(None)
+}
+
+fn folder_id_str(folder: &Value) -> Option<String> {
+    match folder.get("id") {
+        Some(Value::String(s)) if !s.trim().is_empty() => Some(s.trim().to_string()),
+        Some(Value::Number(n)) => Some(n.to_string()),
+        _ => None,
+    }
 }
 
 pub async fn get_resource_catalog(token: &str, opts: CatalogOpts<'_>) -> Result<CatalogOutcome> {
@@ -481,118 +536,213 @@ pub async fn get_resource_catalog(token: &str, opts: CatalogOpts<'_>) -> Result<
     }
     let source = resolve_source(&opts)?;
 
-    if let Err(error) = users_api::get_me(token).await {
-        return Ok(blocked_outcome(
-            &source,
-            &opts,
-            Some(false),
-            safe_diagnostic(
-                error_code(
+    // Plan Access Tokens and narrowly-scoped OAuth tokens may lack `current_user:read`
+    // (returning HTTP 403 on `/v1/me`) while still holding `folders:read`.
+    let auth_probe = match users_api::get_me(token).await {
+        Ok(_) => json!({"ok": true}),
+        Err(error) if error.figma_status() == Some(403) => json!({
+            "ok": false,
+            "http_status": 403,
+            "reason": "unscoped_or_plan_token",
+            "message": error.figma_message(),
+        }),
+        Err(error) => {
+            return Ok(blocked_outcome(
+                &source,
+                &opts,
+                json!({"ok": false}),
+                vec![safe_diagnostic(
+                    error_code(
+                        &error,
+                        "identity_forbidden",
+                        "identity_rate_limited",
+                        "identity_probe_failed",
+                    ),
+                    "current_user",
                     &error,
-                    "identity_forbidden",
-                    "identity_rate_limited",
-                    "identity_probe_failed",
-                ),
-                "current_user",
-                &error,
-                "Create a valid Figma token with `current_user:read`, store it locally, and retry.",
-            ),
-        ));
-    }
+                    "Create a valid Figma token (or set FIGHORSE_AUTH_SCHEME=bearer for OAuth tokens), store it locally, and retry.",
+                )],
+            ));
+        }
+    };
 
     let mut report = base_report(&source, &opts);
-    report["auth_probe"]["ok"] = Value::Bool(true);
+    report["auth_probe"] = auth_probe.clone();
     let mut diagnostics = Vec::new();
     let mut partial = false;
-    let mut projects = Vec::new();
+    let mut folders = Vec::new();
 
-    let project_rows = match &source.kind {
-        SourceKind::Team(team_id) => match projects_api::get_team_projects(token, team_id).await {
-            Ok(data) => data["projects"].as_array().cloned().unwrap_or_default(),
+    let initial_folders: Vec<Value> = match &source.kind {
+        SourceKind::Team(team_id) => match folders_api::get_team_folders(token, team_id).await {
+            Ok(data) => data["folders"]
+                .as_array()
+                .or_else(|| data["projects"].as_array())
+                .cloned()
+                .unwrap_or_default(),
             Err(error) => {
                 return Ok(blocked_outcome(
                     &source,
                     &opts,
-                    Some(true),
-                    safe_diagnostic(
+                    auth_probe,
+                    vec![safe_diagnostic(
                         error_code(
                             &error,
-                            "projects_access_forbidden",
-                            "projects_rate_limited",
-                            "projects_list_failed",
+                            "folders_access_forbidden",
+                            "folders_rate_limited",
+                            "folders_list_failed",
                         ),
-                        "projects",
+                        "folders",
                         &error,
-                        "Check `projects:read`, Projects limited-access eligibility, and the token user's team access.",
-                    ),
+                        "Check `folders:read` (or legacy `projects:read`) and verify that the token can access this team.",
+                    )],
                 ));
             }
         },
-        SourceKind::Project(project_id) => vec![json!({"id": project_id, "name": null})],
+        SourceKind::Folder(folder_id) => {
+            vec![json!({"id": folder_id, "name": null, "parent_folder_id": null})]
+        }
         SourceKind::BrowserRoot => unreachable!(),
     };
 
-    let project_row_count = project_rows.len();
-    let mut successful_project_lists = 0;
-    let mut stop_project_requests = false;
-    for project in project_rows {
-        if stop_project_requests {
-            projects.push(normalize_project(&project, Vec::new(), "not_attempted"));
+    let mut queue: VecDeque<Value> = VecDeque::new();
+    let mut visited_ids: HashSet<String> = HashSet::new();
+    for item in initial_folders {
+        if let Some(id) = folder_id_str(&item) {
+            if visited_ids.insert(id) {
+                queue.push_back(item);
+            }
+        } else {
+            queue.push_back(item);
+        }
+    }
+
+    let initial_count = queue.len();
+    let mut successful_folder_lists = 0usize;
+    let mut stop_folder_requests = false;
+    let mut folder_limit_reached = false;
+    let max_folders = opts.max_folders;
+
+    while let Some(folder) = queue.pop_front() {
+        if stop_folder_requests {
+            folders.push(normalize_folder(&folder, Vec::new(), "not_attempted"));
             continue;
         }
-        let Some(project_id) = project["id"].as_str() else {
+        if max_folders != 0 && folders.len() >= max_folders {
+            folder_limit_reached = true;
+            partial = true;
+            folders.push(normalize_folder(&folder, Vec::new(), "not_attempted"));
+            continue;
+        }
+        let Some(folder_id) = folder_id_str(&folder) else {
             partial = true;
             diagnostics.push(local_diagnostic(
-                "project_id_missing",
-                "projects",
-                "Figma returned a project without an id.",
+                "folder_id_missing",
+                "folders",
+                "Figma returned a folder without an id.",
                 "Retry the request; report the response-shape change if it persists.",
             ));
             continue;
         };
+
         let branch_data = if opts.branch_data {
             Some("true")
         } else {
             Some("false")
         };
-        match projects_api::get_project_files(token, project_id, branch_data).await {
+
+        // Enumerate nested child folders (OpenAPI 0.47.0 v2 Folders).
+        match folders_api::get_folder_folders(token, &folder_id).await {
+            Ok(sub_data) => {
+                if let Some(children) = sub_data["folders"].as_array() {
+                    for child in children {
+                        let mut enriched = child.clone();
+                        if enriched.get("parent_folder_id").is_none()
+                            || enriched["parent_folder_id"].is_null()
+                        {
+                            enriched["parent_folder_id"] = Value::String(folder_id.clone());
+                        }
+                        if let Some(cid) = folder_id_str(&enriched)
+                            && visited_ids.insert(cid)
+                        {
+                            queue.push_back(enriched);
+                        }
+                    }
+                }
+            }
+            Err(error) => {
+                // Treat 404 on subfolder listing as leaf/empty when files still succeed,
+                // while surfacing 403/429/5xx diagnostics.
+                if error.figma_status() != Some(404) {
+                    partial = true;
+                    diagnostics.push(safe_diagnostic(
+                        error_code(
+                            &error,
+                            "folder_subfolders_forbidden",
+                            "folder_subfolders_rate_limited",
+                            "folder_subfolders_failed",
+                        ),
+                        "folder_subfolders",
+                        &error,
+                        "Check `folders:read` (or legacy `projects:read`) and access to nested folders.",
+                    ));
+                    if error.figma_status() == Some(429) {
+                        stop_folder_requests = true;
+                        folders.push(normalize_folder(&folder, Vec::new(), "failed"));
+                        continue;
+                    }
+                }
+            }
+        }
+
+        match folders_api::get_folder_files(token, &folder_id, branch_data).await {
             Ok(data) => {
-                successful_project_lists += 1;
+                successful_folder_lists += 1;
                 let files = data["files"]
                     .as_array()
                     .map(|files| files.iter().map(normalize_file).collect())
                     .unwrap_or_default();
-                let mut normalized = normalize_project(&project, files, "ready");
+                let mut normalized = normalize_folder(&folder, files, "ready");
                 if normalized["name"].is_null() {
                     normalized["name"] = data.get("name").cloned().unwrap_or(Value::Null);
                 }
-                projects.push(normalized);
+                folders.push(normalized);
             }
             Err(error) => {
                 partial = true;
                 diagnostics.push(safe_diagnostic(
                     error_code(
                         &error,
-                        "project_files_forbidden",
-                        "project_files_rate_limited",
-                        "project_files_failed",
+                        "folder_files_forbidden",
+                        "folder_files_rate_limited",
+                        "folder_files_failed",
                     ),
-                    "project_files",
+                    "folder_files",
                     &error,
-                    "Check `projects:read` and access to this project; other project results were preserved.",
+                    "Check `folders:read` (or legacy `projects:read`) and access to this folder; other folder results were preserved.",
                 ));
-                projects.push(normalize_project(&project, Vec::new(), "failed"));
+                folders.push(normalize_folder(&folder, Vec::new(), "failed"));
                 if error.figma_status() == Some(429) {
-                    stop_project_requests = true;
+                    stop_folder_requests = true;
                 }
             }
         }
     }
 
-    if project_row_count > 0 && successful_project_lists == 0 {
+    if folder_limit_reached {
+        diagnostics.push(local_diagnostic(
+            "folder_limit_reached",
+            "folders",
+            "Nested folder traversal stopped at max_folders.",
+            "Increase max_folders or set it to 0 only when unbounded folder traversal is intended.",
+        ));
+    }
+
+    if initial_count > 0 && successful_folder_lists == 0 {
         report["status"] = Value::String("blocked".to_string());
-        report["summary"]["projects"] = json!(projects.len());
-        report["projects"] = Value::Array(projects);
+        report["summary"]["folders"] = json!(folders.len());
+        report["summary"]["projects"] = json!(folders.len());
+        report["folders"] = Value::Array(folders.clone());
+        report["projects"] = Value::Array(folders);
         report["diagnostics"] = Value::Array(diagnostics);
         return Ok(CatalogOutcome {
             report,
@@ -603,38 +753,38 @@ pub async fn get_resource_catalog(token: &str, opts: CatalogOpts<'_>) -> Result<
     let mut component_items = Vec::new();
     let mut component_set_items = Vec::new();
     let mut style_items = Vec::new();
-    if opts.include_libraries {
-        if let SourceKind::Team(team_id) = &source.kind {
-            for (kind, label) in [
-                (LibraryKind::Components, "components"),
-                (LibraryKind::ComponentSets, "component_sets"),
-                (LibraryKind::Styles, "styles"),
-            ] {
-                let (items, error) = collect_library(token, team_id, kind).await;
-                let status = if error.is_some() { "partial" } else { "ready" };
-                match label {
-                    "components" => component_items = items.clone(),
-                    "component_sets" => component_set_items = items.clone(),
-                    "styles" => style_items = items.clone(),
-                    _ => unreachable!(),
-                }
-                report["team_library"][label] = json!({"status": status, "items": items});
-                if let Some(error) = error {
-                    partial = true;
-                    diagnostics.push(library_failure_diagnostic(label, &error));
-                }
+    if opts.include_libraries
+        && let SourceKind::Team(team_id) = &source.kind
+    {
+        for (kind, label) in [
+            (LibraryKind::Components, "components"),
+            (LibraryKind::ComponentSets, "component_sets"),
+            (LibraryKind::Styles, "styles"),
+        ] {
+            let (items, error) = collect_library(token, team_id, kind).await;
+            let status = if error.is_some() { "partial" } else { "ready" };
+            match label {
+                "components" => component_items = items.clone(),
+                "component_sets" => component_set_items = items.clone(),
+                "styles" => style_items = items.clone(),
+                _ => unreachable!(),
+            }
+            report["team_library"][label] = json!({"status": status, "items": items});
+            if let Some(error) = error {
+                partial = true;
+                diagnostics.push(library_failure_diagnostic(label, &error));
             }
         }
     }
 
-    let file_count = projects
+    let file_count = folders
         .iter()
-        .filter_map(|project| project["files"].as_array())
+        .filter_map(|folder| folder["files"].as_array())
         .map(Vec::len)
         .sum::<usize>();
-    let branch_count = count_branches(&projects);
+    let branch_count = count_branches(&folders);
     let (probed, readable, failed_probes, probe_truncated) = if opts.probe_file_access {
-        probe_files(token, &mut projects, opts.max_probes, &mut diagnostics).await
+        probe_files(token, &mut folders, opts.max_probes, &mut diagnostics).await
     } else {
         (0, 0, 0, false)
     };
@@ -642,7 +792,8 @@ pub async fn get_resource_catalog(token: &str, opts: CatalogOpts<'_>) -> Result<
 
     report["status"] = Value::String(if partial { "partial" } else { "ready" }.to_string());
     report["summary"] = json!({
-        "projects": projects.len(),
+        "folders": folders.len(),
+        "projects": folders.len(),
         "files": file_count,
         "branches": branch_count,
         "components": component_items.len(),
@@ -652,7 +803,8 @@ pub async fn get_resource_catalog(token: &str, opts: CatalogOpts<'_>) -> Result<
         "readable_files": readable,
         "failed_probes": failed_probes,
     });
-    report["projects"] = Value::Array(projects);
+    report["folders"] = Value::Array(folders.clone());
+    report["projects"] = Value::Array(folders);
     report["diagnostics"] = Value::Array(diagnostics);
     Ok(CatalogOutcome {
         report,

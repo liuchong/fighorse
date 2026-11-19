@@ -29,10 +29,26 @@ async fn mcp_dispatch_end_to_end() {
         .mount(&server)
         .await;
     Mock::given(method("GET"))
-        .and(path("/v1/projects/project-placeholder/files"))
+        .and(path("/v2/folders/project-placeholder/folders"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"folders": []})))
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/v2/folders/project-placeholder/files"))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({
             "name": "Project",
             "files": [{"key":"file-placeholder","name":"File","branches":[]}]
+        })))
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/v1/files/abc/comments"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "comments": [
+                {"id": "c1", "message": "Fix padding", "client_meta": {"node_id": "10:20"}, "user": {"handle": "alice"}, "resolved_at": null},
+                {"id": "c2", "parent_id": "c1", "message": "Done", "user": {"handle": "bob"}, "resolved_at": null},
+                {"id": "c3", "message": "Old note", "client_meta": {"node_id": "99:1"}, "user": {"handle": "alice"}, "resolved_at": "2026-10-01T00:00:00Z"}
+            ]
         })))
         .mount(&server)
         .await;
@@ -60,7 +76,12 @@ async fn mcp_dispatch_end_to_end() {
     assert!(names.contains(&"get_file".to_string()));
     assert!(names.contains(&"figma_get_file".to_string()));
     assert!(names.contains(&"get_resource_catalog".to_string()));
+    assert!(names.contains(&"get_team_folders".to_string()));
+    assert!(names.contains(&"download_assets".to_string()));
+    assert!(names.contains(&"search_design_system".to_string()));
     assert!(!names.contains(&"post_comment".to_string()));
+    assert!(!names.contains(&"duplicate_file".to_string()));
+    assert!(!names.contains(&"figma_post_file_duplicate".to_string()));
     let catalog_schema = list["result"]["tools"]
         .as_array()
         .unwrap()
@@ -105,6 +126,44 @@ async fn mcp_dispatch_end_to_end() {
     .unwrap();
     let tree_text = tree["result"]["content"][0]["text"].as_str().unwrap();
     assert!(tree_text.contains("\"type\": \"DOCUMENT\""));
+
+    // Filtered get_comments preserves matching thread or threads_only.
+    let filtered_comments = dispatch(&json!({"jsonrpc":"2.0","id":50,"method":"tools/call",
+        "params":{"name":"get_comments","arguments":{
+            "file_key":"abc",
+            "node_id":"10-20",
+            "unresolved_only":true,
+            "threads_only":true
+        }}}))
+    .await
+    .unwrap();
+    let comments_json: serde_json::Value = serde_json::from_str(
+        filtered_comments["result"]["content"][0]["text"]
+            .as_str()
+            .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(comments_json["comments"].as_array().unwrap().len(), 1);
+    assert_eq!(comments_json["comments"][0]["id"], "c1");
+
+    // download_assets with dest_dir requires FIGHORSE_MCP_LOCAL_WRITE=allow.
+    unsafe { std::env::set_var("FIGHORSE_MCP_LOCAL_WRITE", "deny") };
+    let blocked_bundle = dispatch(&json!({"jsonrpc":"2.0","id":51,"method":"tools/call",
+        "params":{"name":"download_assets","arguments":{
+            "file_key":"abc",
+            "node_ids":"1:2",
+            "dest_dir":"./.fighorse/exports"
+        }}}))
+    .await
+    .unwrap();
+    assert_eq!(blocked_bundle["result"]["isError"], true);
+    assert!(
+        blocked_bundle["result"]["content"][0]["text"]
+            .as_str()
+            .unwrap()
+            .contains("FIGHORSE_MCP_LOCAL_WRITE=allow")
+    );
+    unsafe { std::env::remove_var("FIGHORSE_MCP_LOCAL_WRITE") };
 
     let parsed_browser_root = dispatch(&json!({"jsonrpc":"2.0","id":11,"method":"tools/call",
     "params":{"name":"parse_figma_url","arguments":{

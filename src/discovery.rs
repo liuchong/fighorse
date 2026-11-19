@@ -210,7 +210,9 @@ pub fn setup_guidance() -> Value {
             "accepted_sources": [
                 "FIGMA_TOKEN environment variable",
                 "FIGMA_ACCESS_TOKEN environment variable",
+                "FIGMA_OAUTH_TOKEN environment variable (uses Authorization: Bearer automatically)",
                 "FIGMA_API_KEY environment variable",
+                "FIGHORSE_AUTH_SCHEME=auto|pat|bearer (auto sends Bearer for figu_* / OAuth tokens and X-Figma-Token for PAT / Plan Access Tokens)",
                 "~/.fighorse/config.json written by fighorse auth login"
             ],
             "recommended_command": "fighorse auth login --token <FIGMA_TOKEN>",
@@ -241,8 +243,9 @@ pub fn setup_guidance() -> Value {
             "if_auth_missing": "Do not call Figma API tools yet. Tell the user: fighorse needs a Figma Personal Access Token. Run `fighorse auth login --token <FIGMA_TOKEN>` or set FIGMA_TOKEN, then retry.",
             "if_url_missing": "Ask the user to paste a specific Figma frame/group/component link, not a full canvas link.",
             "if_browser_root_url": "parse_figma_url returns url_role=browser_root, catalog_eligible=false, next_action=ask_for_team_or_file_url, and error_code=browser_root_not_enumerable. A `/files/<browser-root>` URL cannot discover team IDs through the public REST API.",
-            "if_team_browser_url": "parse_figma_url returns url_role=team_browser, catalog_eligible=true, and next_action=get_resource_catalog. Call get_resource_catalog with the URL. It enumerates projects/files and optionally team libraries with structured partial/blocked diagnostics. This requires `projects:read` and may require Figma Projects endpoint approval; HTTP 403 can also mean the token user cannot access the team.",
-            "if_project_browser_url": "Call get_resource_catalog with the URL to enumerate that project's files without requiring a team ID.",
+            "if_team_browser_url": "parse_figma_url returns url_role=team_browser, catalog_eligible=true, and next_action=get_resource_catalog. Call get_resource_catalog with the URL. It enumerates v2 folders (including nested subfolders), files, and optionally team libraries with structured partial/blocked diagnostics, while tolerating HTTP 403 on /v1/me for Plan Access Tokens. Requires `folders:read` (or legacy `projects:read`); HTTP 403 can also mean the token cannot access the team.",
+            "if_folder_browser_url": "parse_figma_url returns url_role=folder_browser, catalog_eligible=true, and next_action=get_resource_catalog. Call get_resource_catalog with the URL to enumerate nested subfolders and files without requiring a team ID.",
+            "if_project_browser_url": "Call get_resource_catalog with the URL to enumerate that folder/project's files without requiring a team ID.",
             "if_design_package_needs_narrowing": "If get_design_package returns scope.status=needs_narrowing for SECTION/CANVAS/DOCUMENT/SELECTION, choose screen_candidates[].id where implementable=true and call get_design_package again. diagnostics.screenshots.null_count is not a usable screenshot.",
             "if_platform_or_asset_format_missing": "Ask the user for target platform/framework and preferred asset format before implementation.",
             "after_user_fixes_setup": "Call check_fighorse_ready again, then parse_figma_url and get_design_package."
@@ -366,8 +369,10 @@ pub fn quickstart(figma_url: Option<&str>) -> Value {
         .filter(|p| !p.valid && p.kind.as_deref() == Some("files"))
     {
         if browser.team_id.is_some() {
-            next_steps.push("To enumerate visible files from this team browser URL, run `fighorse projects list <team-id>`, then `fighorse project files <project-id>` for every returned project.".to_string());
-            next_steps.push("Team/project enumeration requires the `projects:read` token scope and may require Figma Projects endpoint approval. HTTP 403 also occurs when the token user cannot access the team.".to_string());
+            next_steps.push("To enumerate visible files from this team browser URL, run `fighorse resource catalog \"<team-url>\"`, `fighorse folders list <team-id>`, or legacy `fighorse projects list <team-id>` and `fighorse project files <project-id>`.".to_string());
+            next_steps.push("Team/folder enumeration requires the `folders:read` (or legacy `projects:read`) token scope. HTTP 403 also occurs when the token cannot access the team.".to_string());
+        } else if browser.folder_id.is_some() {
+            next_steps.push("To enumerate nested folders and files from this folder URL, run `fighorse resource catalog \"<folder-url>\"` or `fighorse folder files <folder-id>`.".to_string());
         } else {
             next_steps.push("Open a Figma team page and copy a URL containing `/team/<team-id>`; the public REST API cannot discover team IDs from a `/files/<browser-root>` page.".to_string());
         }
@@ -468,6 +473,9 @@ pub fn doctor() -> Value {
     let env_token_present = std::env::var("FIGMA_TOKEN")
         .map(|v| !v.is_empty())
         .unwrap_or(false)
+        || std::env::var("FIGMA_OAUTH_TOKEN")
+            .map(|v| !v.is_empty())
+            .unwrap_or(false)
         || std::env::var("FIGMA_API_KEY")
             .map(|v| !v.is_empty())
             .unwrap_or(false);
@@ -501,6 +509,7 @@ pub fn doctor() -> Value {
         },
         "auth": {
             "has_token": has_token,
+            "scheme": cfg.auth_scheme,
             "config_path": cfg.config_path.to_string_lossy(),
             "env_token_present": env_token_present,
             "required_for_figma_api": true,
@@ -736,12 +745,19 @@ pub fn manifest() -> Value {
                     "list_experiences",
                     "record_experience",
                     "get_resource_catalog",
+                    "search_design_system",
+                    "get_team_folders",
+                    "get_folder_folders",
+                    "get_folder_files",
+                    "get_folder_meta",
+                    "get_team",
                     "get_design_package",
                     "get_design_context",
                     "get_screenshot",
                     "export_images",
                     "export_component",
                     "download_image_fills",
+                    "download_assets",
                     "get_tokens",
                     "visual_audit",
                     "get_project_playbook",
@@ -769,7 +785,11 @@ pub fn manifest() -> Value {
                     "unpublish_code_connect",
                     "create_webhook",
                     "update_webhook",
-                    "delete_webhook"
+                    "delete_webhook",
+                    "duplicate_file",
+                    "create_team_folder",
+                    "create_team",
+                    "invite_team_members"
                 ],
                 "canvas_write": {
                     "env": "FIGHORSE_CANVAS_MODE=write",
@@ -791,7 +811,7 @@ pub fn manifest() -> Value {
             },
             "self_discovery_tools": ["discover_fighorse", "check_fighorse_ready", "parse_figma_url", "get_replicate_workflow", "get_experience_schema", "list_experiences"],
             "learning_tools": ["get_experience_schema", "list_experiences", "record_experience"],
-            "replication_tools": ["get_resource_catalog", "get_design_package", "get_design_context", "get_screenshot", "export_images", "export_component", "download_image_fills", "get_tokens", "visual_audit", "get_project_playbook"],
+            "replication_tools": ["get_resource_catalog", "search_design_system", "get_design_package", "get_design_context", "get_screenshot", "export_images", "export_component", "download_image_fills", "download_assets", "get_tokens", "visual_audit", "get_project_playbook"],
             "code_connect_tools": ["parse_code_connect_template", "validate_code_connect", "preview_code_connect", "publish_code_connect", "unpublish_code_connect"],
             "canvas_tools": ["canvas_status", "canvas_create_pairing", "canvas_list_sessions", "canvas_inspect", "canvas_capture", "canvas_verify", "canvas_apply", "canvas_upload_asset", "canvas_undo", "canvas_execute_script"],
             "resources": ["fighorse://capabilities", "fighorse://coverage", "fighorse://workflow/design-replication", "fighorse://experience/summary"],
@@ -866,8 +886,8 @@ pub fn manifest() -> Value {
         },
         "auth": {
             "required_for_figma_api": true,
-            "env": ["FIGMA_TOKEN", "FIGMA_ACCESS_TOKEN", "FIGMA_API_KEY"],
-            "local_config": "fighorse auth login --token <FIGMA_TOKEN>",
+            "env": ["FIGMA_TOKEN", "FIGMA_ACCESS_TOKEN", "FIGMA_OAUTH_TOKEN", "FIGMA_API_KEY", "FIGHORSE_AUTH_SCHEME"],
+            "local_config": "fighorse auth login --token <FIGMA_TOKEN> [--scheme auto|pat|bearer]",
             "missing_token_ai_prompt": "fighorse needs a Figma Personal Access Token before it can read Figma files. Please run `fighorse auth login --token <FIGMA_TOKEN>` or set FIGMA_TOKEN, then ask me to retry.",
             "safety": "Do not commit tokens. Pass tokens through environment variables or local config only."
         },

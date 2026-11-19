@@ -68,3 +68,26 @@ pub fn violation(legacy_write_names: &HashSet<String>, name: &str) -> Option<Str
     }
     None
 }
+
+/// Return a policy violation message factoring in call arguments (e.g. optional `dest_dir`).
+pub fn violation_with_args(
+    legacy_write_names: &HashSet<String>,
+    name: &str,
+    args: &serde_json::Value,
+) -> Option<String> {
+    if let Some(msg) = violation(legacy_write_names, name) {
+        return Some(msg);
+    }
+    if name == "download_assets"
+        && args
+            .get("dest_dir")
+            .and_then(|v| v.as_str())
+            .is_some_and(|s| !s.trim().is_empty())
+        && !config::mcp_local_write_enabled()
+    {
+        return Some(
+            "Tool download_assets with dest_dir writes local files and requires FIGHORSE_MCP_LOCAL_WRITE=allow. Omit dest_dir to fetch remote URLs in readonly mode, or use ./.fighorse/exports, ./assets/fighorse, or ~/.fighorse/exports.".to_string(),
+        );
+    }
+    None
+}

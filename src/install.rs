@@ -1009,6 +1009,15 @@ struct PreparedAuth {
 }
 
 fn prepare_auth(token: Option<&str>, home: &Path, apply: bool) -> Result<PreparedAuth> {
+    prepare_auth_with_scheme(token, None, home, apply)
+}
+
+fn prepare_auth_with_scheme(
+    token: Option<&str>,
+    scheme: Option<&str>,
+    home: &Path,
+    apply: bool,
+) -> Result<PreparedAuth> {
     let config_file = home.join("config.json");
     let mut current = read_json_object(&config_file);
     let current_token = current
@@ -1017,6 +1026,17 @@ fn prepare_auth(token: Option<&str>, home: &Path, apply: bool) -> Result<Prepare
         .map(String::from)
         .or_else(|| config::load_config().token);
     let token = token.map(|t| t.trim().to_string());
+    let normalized_scheme = match scheme.map(|s| s.trim().to_lowercase()).as_deref() {
+        None | Some("") => None,
+        Some("auto") => Some("auto".to_string()),
+        Some("pat") | Some("x-figma-token") | Some("plan") => Some("pat".to_string()),
+        Some("bearer") | Some("oauth") => Some("bearer".to_string()),
+        Some(other) => {
+            return Err(Error::Usage(format!(
+                "Invalid auth scheme `{other}`. Expected auto, pat, or bearer."
+            )));
+        }
+    };
 
     if !apply {
         let has = current_token
@@ -1064,6 +1084,9 @@ fn prepare_auth(token: Option<&str>, home: &Path, apply: bool) -> Result<Prepare
         }),
         Some(t) => {
             current.insert("token".into(), Value::String(t));
+            if let Some(s) = &normalized_scheme {
+                current.insert("auth-scheme".into(), Value::String(s.clone()));
+            }
             Ok(PreparedAuth {
                 config_file: config_file.clone(),
                 content: Some(serde_json::to_vec_pretty(&Value::Object(current))?),
@@ -1073,6 +1096,7 @@ fn prepare_auth(token: Option<&str>, home: &Path, apply: bool) -> Result<Prepare
                     "ok": true,
                     "config_path": config_file.to_string_lossy(),
                     "has_saved_token": true,
+                    "auth_scheme": normalized_scheme,
                     "next_steps": ["Run `fighorse doctor` or `fighorse smoke <figma-url>` to verify Figma access."]
                 }),
             })
@@ -1082,8 +1106,18 @@ fn prepare_auth(token: Option<&str>, home: &Path, apply: bool) -> Result<Prepare
 
 /// Persist a Figma token to the local config.
 pub fn install_auth(token: Option<&str>, home: Option<&str>, apply: bool) -> Result<Value> {
+    install_auth_with_scheme(token, None, home, apply)
+}
+
+/// Persist a Figma token and optional auth scheme (`auto|pat|bearer`) to the local config.
+pub fn install_auth_with_scheme(
+    token: Option<&str>,
+    scheme: Option<&str>,
+    home: Option<&str>,
+    apply: bool,
+) -> Result<Value> {
     let home = fighorse_home(home);
-    let prepared = prepare_auth(token, &home, apply)?;
+    let prepared = prepare_auth_with_scheme(token, scheme, &home, apply)?;
     if let Some(content) = prepared.content.as_deref() {
         let mut transaction = transaction::InstallTransaction::new(&home)?;
         transaction.write_managed_with_mode(&prepared.config_file, content, 0o600)?;
@@ -1098,6 +1132,7 @@ pub fn logout_auth(home: Option<&str>) -> Result<Value> {
     let config_file = home.join("config.json");
     let mut current = read_json_object(&config_file);
     let removed = current.remove("token").is_some();
+    current.remove("auth-scheme");
     let mut transaction = transaction::InstallTransaction::new(&home)?;
     if current.is_empty() {
         transaction.remove_managed(&config_file)?;

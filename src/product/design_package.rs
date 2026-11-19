@@ -180,6 +180,9 @@ fn asset_export_plan(
         Value::String(format!(
             "fighorse asset download {fk} --dir ./assets/fighorse --manifest"
         )),
+        Value::String(format!(
+            "fighorse asset bundle {fk} {nid} --format {render_format} --dir ./assets/fighorse --manifest"
+        )),
     ];
     if platform_v == "unspecified" {
         cli_examples.push(Value::String("Ask the developer for the target platform before choosing final asset format or density rules.".into()));
@@ -192,6 +195,7 @@ fn asset_export_plan(
         "output_policy": guidance::output_location_guidance(),
         "cli_examples": cli_examples,
         "mcp_tools": [
+            {"tool": "download_assets", "when": "Need both rendered node slices and original subtree imageRef source fills in one call."},
             {"tool": "export_images", "when": "Need local frame/node slices for implementation or visual comparison."},
             {"tool": "export_component", "when": "Need a local image for a Figma component/control node."},
             {"tool": "download_image_fills", "when": "Need original raster image fills from the Figma file."}
@@ -660,6 +664,8 @@ fn package_base(
         "next_tools": [
             {"tool": "list_experiences", "when": "Need local lessons before implementing or when a mismatch repeats."},
             {"tool": "get_screenshot", "when": "Need a fresh render URL or a different scale/format."},
+            {"tool": "download_assets", "when": "Need rendered node slices plus original subtree imageRef source fills together."},
+            {"tool": "search_design_system", "when": "Need to map nodes to published team/file components, styles, or variables."},
             {"tool": "export_images", "when": "Need local frame/node slices and a manifest for app implementation."},
             {"tool": "export_component", "when": "Need to export a control/component node as an image slice."},
             {"tool": "download_image_fills", "when": "Need original image fill assets with usable file extensions."},

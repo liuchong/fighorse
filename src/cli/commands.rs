@@ -12,8 +12,9 @@ use super::{
 use crate::api::{
     code_connect as code_connect_api, comments as comments_api, components as components_api,
     coverage as api_coverage, dev_resources as dev_resources_api, files as files_api,
-    operations as api_operations, projects as projects_api, styles as styles_api,
-    users as users_api, variables as variables_api, webhooks as webhooks_api,
+    folders as folders_api, operations as api_operations, projects as projects_api,
+    styles as styles_api, teams as teams_api, users as users_api, variables as variables_api,
+    webhooks as webhooks_api,
 };
 use crate::canvas;
 use crate::code_connect::{
@@ -38,7 +39,7 @@ fn int_str(v: i64) -> String {
 // --- Auth ---
 
 pub fn cmd_auth_login(args: &[String]) -> Result<()> {
-    let flags = parse_flags(args, &["--token"]);
+    let flags = parse_flags(args, &["--token", "--scheme"]);
     let raw_token = flags
         .get("token")
         .map(String::from)
@@ -55,7 +56,12 @@ pub fn cmd_auth_login(args: &[String]) -> Result<()> {
     match token {
         Some(t) if !t.is_empty() => {
             let home = config::fighorse_home();
-            crate::install::install_auth(Some(&t), home.to_str(), true)?;
+            crate::install::install_auth_with_scheme(
+                Some(&t),
+                flags.get("scheme"),
+                home.to_str(),
+                true,
+            )?;
             println!("Saved Figma token to {}", config::config_path().display());
             Ok(())
         }
@@ -79,7 +85,13 @@ pub fn cmd_auth_status(_args: &[String]) -> Result<()> {
     let cfg = config::load_config();
     let path = cfg.config_path.display();
     match cfg.token {
-        Some(t) if !t.trim().is_empty() => println!("Authenticated. Config path: {path}"),
+        Some(t) if !t.trim().is_empty() => {
+            let (header, _) = config::resolve_auth_header_with_scheme(&t, &cfg.auth_scheme);
+            println!(
+                "Authenticated (scheme: {}, header: {header}). Config path: {path}",
+                cfg.auth_scheme
+            );
+        }
         _ => println!("Not authenticated. Config path: {path}"),
     }
     Ok(())
@@ -350,6 +362,23 @@ pub async fn cmd_file_meta(args: &[String]) -> Result<()> {
     let file_key = require_arg(args, 0, "file-key").to_string();
     let data = files_api::get_file_meta(&token, &file_key).await?;
     print_data(&data, None)
+}
+
+pub async fn cmd_file_duplicate(args: &[String]) -> Result<()> {
+    if !flag_present(args, "--yes") {
+        return Err(Error::Usage(
+            "file duplicate is a write operation and requires --yes".into(),
+        ));
+    }
+    let token = require_token();
+    let flags = parse_flags(args, &["--folder-id", "--output"]);
+    let file_key = require_arg(&flags.rest, 0, "file-key").to_string();
+    let folder_id = flags
+        .get("folder_id")
+        .map(String::from)
+        .unwrap_or_else(|| require_arg(&flags.rest, 1, "folder-id").to_string());
+    let data = files_api::duplicate_file(&token, &file_key, &folder_id).await?;
+    print_data(&data, flags.get("output"))
 }
 
 pub async fn cmd_file_versions(args: &[String]) -> Result<()> {
@@ -744,17 +773,67 @@ pub async fn cmd_assets_download(args: &[String]) -> Result<()> {
     Ok(())
 }
 
+pub async fn cmd_asset_bundle(args: &[String]) -> Result<()> {
+    let token = require_token();
+    let flags = parse_flags(
+        args,
+        &["--ids", "--format", "--scale", "--dir", "--prefix", "--output"],
+    );
+    let file_key = require_arg(&flags.rest, 0, "file-key").to_string();
+    let ids = flags
+        .get("ids")
+        .map(String::from)
+        .unwrap_or_else(|| require_arg(&flags.rest, 1, "node-ids").to_string());
+    let node_ids: Vec<String> = ids.split(',').map(String::from).collect();
+    let format = flags.get("format").unwrap_or("png").to_string();
+    let scale = num_str(optional_float(flags.get("scale")).unwrap_or(2.0));
+    let manifest = flag_present(args, "--manifest");
+    let url_only = flag_present(args, "--url-only");
+    let dest_dir = if url_only {
+        None
+    } else {
+        Some(flags.get("dir").unwrap_or("./.fighorse/exports"))
+    };
+    let report = img_export::download_assets(
+        &token,
+        &file_key,
+        &node_ids,
+        &img_export::DownloadAssetsOptions {
+            format: &format,
+            scale: &scale,
+            dest_dir,
+            manifest,
+            prefix: flags.get("prefix"),
+        },
+    )
+    .await?;
+    print_data(&report, flags.get("output"))
+}
+
 // --- Comment commands ---
 
 pub async fn cmd_comments_list(args: &[String]) -> Result<()> {
     let token = require_token();
-    let file_key = require_arg(args, 0, "file-key").to_string();
-    let rest: Vec<String> = args.iter().skip(1).cloned().collect();
-    let flags = parse_flags(&rest, &["--as-md"]);
+    let flags = parse_flags(
+        args,
+        &["--as-md", "--node-id", "--author", "--query", "--output"],
+    );
+    let file_key = require_arg(&flags.rest, 0, "file-key").to_string();
     let as_md = flag_present(args, "--as-md") || flags.get("as_md") == Some("true");
     let as_md_str = if as_md { Some("true") } else { None };
-    let data = comments_api::get_comments(&token, &file_key, as_md_str).await?;
-    print_data(&data, None)
+    let raw = comments_api::get_comments(&token, &file_key, as_md_str).await?;
+    let filtered = comments_api::filter_comments(
+        &raw,
+        &comments_api::CommentFilterOpts {
+            node_id: flags.get("node_id"),
+            author: flags.get("author"),
+            query: flags.get("query"),
+            unresolved_only: flag_present(args, "--unresolved")
+                || flag_present(args, "--unresolved-only"),
+            threads_only: flag_present(args, "--threads-only"),
+        },
+    );
+    print_data(&filtered, flags.get("output"))
 }
 
 pub async fn cmd_comments_post(args: &[String]) -> Result<()> {
@@ -796,6 +875,177 @@ pub async fn cmd_project_files(args: &[String]) -> Result<()> {
     let project_id = require_arg(args, 0, "project-id").to_string();
     let data = projects_api::get_project_files(&token, &project_id, None).await?;
     print_data(&data, None)
+}
+
+// --- Folders (v2) & Teams commands ---
+
+pub async fn cmd_folders_list(args: &[String]) -> Result<()> {
+    let token = require_token();
+    let flags = parse_flags(args, &["--output"]);
+    let team_id = require_arg(&flags.rest, 0, "team-id").to_string();
+    let data = folders_api::get_team_folders(&token, &team_id).await?;
+    print_data(&data, flags.get("output"))
+}
+
+pub async fn cmd_folder_folders(args: &[String]) -> Result<()> {
+    let token = require_token();
+    let flags = parse_flags(args, &["--output"]);
+    let folder_id = require_arg(&flags.rest, 0, "folder-id").to_string();
+    let data = folders_api::get_folder_folders(&token, &folder_id).await?;
+    print_data(&data, flags.get("output"))
+}
+
+pub async fn cmd_folder_files(args: &[String]) -> Result<()> {
+    let token = require_token();
+    let flags = parse_flags(args, &["--output"]);
+    let folder_id = require_arg(&flags.rest, 0, "folder-id").to_string();
+    let branch_data = if flag_present(args, "--branch-data") {
+        Some("true")
+    } else {
+        None
+    };
+    let data = folders_api::get_folder_files(&token, &folder_id, branch_data).await?;
+    print_data(&data, flags.get("output"))
+}
+
+pub async fn cmd_folder_meta(args: &[String]) -> Result<()> {
+    let token = require_token();
+    let flags = parse_flags(args, &["--output"]);
+    let folder_id = require_arg(&flags.rest, 0, "folder-id").to_string();
+    let data = folders_api::get_folder_meta(&token, &folder_id).await?;
+    print_data(&data, flags.get("output"))
+}
+
+pub async fn cmd_folder_create(args: &[String]) -> Result<()> {
+    if !flag_present(args, "--yes") {
+        return Err(Error::Usage(
+            "folder create is a write operation and requires --yes".into(),
+        ));
+    }
+    let token = require_token();
+    let flags = parse_flags(args, &["--audience", "--sharing-audience-control", "--output"]);
+    let team_id = require_arg(&flags.rest, 0, "team-id").to_string();
+    let name = require_arg(&flags.rest, 1, "folder-name").to_string();
+    let audience = flags
+        .get("sharing_audience_control")
+        .or_else(|| flags.get("audience"))
+        .unwrap_or("plan_view");
+    let data = folders_api::post_team_folder(&token, &team_id, &name, audience).await?;
+    print_data(&data, flags.get("output"))
+}
+
+pub async fn cmd_team_get(args: &[String]) -> Result<()> {
+    let token = require_token();
+    let flags = parse_flags(args, &["--output"]);
+    let team_id = require_arg(&flags.rest, 0, "team-id").to_string();
+    let data = teams_api::get_team(&token, &team_id).await?;
+    print_data(&data, flags.get("output"))
+}
+
+pub async fn cmd_team_create(args: &[String]) -> Result<()> {
+    if !flag_present(args, "--yes") {
+        return Err(Error::Usage(
+            "team create is a write operation and requires --yes".into(),
+        ));
+    }
+    let token = require_token();
+    let flags = parse_flags(
+        args,
+        &[
+            "--audience",
+            "--sharing-audience-control",
+            "--description",
+            "--discoverability",
+            "--org-discoverability",
+            "--workspace-id",
+            "--output",
+        ],
+    );
+    let name = require_arg(&flags.rest, 0, "team-name").to_string();
+    let audience = flags
+        .get("sharing_audience_control")
+        .or_else(|| flags.get("audience"))
+        .unwrap_or("org_view");
+    let disc = flags
+        .get("org_discoverability")
+        .or_else(|| flags.get("discoverability"));
+    let body = teams_api::build_create_team_body(
+        &name,
+        audience,
+        flags.get("description"),
+        disc,
+        flags.get("workspace_id"),
+    );
+    let data = teams_api::post_team(&token, &body).await?;
+    print_data(&data, flags.get("output"))
+}
+
+pub async fn cmd_team_invite(args: &[String]) -> Result<()> {
+    if !flag_present(args, "--yes") {
+        return Err(Error::Usage(
+            "team invite is a write operation and requires --yes".into(),
+        ));
+    }
+    let token = require_token();
+    let flags = parse_flags(args, &["--role", "--output"]);
+    let team_id = require_arg(&flags.rest, 0, "team-id").to_string();
+    let emails_raw = require_arg(&flags.rest, 1, "emails-csv");
+    let emails: Vec<String> = emails_raw
+        .split(',')
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect();
+    let role = flags.get("role").unwrap_or("viewer");
+    let body = teams_api::build_invite_body(&emails, role);
+    let data = teams_api::post_team_invites(&token, &team_id, &body).await?;
+    print_data(&data, flags.get("output"))
+}
+
+pub async fn cmd_library_search(args: &[String]) -> Result<()> {
+    let token = require_token();
+    let flags = parse_flags(
+        args,
+        &[
+            "--team-id",
+            "--file-key",
+            "--query",
+            "--queries",
+            "--kinds",
+            "--limit",
+            "--output",
+        ],
+    );
+    let figma_url = flags.arg(0);
+    let mut queries = Vec::new();
+    if let Some(q) = flags.get("query") {
+        queries.push(q.to_string());
+    }
+    if let Some(qs) = flags.get("queries") {
+        queries.extend(qs.split(',').map(|s| s.trim().to_string()));
+    }
+    let kinds: Vec<String> = flags
+        .get("kinds")
+        .map(|k| {
+            k.split(',')
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .collect()
+        })
+        .unwrap_or_default();
+    let limit = optional_int(flags.get("limit")).unwrap_or(50).clamp(1, 500) as usize;
+    let report = crate::product::library_search::search_design_system(
+        &token,
+        crate::product::library_search::DesignSystemSearchOpts {
+            figma_url,
+            team_id: flags.get("team_id"),
+            file_key: flags.get("file_key"),
+            queries,
+            kinds,
+            limit,
+        },
+    )
+    .await?;
+    print_data(&report, flags.get("output"))
 }
 
 // --- User commands ---
@@ -1317,7 +1567,14 @@ pub async fn cmd_design_package(args: &[String]) -> Result<()> {
 pub async fn cmd_resource_catalog(args: &[String]) -> Result<()> {
     let flags = parse_flags(
         args,
-        &["--team-id", "--project-id", "--max-probes", "--output"],
+        &[
+            "--team-id",
+            "--folder-id",
+            "--project-id",
+            "--max-probes",
+            "--max-folders",
+            "--output",
+        ],
     );
     let max_probes = match flags.get("max_probes") {
         Some(value) => value.parse::<i64>().map_err(|_| {
@@ -1330,15 +1587,28 @@ pub async fn cmd_resource_catalog(args: &[String]) -> Result<()> {
             "--max-probes must be zero or greater".to_string(),
         ));
     }
+    let max_folders = match flags.get("max_folders") {
+        Some(value) => value.parse::<i64>().map_err(|_| {
+            crate::error::Error::Usage("--max-folders must be an integer".to_string())
+        })?,
+        None => 200,
+    };
+    if max_folders < 0 {
+        return Err(crate::error::Error::Usage(
+            "--max-folders must be zero or greater".to_string(),
+        ));
+    }
     let input = flags.arg(0).map(String::from);
     let opts = crate::product::resource_catalog::CatalogOpts {
         figma_url: input.as_deref(),
         team_id: flags.get("team_id"),
+        folder_id: flags.get("folder_id"),
         project_id: flags.get("project_id"),
         include_libraries: !flag_present(args, "--no-libraries"),
         branch_data: true,
         probe_file_access: flag_present(args, "--probe-file-access"),
         max_probes: max_probes as usize,
+        max_folders: max_folders as usize,
     };
     if let Some(outcome) = crate::product::resource_catalog::local_catalog_outcome(&opts)? {
         print_data(&outcome.report, flags.get("output"))?;
@@ -1646,7 +1916,7 @@ pub fn cmd_install_home(args: &[String]) -> Result<()> {
 }
 
 pub fn cmd_install_auth(args: &[String]) -> Result<()> {
-    let flags = parse_flags(args, &["--token", "--home", "--output"]);
+    let flags = parse_flags(args, &["--token", "--scheme", "--home", "--output"]);
     let apply = flag_present(args, "--apply");
     // clean_args = rest minus --apply.
     let clean: Vec<&String> = flags
@@ -1661,13 +1931,23 @@ pub fn cmd_install_auth(args: &[String]) -> Result<()> {
         .or_else(|| clean.first().map(|s| s.to_string()))
         .or_else(|| std::env::var("FIGMA_TOKEN").ok().filter(|s| !s.is_empty()))
         .or_else(|| {
+            std::env::var("FIGMA_OAUTH_TOKEN")
+                .ok()
+                .filter(|s| !s.is_empty())
+        })
+        .or_else(|| {
             std::env::var("FIGMA_API_KEY")
                 .ok()
                 .filter(|s| !s.is_empty())
         })
         .or(stdin_tok);
     print_data(
-        &install::install_auth(token.as_deref(), flags.get("home"), apply)?,
+        &install::install_auth_with_scheme(
+            token.as_deref(),
+            flags.get("scheme"),
+            flags.get("home"),
+            apply,
+        )?,
         flags.get("output"),
     )
 }

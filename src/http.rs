@@ -4,6 +4,7 @@
 //! `FIGHORSE_HTTP_TIMEOUT_MS`, and error responses surfaced with status + parsed
 //! body. All requests target `https://api.figma.com`.
 
+use crate::config;
 use crate::error::{Error, Result};
 use crate::url as figma_url;
 use reqwest::{Client, Method};
@@ -78,7 +79,7 @@ fn parse_body(text: &str) -> Value {
 ///
 /// - `method`: "GET" | "POST" | "PUT" | "PATCH" | "DELETE"
 /// - `path`: API path (e.g. `/v1/files/abc`)
-/// - `token`: Figma Personal Access Token (empty/None omits the header)
+/// - `token`: Figma PAT, Plan Access Token, or OAuth2 token (empty/None omits the header)
 /// - `params`: ordered query parameters (Null values omitted)
 /// - `body`: optional JSON request body
 pub async fn request(
@@ -87,6 +88,18 @@ pub async fn request(
     token: Option<&str>,
     params: &[(&str, Value)],
     body: Option<&Value>,
+) -> Result<Value> {
+    request_with_headers(method, path, token, params, body, &[]).await
+}
+
+/// Make an HTTP request to the Figma API with optional extra headers.
+pub async fn request_with_headers(
+    method: &str,
+    path: &str,
+    token: Option<&str>,
+    params: &[(&str, Value)],
+    body: Option<&Value>,
+    extra_headers: &[(&str, &str)],
 ) -> Result<Value> {
     let full = format!("{}{path}", base_url());
     let url = figma_url::build_url(&full, params);
@@ -97,9 +110,14 @@ pub async fn request(
         .timeout(Duration::from_millis(request_timeout_ms()));
 
     if let Some(t) = token {
-        if !t.is_empty() {
-            req = req.header("X-Figma-Token", t);
+        if !t.trim().is_empty() {
+            let (header_name, header_value) = config::resolve_auth_header(t);
+            req = req.header(header_name, header_value);
         }
+    }
+
+    for (name, value) in extra_headers {
+        req = req.header(*name, *value);
     }
 
     if let Some(b) = body {

@@ -55,16 +55,18 @@ fn team_opts() -> CatalogOpts<'static> {
             "https://www.figma.com/files/browser-root-placeholder/team/team-id-placeholder",
         ),
         team_id: None,
+        folder_id: None,
         project_id: None,
         include_libraries: true,
         branch_data: true,
         probe_file_access: true,
         max_probes: 2,
+        max_folders: 200,
     }
 }
 
 #[tokio::test(flavor = "current_thread")]
-async fn team_catalog_enumerates_projects_files_libraries_and_bounded_probes() {
+async fn team_catalog_enumerates_v2_folders_files_libraries_and_bounded_probes() {
     let _lock = process_env_lock().await;
     let server = MockServer::start().await;
     let _base = BaseUrlGuard::set(&server.uri());
@@ -75,16 +77,21 @@ async fn team_catalog_enumerates_projects_files_libraries_and_bounded_probes() {
         .mount(&server)
         .await;
     Mock::given(method("GET"))
-        .and(path("/v1/teams/team-id-placeholder/projects"))
+        .and(path("/v2/teams/team-id-placeholder/folders"))
         .respond_with(ResponseTemplate::new(200).set_body_json(fixture("team_projects")))
         .mount(&server)
         .await;
-    for (project, body) in [
+    for (folder, body) in [
         ("project-a", fixture("project_a_files")),
         ("project-b", fixture("project_b_files")),
     ] {
         Mock::given(method("GET"))
-            .and(path(format!("/v1/projects/{project}/files")))
+            .and(path(format!("/v2/folders/{folder}/folders")))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({"folders": []})))
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path(format!("/v2/folders/{folder}/files")))
             .and(query_param("branch_data", "true"))
             .respond_with(ResponseTemplate::new(200).set_body_json(body))
             .mount(&server)
@@ -159,6 +166,7 @@ async fn team_catalog_enumerates_projects_files_libraries_and_bounded_probes() {
     assert_eq!(report["kind"], "fighorse.resource-catalog.v1");
     assert_eq!(report["status"], "ready");
     assert_eq!(report["auth_probe"]["ok"], true);
+    assert_eq!(report["summary"]["folders"], 2);
     assert_eq!(report["summary"]["projects"], 2);
     assert_eq!(report["summary"]["files"], 2);
     assert_eq!(report["summary"]["branches"], 1);
@@ -167,7 +175,7 @@ async fn team_catalog_enumerates_projects_files_libraries_and_bounded_probes() {
     assert_eq!(report["summary"]["styles"], 1);
     assert_eq!(report["summary"]["probed_files"], 2);
     assert_eq!(report["summary"]["readable_files"], 2);
-    assert_eq!(report["projects"][0]["files"][0]["access"]["page_count"], 1);
+    assert_eq!(report["folders"][0]["files"][0]["access"]["page_count"], 1);
     assert_eq!(report["projects"][1]["files"][0]["access"]["page_count"], 1);
     assert!(
         report["next_tools"]
@@ -175,6 +183,84 @@ async fn team_catalog_enumerates_projects_files_libraries_and_bounded_probes() {
             .unwrap()
             .iter()
             .any(|tool| tool["tool"] == "get_design_package")
+    );
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn nested_folders_and_plan_token_403_on_me_succeed_cleanly() {
+    let _lock = process_env_lock().await;
+    let server = MockServer::start().await;
+    let _base = BaseUrlGuard::set(&server.uri());
+
+    // Plan Access Tokens lack `current_user:read` and return 403 on /v1/me.
+    Mock::given(method("GET"))
+        .and(path("/v1/me"))
+        .respond_with(
+            ResponseTemplate::new(403)
+                .set_body_json(json!({"message": "Token lacks current_user:read"})),
+        )
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/v2/folders/root-folder/folders"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "name": "Root",
+            "folders": [{"id": "sub-folder", "name": "Mobile Subfolder", "parent_folder_id": "root-folder"}]
+        })))
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/v2/folders/root-folder/files"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "name": "Root",
+            "files": []
+        })))
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/v2/folders/sub-folder/folders"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"folders": []})))
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/v2/folders/sub-folder/files"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "name": "Mobile Subfolder",
+            "files": [{"key": "nested-file-1", "name": "iOS App", "branches": []}]
+        })))
+        .mount(&server)
+        .await;
+
+    let outcome = get_resource_catalog(
+        "plan-access-token",
+        CatalogOpts {
+            figma_url: Some("https://www.figma.com/files/team/123/folder/root-folder"),
+            include_libraries: false,
+            ..CatalogOpts::default()
+        },
+    )
+    .await
+    .expect("nested folder catalog");
+
+    assert!(!outcome.blocked);
+    assert_eq!(outcome.report["status"], "ready");
+    assert_eq!(outcome.report["auth_probe"]["ok"], false);
+    assert_eq!(
+        outcome.report["auth_probe"]["reason"],
+        "unscoped_or_plan_token"
+    );
+    assert_eq!(outcome.report["source"]["input_kind"], "folder_url");
+    assert_eq!(outcome.report["source"]["folder_id"], "root-folder");
+    assert_eq!(outcome.report["summary"]["folders"], 2);
+    assert_eq!(outcome.report["summary"]["files"], 1);
+    assert_eq!(outcome.report["folders"][1]["id"], "sub-folder");
+    assert_eq!(
+        outcome.report["folders"][1]["parent_folder_id"],
+        "root-folder"
+    );
+    assert_eq!(
+        outcome.report["folders"][1]["files"][0]["key"],
+        "nested-file-1"
     );
 }
 
@@ -203,7 +289,7 @@ async fn browser_root_is_blocked_without_network_requests() {
 }
 
 #[tokio::test(flavor = "current_thread")]
-async fn project_file_list_failure_is_blocked_not_partial() {
+async fn folder_file_list_failure_is_blocked_not_partial() {
     let _lock = process_env_lock().await;
     let server = MockServer::start().await;
     let _base = BaseUrlGuard::set(&server.uri());
@@ -213,7 +299,12 @@ async fn project_file_list_failure_is_blocked_not_partial() {
         .mount(&server)
         .await;
     Mock::given(method("GET"))
-        .and(path("/v1/projects/project-placeholder/files"))
+        .and(path("/v2/folders/project-placeholder/folders"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"folders": []})))
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/v2/folders/project-placeholder/files"))
         .respond_with(ResponseTemplate::new(503).set_body_json(json!({"message":"Unavailable"})))
         .mount(&server)
         .await;
@@ -227,15 +318,16 @@ async fn project_file_list_failure_is_blocked_not_partial() {
         },
     )
     .await
-    .expect("blocked project catalog");
+    .expect("blocked folder catalog");
 
     assert!(outcome.blocked);
     assert_eq!(outcome.report["status"], "blocked");
+    assert_eq!(outcome.report["folders"][0]["status"], "failed");
     assert_eq!(outcome.report["projects"][0]["status"], "failed");
 }
 
 #[tokio::test(flavor = "current_thread")]
-async fn projects_429_preserves_unrequested_project_rows() {
+async fn folders_429_preserves_unrequested_folder_rows() {
     let _lock = process_env_lock().await;
     let server = MockServer::start().await;
     let _base = BaseUrlGuard::set(&server.uri());
@@ -245,12 +337,17 @@ async fn projects_429_preserves_unrequested_project_rows() {
         .mount(&server)
         .await;
     Mock::given(method("GET"))
-        .and(path("/v1/teams/team-id-placeholder/projects"))
+        .and(path("/v2/teams/team-id-placeholder/folders"))
         .respond_with(ResponseTemplate::new(200).set_body_json(fixture("team_projects")))
         .mount(&server)
         .await;
     Mock::given(method("GET"))
-        .and(path("/v1/projects/project-a/files"))
+        .and(path("/v2/folders/project-a/folders"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"folders": []})))
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/v2/folders/project-a/files"))
         .respond_with(ResponseTemplate::new(429).set_body_json(json!({"message":"Rate limited"})))
         .mount(&server)
         .await;
@@ -267,9 +364,9 @@ async fn projects_429_preserves_unrequested_project_rows() {
     .expect("rate-limited catalog");
 
     assert!(outcome.blocked);
-    assert_eq!(outcome.report["projects"].as_array().unwrap().len(), 2);
-    assert_eq!(outcome.report["projects"][0]["status"], "failed");
-    assert_eq!(outcome.report["projects"][1]["status"], "not_attempted");
+    assert_eq!(outcome.report["folders"].as_array().unwrap().len(), 2);
+    assert_eq!(outcome.report["folders"][0]["status"], "failed");
+    assert_eq!(outcome.report["folders"][1]["status"], "not_attempted");
     assert!(
         !server
             .received_requests()
@@ -281,7 +378,7 @@ async fn projects_429_preserves_unrequested_project_rows() {
 }
 
 #[tokio::test(flavor = "current_thread")]
-async fn valid_identity_and_projects_403_produce_actionable_blocked_report() {
+async fn valid_identity_and_folders_403_produce_actionable_blocked_report() {
     let _lock = process_env_lock().await;
     let server = MockServer::start().await;
     let _base = BaseUrlGuard::set(&server.uri());
@@ -291,7 +388,7 @@ async fn valid_identity_and_projects_403_produce_actionable_blocked_report() {
         .mount(&server)
         .await;
     Mock::given(method("GET"))
-        .and(path("/v1/teams/team-id-placeholder/projects"))
+        .and(path("/v2/teams/team-id-placeholder/folders"))
         .respond_with(ResponseTemplate::new(403).set_body_json(json!({
             "message": "Insufficient scope for this endpoint",
             "secret_debug": "must-not-leak"
@@ -314,7 +411,7 @@ async fn valid_identity_and_projects_403_produce_actionable_blocked_report() {
     assert_eq!(outcome.report["auth_probe"]["ok"], true);
     assert_eq!(
         outcome.report["diagnostics"][0]["code"],
-        "projects_access_forbidden"
+        "folders_access_forbidden"
     );
     assert_eq!(outcome.report["diagnostics"][0]["http_status"], 403);
     assert_eq!(
@@ -322,16 +419,14 @@ async fn valid_identity_and_projects_403_produce_actionable_blocked_report() {
         "Insufficient scope for this endpoint"
     );
     assert!(!outcome.report.to_string().contains("must-not-leak"));
-    assert!(
-        outcome.report["diagnostics"][0]["next_step"]
-            .as_str()
-            .unwrap()
-            .contains("projects:read")
-    );
+    let next_step = outcome.report["diagnostics"][0]["next_step"]
+        .as_str()
+        .unwrap();
+    assert!(next_step.contains("folders:read") && next_step.contains("projects:read"));
 }
 
 #[tokio::test(flavor = "current_thread")]
-async fn one_project_failure_preserves_successful_files_as_partial() {
+async fn one_folder_failure_preserves_successful_files_as_partial() {
     let _lock = process_env_lock().await;
     let server = MockServer::start().await;
     let _base = BaseUrlGuard::set(&server.uri());
@@ -341,19 +436,26 @@ async fn one_project_failure_preserves_successful_files_as_partial() {
         .mount(&server)
         .await;
     Mock::given(method("GET"))
-        .and(path("/v1/teams/team-id-placeholder/projects"))
+        .and(path("/v2/teams/team-id-placeholder/folders"))
         .respond_with(ResponseTemplate::new(200).set_body_json(fixture("team_projects")))
         .mount(&server)
         .await;
+    for folder in ["project-a", "project-b"] {
+        Mock::given(method("GET"))
+            .and(path(format!("/v2/folders/{folder}/folders")))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({"folders": []})))
+            .mount(&server)
+            .await;
+    }
     Mock::given(method("GET"))
-        .and(path("/v1/projects/project-a/files"))
+        .and(path("/v2/folders/project-a/files"))
         .respond_with(ResponseTemplate::new(200).set_body_json(fixture("project_a_files")))
         .mount(&server)
         .await;
     Mock::given(method("GET"))
-        .and(path("/v1/projects/project-b/files"))
+        .and(path("/v2/folders/project-b/files"))
         .respond_with(
-            ResponseTemplate::new(403).set_body_json(json!({"err":"Project is not visible"})),
+            ResponseTemplate::new(403).set_body_json(json!({"err":"Folder is not visible"})),
         )
         .mount(&server)
         .await;
@@ -372,13 +474,13 @@ async fn one_project_failure_preserves_successful_files_as_partial() {
     assert!(!outcome.blocked);
     assert_eq!(outcome.report["status"], "partial");
     assert_eq!(outcome.report["summary"]["files"], 1);
-    assert_eq!(outcome.report["projects"][0]["files"][0]["key"], "file-a");
+    assert_eq!(outcome.report["folders"][0]["files"][0]["key"], "file-a");
     assert!(
         outcome.report["diagnostics"]
             .as_array()
             .unwrap()
             .iter()
-            .any(|diagnostic| diagnostic["code"] == "project_files_forbidden")
+            .any(|diagnostic| diagnostic["code"] == "folder_files_forbidden")
     );
 }
 
@@ -393,14 +495,19 @@ async fn repeated_library_cursor_is_partial_without_duplicate_items() {
         .mount(&server)
         .await;
     Mock::given(method("GET"))
-        .and(path("/v1/teams/team-id-placeholder/projects"))
+        .and(path("/v2/teams/team-id-placeholder/folders"))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-            "projects": [{"id":"project-a","name":"Product"}]
+            "folders": [{"id":"project-a","name":"Product","parent_folder_id":null}]
         })))
         .mount(&server)
         .await;
     Mock::given(method("GET"))
-        .and(path("/v1/projects/project-a/files"))
+        .and(path("/v2/folders/project-a/folders"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"folders": []})))
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/v2/folders/project-a/files"))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({"files":[]})))
         .mount(&server)
         .await;
@@ -467,7 +574,12 @@ async fn cli_resource_catalog_prints_the_shared_report() {
         .mount(&server)
         .await;
     Mock::given(method("GET"))
-        .and(path("/v1/projects/project-placeholder/files"))
+        .and(path("/v2/folders/project-placeholder/folders"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"folders": []})))
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/v2/folders/project-placeholder/files"))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({
             "name": "Project",
             "files": [{"key":"file-placeholder","name":"File","branches":[]}]

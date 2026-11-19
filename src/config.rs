@@ -64,6 +64,7 @@ fn env_nonempty(key: &str) -> Option<String> {
 #[derive(Debug, Clone)]
 pub struct Config {
     pub token: Option<String>,
+    pub auth_scheme: String,
     pub config_path: PathBuf,
     pub legacy_config_path: PathBuf,
     pub fighorse_home: PathBuf,
@@ -103,8 +104,23 @@ pub fn load_config() -> Config {
 
     let token = env_nonempty("FIGMA_TOKEN")
         .or_else(|| env_nonempty("FIGMA_ACCESS_TOKEN"))
+        .or_else(|| env_nonempty("FIGMA_OAUTH_TOKEN"))
         .or_else(|| env_nonempty("FIGMA_API_KEY"))
         .or_else(|| str_field(&file_config, "token"));
+
+    let auth_scheme = env_nonempty("FIGHORSE_AUTH_SCHEME")
+        .or_else(|| str_field(&file_config, "auth-scheme"))
+        .or_else(|| {
+            if env_nonempty("FIGMA_OAUTH_TOKEN").is_some()
+                && env_nonempty("FIGMA_TOKEN").is_none()
+                && env_nonempty("FIGMA_ACCESS_TOKEN").is_none()
+            {
+                Some("bearer".to_string())
+            } else {
+                None
+            }
+        })
+        .unwrap_or_else(|| "auto".to_string());
 
     let proxy = env_nonempty("HTTPS_PROXY")
         .or_else(|| env_nonempty("https_proxy"))
@@ -145,6 +161,7 @@ pub fn load_config() -> Config {
 
     Config {
         token,
+        auth_scheme,
         config_path: config_path(),
         legacy_config_path: legacy_config_path(),
         fighorse_home: fighorse_home(),
@@ -157,6 +174,41 @@ pub fn load_config() -> Config {
         canvas_port,
         canvas_bridge,
     }
+}
+
+/// Resolve the HTTP authentication header name and value for a Figma token.
+///
+/// Figma supports three credential classes across its REST API:
+/// - Personal access tokens (`figd_...`) -> `X-Figma-Token: <token>`
+/// - Organization/Enterprise plan access tokens -> `X-Figma-Token: <token>`
+/// - OAuth 2.0 access tokens (`figu_...` or explicit `bearer`/`oauth` scheme) -> `Authorization: Bearer <token>`
+pub fn resolve_auth_header_with_scheme(token: &str, scheme: &str) -> (&'static str, String) {
+    let trimmed = token.trim();
+    if trimmed.len() > 7 && trimmed[..7].eq_ignore_ascii_case("bearer ") {
+        return (
+            "Authorization",
+            format!("Bearer {}", trimmed[7..].trim()),
+        );
+    }
+    match scheme.trim().to_ascii_lowercase().as_str() {
+        "bearer" | "oauth" | "oauth2" => ("Authorization", format!("Bearer {trimmed}")),
+        "pat" | "token" | "plan" | "plan_token" | "x-figma-token" => {
+            ("X-Figma-Token", trimmed.to_string())
+        }
+        _ => {
+            if trimmed.starts_with("figu_") {
+                ("Authorization", format!("Bearer {trimmed}"))
+            } else {
+                ("X-Figma-Token", trimmed.to_string())
+            }
+        }
+    }
+}
+
+/// Resolve the HTTP authentication header for `token` using the active `FIGHORSE_AUTH_SCHEME`.
+pub fn resolve_auth_header(token: &str) -> (&'static str, String) {
+    let scheme = load_config().auth_scheme;
+    resolve_auth_header_with_scheme(token, &scheme)
 }
 
 /// True when the MCP server is allowed to perform Figma write operations.
@@ -202,4 +254,37 @@ pub fn canvas_bridge_enabled() -> bool {
         load_config().canvas_bridge.as_str(),
         "allow" | "true" | "1" | "yes" | "write"
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn resolve_auth_header_distinguishes_oauth_pat_and_explicit_schemes() {
+        assert_eq!(
+            resolve_auth_header_with_scheme("figd_abc", "auto"),
+            ("X-Figma-Token", "figd_abc".to_string())
+        );
+        assert_eq!(
+            resolve_auth_header_with_scheme("plan_secret_123", "auto"),
+            ("X-Figma-Token", "plan_secret_123".to_string())
+        );
+        assert_eq!(
+            resolve_auth_header_with_scheme("figu_oauth_xyz", "auto"),
+            ("Authorization", "Bearer figu_oauth_xyz".to_string())
+        );
+        assert_eq!(
+            resolve_auth_header_with_scheme("Bearer raw_oauth", "pat"),
+            ("Authorization", "Bearer raw_oauth".to_string())
+        );
+        assert_eq!(
+            resolve_auth_header_with_scheme("custom_oauth", "bearer"),
+            ("Authorization", "Bearer custom_oauth".to_string())
+        );
+        assert_eq!(
+            resolve_auth_header_with_scheme("figu_override_as_pat", "pat"),
+            ("X-Figma-Token", "figu_override_as_pat".to_string())
+        );
+    }
 }

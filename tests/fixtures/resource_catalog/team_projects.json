@@ -1,13 +1,15 @@
 {
   "name": "Example Team",
-  "projects": [
+  "folders": [
     {
       "id": "project-a",
-      "name": "Product"
+      "name": "Product",
+      "parent_folder_id": null
     },
     {
       "id": "project-b",
-      "name": "Design System"
+      "name": "Design System",
+      "parent_folder_id": null
     }
   ]
 }
