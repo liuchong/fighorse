@@ -57,12 +57,13 @@ Figma REST API
 ## AI Plugin Bundle
 
 AI plugin bundle упаковывает клиентские инструкции без изменения runtime-разрешений.
-`fighorse install ai-plugin --clients cursor,codex,kimi,claude,opencode,gemini --apply`
+`fighorse install ai-plugin --clients cursor,codex,kimi,claude,opencode,gemini,antigravity,copilot --apply`
 генерирует `~/.fighorse/ai-plugin/fighorse/` из общих шаблонов
 `assets/ai-plugin/`.
 
 Пакет содержит тонкие client manifests (`.cursor-plugin/plugin.json`,
-`.claude-plugin/plugin.json`, `gemini-extension.json`, `server.json`,
+`.claude-plugin/plugin.json`, `.antigravity-plugin/plugin.json`,
+`.github/plugin/plugin.json`, `gemini-extension.json`, `server.json`,
 `.mcp.json`) и общие workflow skills: `fighorse`,
 `fighorse-design-to-code`, `fighorse-canvas-write`,
 `fighorse-resource-catalog`, `fighorse-code-connect` и
@@ -93,7 +94,7 @@ L2 и L3 — основные дифференциаторы. fighorse не пр
 
 ## Полное покрытие REST
 
-fighorse поддерживает явный OpenAPI operation registry для публичного снапшота Figma REST. Реестр в настоящее время отслеживает 50 операций и используется:
+fighorse поддерживает явный OpenAPI operation registry для публичного снапшота Figma REST (`0.47.0`). Реестр в настоящее время отслеживает 59 операций и используется:
 
 - API-обертками в `src/fighorse/api`.
 - Универсальным CLI dispatch: `fighorse figma api <operationId> --params '{...}'`.

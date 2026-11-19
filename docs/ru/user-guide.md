@@ -18,9 +18,10 @@
 Значение `--max-probes 0` явно снимает лимит. Запись выполняется только с
 `--output`; такой приватный каталог нельзя коммитить.
 
-Состояния отчёта: `ready`, `partial`, `blocked`. HTTP 403 после успешной
-проверки пользователя может означать отсутствие `projects:read`, допуска к
-ограниченным Projects endpoints или доступа к команде. Для библиотек и
+Состояния отчёта: `ready`, `partial`, `blocked`. Plan Access Tokens и узкие
+OAuth-токены при HTTP 403 на `/v1/me` продолжают перечисление v2-папок; HTTP 403
+на списке папок команды может означать отсутствие `folders:read` (или
+`projects:read`) либо доступа к команде. Для библиотек и
 проверок файлов дополнительно нужны `team_library_content:read` и
 `file_content:read`. Ссылка `/files/<browser-root>` не позволяет публичному
 REST API определить команду и блокируется без сетевого запроса. `url parse` и
@@ -62,12 +63,13 @@ cargo build --release
 Для локального или командного распространения AI-клиентов сгенерируйте local-only bundle:
 
 ```bash
-fighorse install ai-plugin --clients cursor,codex,kimi,claude,opencode,gemini --apply
+fighorse install ai-plugin --clients cursor,codex,kimi,claude,opencode,gemini,antigravity,copilot --apply
 ```
 
 Пакет находится в `~/.fighorse/ai-plugin/fighorse/`. Он содержит
-`.cursor-plugin/plugin.json`, `.mcp.json`, `server.json`,
-`gemini-extension.json` и общие workflow skills: `fighorse`,
+`.cursor-plugin/plugin.json`, `.claude-plugin/plugin.json`,
+`.antigravity-plugin/plugin.json`, `.github/plugin/plugin.json`, `.mcp.json`,
+`server.json`, `gemini-extension.json` и общие workflow skills: `fighorse`,
 `fighorse-design-to-code`, `fighorse-canvas-write`,
 `fighorse-resource-catalog`, `fighorse-code-connect` и
 `fighorse-self-learning`.

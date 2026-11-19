@@ -82,7 +82,7 @@ function inspectCanvas() {
 }
 
 function summarizeNode(node) {
-  return {
+  const out = {
     id: node.id,
     name: node.name,
     type: node.type,
@@ -91,6 +91,12 @@ function summarizeNode(node) {
     width: typeof node.width === "number" ? node.width : null,
     height: typeof node.height === "number" ? node.height : null
   };
+  if ("layoutMode" in node && node.layoutMode) out.layout_mode = node.layoutMode;
+  if ("layoutWrap" in node && node.layoutWrap) out.layout_wrap = node.layoutWrap;
+  if ("slotSettings" in node && node.slotSettings) out.slot_settings = node.slotSettings;
+  if ("transform3d" in node && node.transform3d) out.transform_3d = node.transform3d;
+  if ("scene3d" in node && node.scene3d) out.scene_3d = node.scene3d;
+  return out;
 }
 
 async function applyPlan(plan) {
@@ -182,6 +188,18 @@ async function executeOperation(operation) {
       break;
     case "create_variant":
       node = createVariant(args);
+      break;
+    case "create_slot":
+      node = await createSlot(args);
+      break;
+    case "reset_slot":
+      node = await resetSlot(args);
+      break;
+    case "set_transform_3d":
+      node = await setTransform3d(args);
+      break;
+    case "set_scene_3d":
+      node = await setScene3d(args);
       break;
     case "create_variable_collection":
       node = createVariableCollection(args);
@@ -343,12 +361,91 @@ function setAutoLayout(node, args) {
   if (!("layoutMode" in node)) {
     throw coded("unsupported_operation", "Auto layout is unavailable for this node.");
   }
-  node.layoutMode = args.mode === "vertical" ? "VERTICAL" : "HORIZONTAL";
+  const rawMode = String(args.mode || "horizontal").toUpperCase();
+  if (rawMode === "VERTICAL" || rawMode === "HORIZONTAL" || rawMode === "GRID" || rawMode === "NONE") {
+    node.layoutMode = rawMode;
+  } else {
+    node.layoutMode = "HORIZONTAL";
+  }
+  if (args.layout_wrap !== undefined || args.wrap !== undefined) {
+    const wrapVal = args.layout_wrap !== undefined ? args.layout_wrap : args.wrap;
+    if ("layoutWrap" in node) {
+      node.layoutWrap = wrapVal === true || String(wrapVal).toUpperCase() === "WRAP" ? "WRAP" : "NO_WRAP";
+    }
+  }
   if (typeof args.item_spacing === "number") node.itemSpacing = args.item_spacing;
+  if (typeof args.counter_axis_spacing === "number" && "counterAxisSpacing" in node) {
+    node.counterAxisSpacing = args.counter_axis_spacing;
+  }
+  if (args.primary_axis_align_items && "primaryAxisAlignItems" in node) {
+    node.primaryAxisAlignItems = String(args.primary_axis_align_items).toUpperCase();
+  }
+  if (args.counter_axis_align_items && "counterAxisAlignItems" in node) {
+    node.counterAxisAlignItems = String(args.counter_axis_align_items).toUpperCase();
+  }
+  if (args.counter_axis_align_content && "counterAxisAlignContent" in node) {
+    node.counterAxisAlignContent = String(args.counter_axis_align_content).toUpperCase();
+  }
   if (typeof args.padding_left === "number") node.paddingLeft = args.padding_left;
   if (typeof args.padding_right === "number") node.paddingRight = args.padding_right;
   if (typeof args.padding_top === "number") node.paddingTop = args.padding_top;
   if (typeof args.padding_bottom === "number") node.paddingBottom = args.padding_bottom;
+  if (typeof args.grid_row_count === "number" && "gridRowCount" in node) node.gridRowCount = args.grid_row_count;
+  if (typeof args.grid_column_count === "number" && "gridColumnCount" in node) node.gridColumnCount = args.grid_column_count;
+  if (typeof args.grid_row_gap === "number" && "gridRowGap" in node) node.gridRowGap = args.grid_row_gap;
+  if (typeof args.grid_column_gap === "number" && "gridColumnGap" in node) node.gridColumnGap = args.grid_column_gap;
+  if (args.grid_rows_sizing && "gridRowsSizing" in node) node.gridRowsSizing = args.grid_rows_sizing;
+  if (args.grid_columns_sizing && "gridColumnsSizing" in node) node.gridColumnsSizing = args.grid_columns_sizing;
+}
+
+async function createSlot(args) {
+  const parent = await maybeNode(args.component || args.parent);
+  let node = null;
+  if (parent && typeof parent.createSlot === "function") {
+    node = parent.createSlot();
+  } else if (typeof figma.createSlot === "function") {
+    node = figma.createSlot();
+  } else {
+    throw coded("unsupported_operation", "createSlot is unavailable in this Figma runtime.");
+  }
+  resizeIfPossible(node, args.width || 100, args.height || 100);
+  if (args.slot_settings && "slotSettings" in node) {
+    node.slotSettings = args.slot_settings;
+  }
+  return node;
+}
+
+async function resetSlot(args) {
+  const node = await requireNode(args.node);
+  if (typeof node.resetSlot !== "function") {
+    throw coded("unsupported_operation", "resetSlot is unavailable for this node.");
+  }
+  node.resetSlot();
+  return node;
+}
+
+async function setTransform3d(args) {
+  const node = await requireNode(args.node);
+  if (args.transform_3d !== undefined && "transform3d" in node) {
+    node.transform3d = args.transform_3d;
+  } else if (!("transform3d" in node)) {
+    throw coded("unsupported_operation", "transform3d is unavailable for this node.");
+  }
+  if (args.transform_origin !== undefined && "transformOrigin" in node) {
+    node.transformOrigin = args.transform_origin;
+  }
+  return node;
+}
+
+async function setScene3d(args) {
+  const node = await requireNode(args.node);
+  if (!("scene3d" in node)) {
+    throw coded("unsupported_operation", "scene3d is unavailable for this node.");
+  }
+  if (args.scene_3d !== undefined) {
+    node.scene3d = args.scene_3d;
+  }
+  return node;
 }
 
 async function createInstance(args) {
@@ -422,7 +519,7 @@ function setPaints(node, field, args) {
   }
   if (args.color) {
     const color = args.color;
-    node[field] = [{
+    const paint = {
       type: "SOLID",
       color: {
         r: Number(color.r || 0),
@@ -430,7 +527,11 @@ function setPaints(node, field, args) {
         b: Number(color.b || 0)
       },
       opacity: typeof color.a === "number" ? color.a : 1
-    }];
+    };
+    if (args.source_color) {
+      paint.sourceColor = args.source_color;
+    }
+    node[field] = [paint];
     return;
   }
   throw coded("invalid_plan", `${field} requires paint, ${field}, or color.`);
@@ -438,13 +539,40 @@ function setPaints(node, field, args) {
 
 async function createText(args) {
   if (!figma.createText) throw coded("unsupported_operation", "createText is unavailable.");
+  const family = args.font_family || "Inter";
   try {
-    await figma.loadFontAsync({ family: args.font_family || "Inter", style: args.font_style || "Regular" });
+    if (args.font_style) {
+      await figma.loadFontAsync({ family, style: args.font_style });
+    } else {
+      // Plugin API Update 140+: variable fonts support loading by family alone.
+      await figma.loadFontAsync({ family }).catch(() => figma.loadFontAsync({ family, style: "Regular" }));
+    }
   } catch (_) {
     await figma.loadFontAsync({ family: "Inter", style: "Regular" }).catch(() => {});
   }
   const node = figma.createText();
+  if (args.font_style && "fontName" in node) {
+    try { node.fontName = { family, style: args.font_style }; } catch (_) {}
+  }
   node.characters = String(args.text || "");
+  if (typeof args.font_size === "number" && "fontSize" in node) {
+    node.fontSize = args.font_size;
+  }
+  if (args.variation_settings && "variationSettings" in node) {
+    node.variationSettings = args.variation_settings;
+  }
+  if (args.text_wrap_style && "textWrapStyle" in node) {
+    node.textWrapStyle = String(args.text_wrap_style).toUpperCase();
+  }
+  if (args.font_variant_position && "fontVariantPosition" in node) {
+    node.fontVariantPosition = String(args.font_variant_position).toUpperCase();
+  }
+  if (args.text_truncation && "textTruncation" in node) {
+    node.textTruncation = String(args.text_truncation).toUpperCase();
+  }
+  if (typeof args.max_lines === "number" && "maxLines" in node) {
+    node.maxLines = args.max_lines;
+  }
   return node;
 }
 

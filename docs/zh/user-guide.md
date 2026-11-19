@@ -17,10 +17,10 @@
 数量上限。目录默认只写 stdout，只有 `--output` 会写文件；输出包含私有
 名称和 key，不得提交。
 
-报告状态为 `ready`、`partial` 或 `blocked`。身份验证成功后 Projects
-接口仍返回 HTTP 403，可能是缺少 `projects:read`、Projects 限制接口资格
-或团队访问权，不能武断归因。设计库与文件探测还分别需要
-`team_library_content:read` 和 `file_content:read`。只有
+报告状态为 `ready`、`partial` 或 `blocked`。Plan Access Token 或窄权限 OAuth
+令牌在 `/v1/me` 返回 HTTP 403 时仍会继续执行 v2 文件夹枚举；若团队文件夹接口返回
+HTTP 403，可能是缺少 `folders:read`（或旧版 `projects:read`）或缺少团队访问权。
+设计库与文件探测还分别需要 `team_library_content:read` 和 `file_content:read`。只有
 `/files/<browser-root>` 的链接无法通过公共 REST API 反查团队，命令会在
 不发网络请求的情况下返回 `blocked`。`url parse` 和 MCP
 `parse_figma_url` 会把它标为 `catalog_eligible=false` 与
@@ -61,12 +61,13 @@ cargo build --release
 如果要做本地或团队内 AI 客户端分发，可以生成本地-only 资源包：
 
 ```bash
-fighorse install ai-plugin --clients cursor,codex,kimi,claude,opencode,gemini --apply
+fighorse install ai-plugin --clients cursor,codex,kimi,claude,opencode,gemini,antigravity,copilot --apply
 ```
 
 生成目录是 `~/.fighorse/ai-plugin/fighorse/`，其中包含
-`.cursor-plugin/plugin.json`、`.mcp.json`、`server.json`、
-`gemini-extension.json` 以及共享 workflow skills：`fighorse`、
+`.cursor-plugin/plugin.json`、`.claude-plugin/plugin.json`、
+`.antigravity-plugin/plugin.json`、`.github/plugin/plugin.json`、`.mcp.json`、
+`server.json`、`gemini-extension.json` 以及共享 workflow skills：`fighorse`、
 `fighorse-design-to-code`、`fighorse-canvas-write`、
 `fighorse-resource-catalog`、`fighorse-code-connect` 和
 `fighorse-self-learning`。

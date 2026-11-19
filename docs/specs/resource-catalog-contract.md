@@ -12,14 +12,15 @@ file or selection URL for implementation.
 Exactly one source is resolved in this order:
 
 1. Explicit `team_id`.
-2. Explicit `project_id`.
-3. A Figma URL containing `/team/<team-id>`.
-4. A Figma URL containing `/project/<project-id>` or
-   `/files/project/<project-id>`.
+2. Explicit `folder_id` or legacy `project_id`.
+3. A Figma URL containing `/folder/<folder-id>`, `/project/<project-id>`, or
+   `/files/.../folder/<folder-id>`.
+4. A Figma URL containing `/team/<team-id>`.
 
 `/files/<browser-root>` is not a team source. The public REST API cannot
 discover teams from it, so the result is `blocked` without making a network
-request. A design/file/proto/board URL is also not a catalog source.
+request. A design/file/proto/board/slides/make/site/buzz/spec URL is also not a
+catalog source.
 
 ## Request
 
@@ -28,11 +29,16 @@ request. A design/file/proto/board URL is also not a catalog source.
 - `probe_file_access` defaults to `false`.
 - `max_probes` defaults to `25`; `0` means unlimited only when probes are
   explicitly enabled.
+- `max_folders` defaults to `200`; `0` means unlimited nested folder traversal.
 
-The catalog first performs an anonymous auth probe with `GET me`; no user
-identity fields are returned. Team sources then call `GET team projects`,
-followed by `GET project files` for every project. Project sources call only
-`GET project files`.
+The catalog first performs an anonymous auth probe with `GET /v1/me`; no user
+identity fields are returned. Plan Access Tokens and narrowly-scoped OAuth
+tokens that receive HTTP 403 on `/v1/me` record `auth_probe.reason =
+"unscoped_or_plan_token"` and proceed to v2 folder enumeration. Team sources
+call `GET /v2/teams/{team_id}/folders`, traverse nested subfolders via
+`GET /v2/folders/{folder_id}/folders` up to `max_folders`, and list files via
+`GET /v2/folders/{folder_id}/files`. Folder/project sources start directly at
+that folder ID.
 
 When libraries are enabled, team components, component sets, and styles are
 read through every `meta.cursor.after` page. Repeated cursors stop the stream
@@ -92,8 +98,8 @@ operations through existing tools.
 
 ## Required Scopes
 
-- `current_user:read` for the auth probe.
-- `projects:read` for team/project enumeration.
+- `current_user:read` for `/v1/me` (optional for Plan Access Tokens / scoped OAuth tokens when `folders:read` is present).
+- `folders:read` (or legacy `projects:read`) for team/folder enumeration.
 - `team_library_content:read` for team libraries.
 - `file_content:read` for optional file probes.
 

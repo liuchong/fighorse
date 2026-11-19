@@ -18,14 +18,15 @@ needed; the report records readability and page count, never the raw document
 tree. `--max-probes 0` explicitly removes the bound. `--output` is the only
 catalog write path, and its private names and keys must not be committed.
 
-The report is `ready`, `partial`, or `blocked`. A valid identity followed by
-Projects HTTP 403 can mean missing `projects:read`, Projects limited-access
-eligibility, or missing team access. Library and probe access additionally
-need `team_library_content:read` and `file_content:read`. A
-`/files/<browser-root>` URL cannot be converted into a team ID through the
-public REST API and is blocked without a network request. `url parse` and MCP
-`parse_figma_url` expose this as `catalog_eligible=false` and
-`browser_root_not_enumerable`.
+The report is `ready`, `partial`, or `blocked`. Plan Access Tokens and
+narrowly-scoped OAuth tokens that receive HTTP 403 on `/v1/me` still proceed
+to v2 folder enumeration (`folders:read` or legacy `projects:read`); HTTP 403
+on team folder listing can mean missing `folders:read` / `projects:read` or
+missing team access. Library and probe access additionally need
+`team_library_content:read` and `file_content:read`. A `/files/<browser-root>`
+URL cannot be converted into a team ID through the public REST API and is
+blocked without a network request. `url parse` and MCP `parse_figma_url` expose
+this as `catalog_eligible=false` and `browser_root_not_enumerable`.
 
 ## Install From Source
 
@@ -62,12 +63,13 @@ Install commands generate reviewable files by default. Add `--apply` only when y
 For local or team AI client distribution, generate a local-only bundle:
 
 ```bash
-fighorse install ai-plugin --clients cursor,codex,kimi,claude,opencode,gemini --apply
+fighorse install ai-plugin --clients cursor,codex,kimi,claude,opencode,gemini,antigravity,copilot --apply
 ```
 
 The generated package lives at `~/.fighorse/ai-plugin/fighorse/`. It includes
-`.cursor-plugin/plugin.json`, `.mcp.json`, `server.json`,
-`gemini-extension.json`, and shared workflow skills:
+`.cursor-plugin/plugin.json`, `.claude-plugin/plugin.json`,
+`.antigravity-plugin/plugin.json`, `.github/plugin/plugin.json`, `.mcp.json`,
+`server.json`, `gemini-extension.json`, and shared workflow skills:
 `fighorse`, `fighorse-design-to-code`, `fighorse-canvas-write`,
 `fighorse-resource-catalog`, `fighorse-code-connect`, and
 `fighorse-self-learning`.

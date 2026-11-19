@@ -57,12 +57,13 @@ This keeps the system:
 ## AI Plugin Bundle
 
 The AI plugin bundle packages client-facing guidance without changing runtime
-permissions. `fighorse install ai-plugin --clients cursor,codex,kimi,claude,opencode,gemini --apply`
+permissions. `fighorse install ai-plugin --clients cursor,codex,kimi,claude,opencode,gemini,antigravity,copilot --apply`
 generates `~/.fighorse/ai-plugin/fighorse/` from shared templates in
 `assets/ai-plugin/`.
 
 The package contains thin client manifests (`.cursor-plugin/plugin.json`,
-`.claude-plugin/plugin.json`, `gemini-extension.json`, `server.json`,
+`.claude-plugin/plugin.json`, `.antigravity-plugin/plugin.json`,
+`.github/plugin/plugin.json`, `gemini-extension.json`, `server.json`,
 `.mcp.json`) and shared workflow skills: `fighorse`,
 `fighorse-design-to-code`, `fighorse-canvas-write`,
 `fighorse-resource-catalog`, `fighorse-code-connect`, and
@@ -93,7 +94,7 @@ L2 and L3 are the main differentiators. fighorse does not merely wrap REST endpo
 
 ## Full REST Coverage
 
-fighorse maintains an explicit OpenAPI operation registry for the public Figma REST snapshot. The registry currently tracks 50 operations and is used by:
+fighorse maintains an explicit OpenAPI operation registry for the public Figma REST snapshot (`0.47.0`). The registry currently tracks 59 operations and is used by:
 
 - API wrappers in `src/fighorse/api`.
 - Generic CLI dispatch: `fighorse figma api <operationId> --params '{...}'`.

@@ -88,8 +88,15 @@ fn path_contains_node_modules(path: &Path) -> bool {
 }
 
 fn matches_pattern(rel: &str, pattern: &str) -> bool {
+    let clean_pattern = pattern
+        .trim()
+        .trim_start_matches("./")
+        .trim_start_matches('/');
     let rel_parts: Vec<&str> = rel.split('/').filter(|part| !part.is_empty()).collect();
-    let pattern_parts: Vec<&str> = pattern.split('/').filter(|part| !part.is_empty()).collect();
+    let pattern_parts: Vec<&str> = clean_pattern
+        .split('/')
+        .filter(|part| !part.is_empty())
+        .collect();
     match_segments(&pattern_parts, &rel_parts)
 }
 

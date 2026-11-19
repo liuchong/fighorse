@@ -6,7 +6,7 @@ The generated bundle is local-only and is not a public marketplace package. It
 combines:
 
 - MCP configuration for the local fighorse HTTP service.
-- Cursor, Claude, Gemini, and generic MCP manifests.
+- Cursor, Claude, Antigravity, GitHub Copilot, Gemini, and generic MCP manifests.
 - Shared workflow skills.
 - Safety defaults that keep write permissions disabled unless explicitly
   enabled by fighorse configuration and per-call confirmation.

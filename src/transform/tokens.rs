@@ -34,6 +34,81 @@ fn node_name(node: &Value) -> Value {
     node.get("name").cloned().unwrap_or(Value::Null)
 }
 
+fn format_alpha_suffix(alpha: f64) -> String {
+    if (alpha - 1.0).abs() < 1e-6 {
+        String::new()
+    } else {
+        format!(" / {}", num_str((alpha * 10000.0).round() / 10000.0))
+    }
+}
+
+/// Format an authored Figma `sourceColor` object (`OKLCH`, `OKLAB`, `DISPLAY_P3`, `HSL`, `SRGB`)
+/// into CSS Color Level 4 syntax when present.
+pub fn format_source_color_css(source_color: &Value, fallback_alpha: f64) -> Option<String> {
+    let space = source_color
+        .get("colorSpace")
+        .or_else(|| source_color.get("space"))
+        .and_then(Value::as_str)?;
+    let coords = source_color.get("color").unwrap_or(source_color);
+    let alpha = coords
+        .get("a")
+        .or_else(|| source_color.get("a"))
+        .or_else(|| source_color.get("alpha"))
+        .and_then(Value::as_f64)
+        .unwrap_or(fallback_alpha);
+    let alpha_suffix = format_alpha_suffix(alpha);
+
+    match space.to_uppercase().as_str() {
+        "OKLCH" => {
+            let l = coords.get("l")?.as_f64()?;
+            let c = coords.get("c")?.as_f64()?;
+            let h = coords.get("h")?.as_f64()?;
+            Some(format!(
+                "oklch({} {} {}{alpha_suffix})",
+                num_str(l),
+                num_str(c),
+                num_str(h)
+            ))
+        }
+        "OKLAB" => {
+            let l = coords.get("l")?.as_f64()?;
+            let a = coords.get("a_axis").or_else(|| coords.get("a"))?.as_f64()?;
+            let b = coords.get("b")?.as_f64()?;
+            Some(format!(
+                "oklab({} {} {}{alpha_suffix})",
+                num_str(l),
+                num_str(a),
+                num_str(b)
+            ))
+        }
+        "DISPLAY_P3" => {
+            let r = coords.get("r")?.as_f64()?;
+            let g = coords.get("g")?.as_f64()?;
+            let b = coords.get("b")?.as_f64()?;
+            Some(format!(
+                "color(display-p3 {} {} {}{alpha_suffix})",
+                num_str(r),
+                num_str(g),
+                num_str(b)
+            ))
+        }
+        "HSL" => {
+            let h = coords.get("h")?.as_f64()?;
+            let s = coords.get("s")?.as_f64()?;
+            let l = coords.get("l")?.as_f64()?;
+            let s_pct = if s <= 1.0 { s * 100.0 } else { s };
+            let l_pct = if l <= 1.0 { l * 100.0 } else { l };
+            Some(format!(
+                "hsl({} {}% {}%{alpha_suffix})",
+                num_str(h),
+                num_str(s_pct),
+                num_str(l_pct)
+            ))
+        }
+        _ => None,
+    }
+}
+
 fn extract_colors(node: &Value, tokens: &mut Vec<Value>) {
     if let Some(fills) = node.get("fills").and_then(|f| f.as_array()) {
         for fill in fills {
@@ -43,12 +118,25 @@ fn extract_colors(node: &Value, tokens: &mut Vec<Value>) {
                 let g = color.get("g").cloned().unwrap_or(Value::Null);
                 let b = color.get("b").cloned().unwrap_or(Value::Null);
                 let a = color.get("a").cloned().unwrap_or(json!(1));
-                tokens.push(json!({
-                    "name": node_name(node),
-                    "type": "color",
-                    "value": {"r": r, "g": g, "b": b, "a": a},
-                    "hex": color_to_hex(&color),
-                }));
+                let alpha_f64 = a.as_f64().unwrap_or(1.0)
+                    * fill.get("opacity").and_then(Value::as_f64).unwrap_or(1.0);
+                let mut token = serde_json::Map::new();
+                token.insert("name".into(), node_name(node));
+                token.insert("type".into(), Value::String("color".into()));
+                token.insert("value".into(), json!({"r": r, "g": g, "b": b, "a": a}));
+                token.insert(
+                    "hex".into(),
+                    color_to_hex(&color)
+                        .map(Value::String)
+                        .unwrap_or(Value::Null),
+                );
+                if let Some(sc) = fill.get("sourceColor").filter(|v| !v.is_null()) {
+                    token.insert("sourceColor".into(), sc.clone());
+                    if let Some(css_color) = format_source_color_css(sc, alpha_f64) {
+                        token.insert("cssColor".into(), Value::String(css_color));
+                    }
+                }
+                tokens.push(Value::Object(token));
             }
         }
     }
@@ -79,8 +167,14 @@ fn extract_typography(node: &Value, tokens: &mut Vec<Value>) {
             style,
             &[
                 "fontFamily",
+                "fontStyle",
                 "fontSize",
                 "fontWeight",
+                "fontVariantPosition",
+                "textWrapStyle",
+                "textTruncation",
+                "maxLines",
+                "variationSettings",
                 "textAlignHorizontal",
                 "textAlignVertical",
                 "letterSpacing",
@@ -102,6 +196,8 @@ fn extract_spacing(node: &Value, tokens: &mut Vec<Value>) {
         &[
             "itemSpacing",
             "counterAxisSpacing",
+            "gridRowGap",
+            "gridColumnGap",
             "paddingLeft",
             "paddingRight",
             "paddingTop",
@@ -193,11 +289,107 @@ fn scalar_str(v: &Value) -> String {
     }
 }
 
+/// Extract design tokens from a Figma Variables REST payload (`meta.variables`),
+/// including OpenAPI 0.47.0 `VariableComposedColor` (`{ color, opacity }`) and `COLOR_OPACITY`.
+pub fn extract_variable_tokens(variables_response: &Value) -> Vec<Value> {
+    let collections = variables_response
+        .get("meta")
+        .and_then(|m| m.get("variableCollections"))
+        .and_then(Value::as_object)
+        .cloned()
+        .unwrap_or_default();
+    let Some(vars) = variables_response
+        .get("meta")
+        .and_then(|m| m.get("variables"))
+        .and_then(Value::as_object)
+    else {
+        return Vec::new();
+    };
+
+    let mut out = Vec::new();
+    for (var_id, var) in vars {
+        let name = var
+            .get("name")
+            .cloned()
+            .unwrap_or_else(|| Value::String(var_id.clone()));
+        let resolved_type = var
+            .get("resolvedType")
+            .and_then(Value::as_str)
+            .unwrap_or("");
+        let scopes = var.get("scopes").cloned().unwrap_or_else(|| json!([]));
+        let has_color_opacity_scope = scopes
+            .as_array()
+            .is_some_and(|arr| arr.iter().any(|s| s.as_str() == Some("COLOR_OPACITY")));
+        let col_id = var.get("variableCollectionId").and_then(Value::as_str);
+        let default_mode = col_id
+            .and_then(|cid| collections.get(cid))
+            .and_then(|c| c.get("defaultModeId"))
+            .and_then(Value::as_str);
+
+        let values_by_mode = var.get("valuesByMode").and_then(Value::as_object);
+        let mode_val = values_by_mode.and_then(|m| {
+            default_mode
+                .and_then(|dm| m.get(dm))
+                .or_else(|| m.values().next())
+        });
+
+        let Some(val) = mode_val else {
+            continue;
+        };
+
+        if resolved_type == "COLOR" {
+            // Handle both raw RGBA `{ r, g, b, a }` and `VariableComposedColor` `{ color, opacity }`.
+            if val.get("color").is_some() && val.get("opacity").is_some() {
+                let inner_color = val.get("color").unwrap_or(&Value::Null);
+                let hex = color_to_hex(inner_color);
+                out.push(json!({
+                    "id": var_id,
+                    "name": name,
+                    "type": "color",
+                    "composed": true,
+                    "value": val,
+                    "hex": hex,
+                    "scopes": scopes,
+                }));
+            } else {
+                let hex = color_to_hex(val);
+                out.push(json!({
+                    "id": var_id,
+                    "name": name,
+                    "type": "color",
+                    "composed": false,
+                    "value": val,
+                    "hex": hex,
+                    "scopes": scopes,
+                }));
+            }
+        } else if resolved_type == "FLOAT" && has_color_opacity_scope {
+            out.push(json!({
+                "id": var_id,
+                "name": name,
+                "type": "opacity",
+                "value": val,
+                "scopes": scopes,
+            }));
+        } else {
+            out.push(json!({
+                "id": var_id,
+                "name": name,
+                "type": resolved_type.to_lowercase(),
+                "value": val,
+                "scopes": scopes,
+            }));
+        }
+    }
+    out
+}
+
 fn css_value(token: &Value) -> String {
     match token.get("type").and_then(|v| v.as_str()) {
         Some("color") => token
-            .get("hex")
+            .get("cssColor")
             .and_then(|v| v.as_str())
+            .or_else(|| token.get("hex").and_then(|v| v.as_str()))
             .unwrap_or("")
             .to_string(),
         Some("spacing") => {
@@ -421,5 +613,104 @@ mod tests {
             _ => panic!("expected json"),
         };
         assert_eq!(tw["theme"]["extend"]["colors"]["primary"], "#3366cc");
+    }
+
+    #[test]
+    fn formats_wide_gamut_source_colors_to_css_color_4() {
+        let tree = json!({
+            "id": "0:1",
+            "name": "Page",
+            "type": "PAGE",
+            "children": [
+                {
+                    "id": "1:1",
+                    "name": "Brand Accent",
+                    "type": "FRAME",
+                    "fills": [{
+                        "type": "SOLID",
+                        "opacity": 0.8,
+                        "color": {"r": 0.2, "g": 0.4, "b": 0.9, "a": 1.0},
+                        "sourceColor": {
+                            "colorSpace": "OKLCH",
+                            "color": {"l": 0.65, "c": 0.21, "h": 260.0}
+                        }
+                    }]
+                },
+                {
+                    "id": "1:2",
+                    "name": "Wide P3",
+                    "type": "FRAME",
+                    "fills": [{
+                        "type": "SOLID",
+                        "color": {"r": 1.0, "g": 0.2, "b": 0.3, "a": 1.0},
+                        "sourceColor": {
+                            "colorSpace": "DISPLAY_P3",
+                            "color": {"r": 1.0, "g": 0.15, "b": 0.25, "a": 1.0}
+                        }
+                    }]
+                }
+            ]
+        });
+
+        let tokens = extract_tokens(&tree);
+        assert_eq!(tokens[0]["cssColor"], "oklch(0.65 0.21 260 / 0.8)");
+        assert_eq!(tokens[1]["cssColor"], "color(display-p3 1 0.15 0.25)");
+
+        let css = match format_tokens(&tokens, "css", "--figma-") {
+            Formatted::Text(s) => s,
+            _ => panic!("expected css text"),
+        };
+        assert!(css.contains("--figma-color-brand-accent: oklch(0.65 0.21 260 / 0.8);"));
+        assert!(css.contains("--figma-color-wide-p3: color(display-p3 1 0.15 0.25);"));
+    }
+
+    #[test]
+    fn extracts_composed_color_and_color_opacity_variables() {
+        let payload = json!({
+            "meta": {
+                "variableCollections": {
+                    "col:1": {"defaultModeId": "mode:light"}
+                },
+                "variables": {
+                    "var:surface": {
+                        "name": "surface/overlay",
+                        "resolvedType": "COLOR",
+                        "variableCollectionId": "col:1",
+                        "scopes": ["ALL_FILLS"],
+                        "valuesByMode": {
+                            "mode:light": {
+                                "color": {"r": 0.2, "g": 0.4, "b": 0.8, "a": 1.0},
+                                "opacity": {"type": "VARIABLE_ALIAS", "id": "var:alpha"}
+                            }
+                        }
+                    },
+                    "var:alpha": {
+                        "name": "opacity/overlay",
+                        "resolvedType": "FLOAT",
+                        "variableCollectionId": "col:1",
+                        "scopes": ["COLOR_OPACITY"],
+                        "valuesByMode": {
+                            "mode:light": 0.72
+                        }
+                    }
+                }
+            }
+        });
+
+        let vars = extract_variable_tokens(&payload);
+        let surface = vars
+            .iter()
+            .find(|v| v["id"] == "var:surface")
+            .expect("surface var");
+        assert_eq!(surface["type"], "color");
+        assert_eq!(surface["composed"], true);
+        assert_eq!(surface["hex"], "#3366cc");
+
+        let alpha = vars
+            .iter()
+            .find(|v| v["id"] == "var:alpha")
+            .expect("alpha var");
+        assert_eq!(alpha["type"], "opacity");
+        assert_eq!(alpha["value"], 0.72);
     }
 }

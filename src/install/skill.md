@@ -25,10 +25,11 @@ Native canvas writes do not use the public REST token path. They require the loc
 ## AI Plugin Bundle
 
 For local or team distribution, generate the AI plugin bundle with
-`fighorse install ai-plugin --clients cursor,codex,kimi,claude,opencode,gemini --apply`.
+`fighorse install ai-plugin --clients cursor,codex,kimi,claude,opencode,gemini,antigravity,copilot --apply`.
 The bundle is written to `~/.fighorse/ai-plugin/fighorse/` and contains
-`.cursor-plugin/plugin.json`, `.mcp.json`, `server.json`,
-`gemini-extension.json`, and shared workflow skills:
+`.cursor-plugin/plugin.json`, `.claude-plugin/plugin.json`,
+`.antigravity-plugin/plugin.json`, `.github/plugin/plugin.json`, `.mcp.json`,
+`server.json`, `gemini-extension.json`, and shared workflow skills:
 
 - `fighorse`
 - `fighorse-design-to-code`
@@ -50,7 +51,7 @@ Use `get_design_package` or `fighorse design package <figma-url> --platform <pla
 
 When the task needs a low-level Figma endpoint, call generated MCP tools named `figma_<operation_id_in_snake_case>` or CLI `fighorse figma api <operationId> --params '{...}'`. Readonly tools are available by default; Figma write tools require `FIGHORSE_MCP_MODE=write` or CLI `--yes`.
 
-Figma file-browser links are navigation context, not design targets. First call `parse_figma_url` and follow `url_role`, `catalog_eligible`, and `next_action`. For `/files/.../team/<team-id>`, `/project/<project-id>`, or `/files/project/<project-id>`, call readonly `get_resource_catalog`; it enumerates accessible projects, files, branches, and team libraries and returns `ready`, `partial`, or `blocked` with structured permission guidance. Team/project enumeration requires `projects:read` and may require Projects endpoint approval; libraries need `team_library_content:read`, and optional depth-1 file probes need `file_content:read`. A `/files/<browser-root>` URL returns `browser_root_not_enumerable`, `catalog_eligible=false`, and cannot discover teams through the public REST API. After catalog selection, use a concrete file/selection URL with `get_design_package`. Never record real browser IDs, team/project IDs, file keys, names, URLs, or private catalog content in reusable experience.
+Figma file-browser links are navigation context, not design targets. First call `parse_figma_url` and follow `url_role`, `catalog_eligible`, and `next_action`. For `/files/.../team/<team-id>`, `/folder/<folder-id>`, `/project/<project-id>`, or `/files/project/<project-id>`, call readonly `get_resource_catalog`; it enumerates accessible v2 folders (including nested subfolders), files, branches, and team libraries and returns `ready`, `partial`, or `blocked` with structured permission guidance, while tolerating HTTP 403 on `/v1/me` for Plan Access Tokens and narrowly-scoped OAuth tokens. Team/folder enumeration requires `folders:read` (or legacy `projects:read`); libraries need `team_library_content:read`, and optional depth-1 file probes need `file_content:read`. Use `search_design_system` to search published components, styles, and file variables. A `/files/<browser-root>` URL returns `browser_root_not_enumerable`, `catalog_eligible=false`, and cannot discover teams through the public REST API. After catalog selection, use a concrete file/selection URL with `get_design_package`. Never record real browser IDs, team/folder/project IDs, file keys, names, URLs, or private catalog content in reusable experience.
 
 ## Code Connect
 
@@ -78,7 +79,7 @@ Canonical AI instruction targets are:
 
 ## Assets
 
-Use `export_images`, `export_component`, or `download_image_fills` with `manifest=true` for local slices, controls, icons, and image fills. MCP export requires `FIGHORSE_MCP_LOCAL_WRITE=allow` and still only writes inside approved export roots. Use `./.fighorse/exports` for temporary slices, `./assets/fighorse` or the app resource directory for packaged assets, and `~/.fighorse/exports` for cross-project scratch data. Do not write exports to protected system paths, dependency caches, or hard-to-discover temporary locations unless explicitly requested.
+Use `download_assets`, `export_images`, `export_component`, or `download_image_fills` with `manifest=true` for local slices, controls, icons, and subtree `imageRef` source fills. MCP local export requires `FIGHORSE_MCP_LOCAL_WRITE=allow` and still only writes inside approved export roots (`download_assets` without `dest_dir` returns remote URLs in readonly mode). Use `./.fighorse/exports` for temporary slices, `./assets/fighorse` or the app resource directory for packaged assets, and `~/.fighorse/exports` for cross-project scratch data. Do not write exports to protected system paths, dependency caches, or hard-to-discover temporary locations unless explicitly requested.
 
 ## Feedback Loop
 

@@ -108,7 +108,8 @@ pub async fn search_design_system(token: &str, opts: DesignSystemSearchOpts<'_>)
         .filter(|u| !u.is_empty())
         .map(figma_url::parse_figma_url);
 
-    let team_id = non_empty(opts.team_id).or_else(|| parsed.as_ref().and_then(|p| p.team_id.clone()));
+    let team_id =
+        non_empty(opts.team_id).or_else(|| parsed.as_ref().and_then(|p| p.team_id.clone()));
     let file_key =
         non_empty(opts.file_key).or_else(|| parsed.as_ref().and_then(|p| p.file_key.clone()));
 

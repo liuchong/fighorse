@@ -9,10 +9,13 @@ Use when mapping Figma components to code components.
 
 ## Flow
 
-1. Generate or parse Code Connect templates with fighorse commands.
+1. Generate or parse Code Connect v2.1.0 parserless templates (including `SLOT`
+   `getSlot` mappings and `.figma.batch.json` single-template resolution) with
+   fighorse commands.
 2. Validate templates before preview or publish.
-3. Preview against Figma before publishing.
-4. Treat publish and unpublish as remote writes.
+3. Preview against Figma (`--unique` to deduplicate combinations) before publishing.
+4. Treat publish and unpublish as remote writes; inspect `diagnostics.pro_plan_restrictions`
+   when publishing on Professional plans.
 
 ## Permission Gates
 

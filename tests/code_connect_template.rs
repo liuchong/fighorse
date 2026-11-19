@@ -179,3 +179,87 @@ fn generator_maps_simple_props_and_blocks_ambiguous_input() {
             .any(|issue| issue.contains("ambiguous"))
     );
 }
+
+#[test]
+fn v210_slot_props_trailing_import_comments_batch_resolution_and_legacy_rejection() {
+    // 1. SLOT property generation -> getSlot(...)
+    let figma = FigmaComponentContext {
+        figma_node: "https://www.figma.com/design/ABCDEF/Test?node-id=10-1".into(),
+        file_key: "ABCDEF".into(),
+        node_id: "10:1".into(),
+        name: "Card".into(),
+        normalized_name: "Card".into(),
+        properties: vec![FigmaPropertyDefinition {
+            name: "Body Content#10:2".into(),
+            prop_type: "SLOT".into(),
+            variant_options: vec![],
+        }],
+    };
+    let generated = generate_template(&GenerateRequest {
+        figma,
+        code: CodeComponentContext {
+            component: "Card".into(),
+            import: "import { Card } from \"./Card\"".into(),
+            source: "src/Card.tsx".into(),
+            example: "<Card>${bodyContent}</Card>".into(),
+            language: Some("jsx".into()),
+            props: json!({"bodyContent": "slot"}),
+        },
+        label: Some("React".into()),
+        javascript: false,
+    })
+    .unwrap();
+    assert!(
+        generated
+            .template
+            .contains("const bodyContent = figma.selectedInstance.getSlot(\"Body Content\")"),
+        "{}",
+        generated.template
+    );
+    assert!(generated.blocking_issues.is_empty());
+
+    // 2. Leading `/` in include globs + trailing `//` comment on import + batch single-template resolution.
+    let root = temp_root("code-connect-v210");
+    write(
+        &root.join("figma.config.json"),
+        r#"{"codeConnect":{"include":["/src/**/*.figma.ts","/src/**/*.figma.template.ts","/src/**/*.figma.batch.json"],"label":"React","language":"jsx"}}"#,
+    );
+    write(
+        &root.join("src/Icon.figma.template.ts"),
+        "import figma from 'figma'; // trailing comment\nconst b = globalThis['__FIGMA_BATCH'];\nexport default { example: figma.code`<Icon name=\"${b.component}\" />` }\n",
+    );
+    write(
+        &root.join("src/icons.figma.batch.json"),
+        r#"[{"templateFile":"src/Icon.figma.template.ts","components":[{"url":"https://www.figma.com/design/ABCDEF/Icons?node-id=1-1","component":"CheckIcon"},{"url":"https://www.figma.com/design/ABCDEF/Icons?node-id=1-2","component":"CloseIcon"}]}]"#,
+    );
+
+    let full_project = load_project(&root, None).unwrap();
+    let full_docs = parse_project(&full_project).unwrap();
+    assert_eq!(full_docs.len(), 2);
+    assert!(
+        full_docs[0]
+            .template
+            .contains("const figma = require('figma')")
+    );
+    assert!(!full_docs[0].template.contains("trailing comment"));
+    assert_eq!(full_docs[0].metadata["cliVersion"], "2.1.0");
+
+    // Single-template `--file` resolves against `.figma.batch.json`.
+    let mut single = full_project.clone();
+    single.files = vec![root.join("src/Icon.figma.template.ts")];
+    let single_docs = parse_project(&single).unwrap();
+    assert_eq!(single_docs.len(), 2);
+
+    // 3. Legacy v1 parser file gives explicit v2 migration error.
+    let legacy_path = root.join("src/LegacyButton.figma.ts");
+    write(
+        &legacy_path,
+        "import figma from '@figma/code-connect'\nfigma.connect(Button, 'https://www.figma.com/design/A/B?node-id=1-1', {})\n",
+    );
+    let mut legacy_proj = full_project;
+    legacy_proj.files = vec![legacy_path];
+    let err = parse_project(&legacy_proj).unwrap_err().to_string();
+    assert!(err.contains("Legacy parser-based Code Connect"), "{err}");
+
+    let _ = fs::remove_dir_all(root);
+}

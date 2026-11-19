@@ -217,8 +217,7 @@ async fn openapi_047_folders_teams_and_duplicate_operations_dispatch_cleanly() {
     Mock::given(method("POST"))
         .and(path("/v1/teams/team-1/folders"))
         .respond_with(
-            ResponseTemplate::new(200)
-                .set_body_json(json!({"id": "folder-new", "name": "Mobile"})),
+            ResponseTemplate::new(200).set_body_json(json!({"id": "folder-new", "name": "Mobile"})),
         )
         .mount(&server)
         .await;
@@ -235,16 +234,14 @@ async fn openapi_047_folders_teams_and_duplicate_operations_dispatch_cleanly() {
     Mock::given(method("GET"))
         .and(path("/v2/folders/folder-1/meta"))
         .respond_with(
-            ResponseTemplate::new(200)
-                .set_body_json(json!({"id": "folder-1", "file_count": 3})),
+            ResponseTemplate::new(200).set_body_json(json!({"id": "folder-1", "file_count": 3})),
         )
         .mount(&server)
         .await;
     Mock::given(method("GET"))
         .and(path("/v1/teams/team-1"))
         .respond_with(
-            ResponseTemplate::new(200)
-                .set_body_json(json!({"id": "team-1", "name": "Core"})),
+            ResponseTemplate::new(200).set_body_json(json!({"id": "team-1", "name": "Core"})),
         )
         .mount(&server)
         .await;
@@ -258,10 +255,9 @@ async fn openapi_047_folders_teams_and_duplicate_operations_dispatch_cleanly() {
         .await;
     Mock::given(method("POST"))
         .and(path("/v1/teams/team-1/invites"))
-        .respond_with(
-            ResponseTemplate::new(200)
-                .set_body_json(json!({"invites": [{"email": "dev@example.com", "role": "editor"}], "errors": []})),
-        )
+        .respond_with(ResponseTemplate::new(200).set_body_json(
+            json!({"invites": [{"email": "dev@example.com", "role": "editor"}], "errors": []}),
+        ))
         .mount(&server)
         .await;
 
@@ -424,7 +420,9 @@ async fn download_assets_and_search_design_system_cover_product_workflows() {
         .await;
     Mock::given(method("GET"))
         .and(path("/v1/files/file-1/component_sets"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"meta": {"component_sets": []}})))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(json!({"meta": {"component_sets": []}})),
+        )
         .mount(&server)
         .await;
     Mock::given(method("GET"))

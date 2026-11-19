@@ -99,3 +99,62 @@ fn prepares_assets_only_from_allowed_roots() {
 
     let _ = std::fs::remove_file(asset);
 }
+
+#[test]
+fn validates_slots_and_3d_operations_for_design_editor() {
+    let valid_plan = CanvasPlan {
+        version: 1,
+        transaction_id: Some("txn-slots-3d".to_string()),
+        session_id: Some("session-design".to_string()),
+        expected_editor: Some(EditorType::Figma),
+        operations: vec![
+            CanvasOperation {
+                op: "create_slot".to_string(),
+                op_id: Some("slot-1".to_string()),
+                args: serde_json::json!({"name": "CardBody", "width": 240, "height": 120}),
+            },
+            CanvasOperation {
+                op: "reset_slot".to_string(),
+                op_id: None,
+                args: serde_json::json!({"node": "slot-1"}),
+            },
+            CanvasOperation {
+                op: "set_transform_3d".to_string(),
+                op_id: None,
+                args: serde_json::json!({"node": "slot-1", "transform_3d": [[1,0,0,0],[0,1,0,0],[0,0,1,0]]}),
+            },
+            CanvasOperation {
+                op: "set_scene_3d".to_string(),
+                op_id: None,
+                args: serde_json::json!({"node": "slot-1", "scene_3d": {"perspective": 800}}),
+            },
+        ],
+        verify: None,
+    };
+    validate_plan(&valid_plan, EditorType::Figma).unwrap();
+
+    let figjam_err = validate_plan(
+        &CanvasPlan {
+            expected_editor: Some(EditorType::FigJam),
+            ..valid_plan.clone()
+        },
+        EditorType::FigJam,
+    )
+    .unwrap_err();
+    assert_eq!(figjam_err.code, CanvasErrorCode::EditorMismatch);
+
+    let missing_node = CanvasPlan {
+        version: 1,
+        transaction_id: None,
+        session_id: Some("session-design".to_string()),
+        expected_editor: Some(EditorType::Figma),
+        operations: vec![CanvasOperation {
+            op: "set_transform_3d".to_string(),
+            op_id: None,
+            args: serde_json::json!({}),
+        }],
+        verify: None,
+    };
+    let err = validate_plan(&missing_node, EditorType::Figma).unwrap_err();
+    assert_eq!(err.code, CanvasErrorCode::InvalidPlan);
+}

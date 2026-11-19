@@ -1,8 +1,8 @@
 # Code Connect Compatibility
 
 fighorse native Code Connect support tracks the official `figma/code-connect`
-CLI behavior observed at commit `6a6b50b1f71438768512e1b67475ba2bd555a018`
-(CLI `1.5.1`).
+CLI behavior observed at commit `d856baa9bf7907c430121139725a7a8181bac9a3`
+(CLI `2.1.0`).
 
 Reusable checks:
 

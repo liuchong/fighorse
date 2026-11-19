@@ -2,8 +2,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::path::PathBuf;
 
-pub const COMPATIBILITY_CLI_VERSION: &str = "1.5.1";
-pub const COMPATIBILITY_COMMIT: &str = "6a6b50b1f71438768512e1b67475ba2bd555a018";
+pub const COMPATIBILITY_CLI_VERSION: &str = "2.1.0";
+pub const COMPATIBILITY_COMMIT: &str = "d856baa9bf7907c430121139725a7a8181bac9a3";
+pub const CODE_CONNECT_USER_AGENT: &str = "code-connect-cli/2.1.0 (@figma/code-connect)";
 
 #[derive(Debug, Clone)]
 pub struct CodeConnectProjectConfig {

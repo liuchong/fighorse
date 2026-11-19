@@ -13,8 +13,12 @@ Use when implementing UI from a Figma file, frame, component, or selection URL.
 2. If the URL is a concrete design target, call `get_design_package`.
 3. If the URL is a browser, team, or project page, use
    `get_resource_catalog` first and ask for a concrete file or node.
-4. Use screenshots, tokens, component metadata, and Code Connect suggestions
-   together. Do not treat any single source as complete truth.
+4. Use `download_assets` when you need both rendered node slices and original
+   subtree `imageRef` source fills, and `search_design_system` to map published
+   components, styles, and variables.
+5. Use screenshots, tokens (`sourceColor` / `VariableComposedColor` / typography),
+   component metadata, and Code Connect templates together. Do not treat any
+   single source as complete truth.
 
 ## Boundaries
 

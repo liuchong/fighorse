@@ -129,12 +129,12 @@ async fn mcp_dispatch_end_to_end() {
 
     // Filtered get_comments preserves matching thread or threads_only.
     let filtered_comments = dispatch(&json!({"jsonrpc":"2.0","id":50,"method":"tools/call",
-        "params":{"name":"get_comments","arguments":{
-            "file_key":"abc",
-            "node_id":"10-20",
-            "unresolved_only":true,
-            "threads_only":true
-        }}}))
+    "params":{"name":"get_comments","arguments":{
+        "file_key":"abc",
+        "node_id":"10-20",
+        "unresolved_only":true,
+        "threads_only":true
+    }}}))
     .await
     .unwrap();
     let comments_json: serde_json::Value = serde_json::from_str(
@@ -149,11 +149,11 @@ async fn mcp_dispatch_end_to_end() {
     // download_assets with dest_dir requires FIGHORSE_MCP_LOCAL_WRITE=allow.
     unsafe { std::env::set_var("FIGHORSE_MCP_LOCAL_WRITE", "deny") };
     let blocked_bundle = dispatch(&json!({"jsonrpc":"2.0","id":51,"method":"tools/call",
-        "params":{"name":"download_assets","arguments":{
-            "file_key":"abc",
-            "node_ids":"1:2",
-            "dest_dir":"./.fighorse/exports"
-        }}}))
+    "params":{"name":"download_assets","arguments":{
+        "file_key":"abc",
+        "node_ids":"1:2",
+        "dest_dir":"./.fighorse/exports"
+    }}}))
     .await
     .unwrap();
     assert_eq!(blocked_bundle["result"]["isError"], true);

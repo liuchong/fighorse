@@ -2,7 +2,7 @@
 set -euo pipefail
 
 repo="figma/code-connect"
-baseline="6a6b50b1f71438768512e1b67475ba2bd555a018"
+baseline="d856baa9bf7907c430121139725a7a8181bac9a3"
 
 current="$(gh api "repos/${repo}/commits/main" --jq '.sha')"
 latest_release="$(gh release view --repo "${repo}" --json tagName,publishedAt --jq '.tagName + " " + .publishedAt')"

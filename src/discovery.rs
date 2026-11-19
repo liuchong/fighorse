@@ -185,7 +185,7 @@ fn ai_plugin_bundle_status(cfg: &config::Config) -> Value {
         "mcp_config": mcp_config.to_string_lossy(),
         "installed": cursor_manifest.is_file() && mcp_config.is_file(),
         "publish_status": "local_only",
-        "install_command": "fighorse install ai-plugin --clients cursor,codex,kimi,claude,opencode,gemini --apply",
+        "install_command": "fighorse install ai-plugin --clients cursor,codex,kimi,claude,opencode,gemini,antigravity,copilot --apply",
         "default_endpoint": "http://127.0.0.1:9449/mcp",
         "workflow_skills": [
             "fighorse",
@@ -233,7 +233,7 @@ pub fn setup_guidance() -> Value {
         },
         "recommended_ai_plugin_bundle": {
             "when": "Use after the local MCP service is installed or when sharing fighorse workflow skills and MCP config as one local artifact.",
-            "command": "fighorse install ai-plugin --clients cursor,codex,kimi,claude,opencode,gemini --apply",
+            "command": "fighorse install ai-plugin --clients cursor,codex,kimi,claude,opencode,gemini,antigravity,copilot --apply",
             "package_dir": "~/.fighorse/ai-plugin/fighorse",
             "publish_status": "local_only",
             "default_endpoint": "http://127.0.0.1:9449/mcp"
@@ -497,7 +497,7 @@ pub fn doctor() -> Value {
         "install": {
             "home": cfg.fighorse_home.to_string_lossy(),
             "output_locations": guidance::output_location_guidance(),
-            "ai_plugin_bundle_command": "fighorse install ai-plugin --clients cursor,codex,kimi,claude,opencode,gemini --apply",
+            "ai_plugin_bundle_command": "fighorse install ai-plugin --clients cursor,codex,kimi,claude,opencode,gemini,antigravity,copilot --apply",
             "next_step": "Run fighorse install status first. Install commands generate artifacts by default; pass --apply only when you want fighorse to mutate detected CLI, MCP service, AI client, and skill locations."
         },
         "experience": {
@@ -854,7 +854,7 @@ pub fn manifest() -> Value {
                 "fighorse install client --client claude --apply",
                 "fighorse install client --client opencode",
                 "fighorse install service --service launchd --apply",
-                "fighorse install ai-plugin --clients cursor,codex,kimi,claude,opencode,gemini --apply",
+                "fighorse install ai-plugin --clients cursor,codex,kimi,claude,opencode,gemini,antigravity,copilot --apply",
                 "fighorse install skill --clients cursor,codex,kimi,claude --apply",
                 "fighorse install --default --apply",
                 "fighorse install --path ~/.local/bin --apply",

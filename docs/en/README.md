@@ -34,11 +34,11 @@ fighorse resource catalog "https://www.figma.com/files/<root>/team/<team-id>"
 MCP exposes the same report as `get_resource_catalog`. First use `url parse` or
 MCP `parse_figma_url`: `catalog_eligible=true` routes to catalog, while
 `browser_root_not_enumerable` means the `/files/<browser-root>` URL cannot
-reveal a team through the public REST API. Catalog output includes projects,
-files, branches, team libraries, and `ready`/`partial`/`blocked` diagnostics.
-Enumeration needs `projects:read`; libraries need
-`team_library_content:read`; optional `--probe-file-access` needs
-`file_content:read`.
+reveal a team through the public REST API. Catalog output includes v2 folders
+(including nested subfolders), files, branches, team libraries, and
+`ready`/`partial`/`blocked` diagnostics. Enumeration needs `folders:read` (or
+legacy `projects:read`); libraries need `team_library_content:read`; optional
+`--probe-file-access` needs `file_content:read`.
 
 ```bash
 fighorse quickstart "https://www.figma.com/design/<fileKey>/<name>?node-id=<node-id>"
@@ -82,12 +82,13 @@ The canonical instruction targets are `~/.agents/skills/fighorse/SKILL.md` for C
 For local or team AI client distribution, generate the AI plugin bundle:
 
 ```bash
-fighorse install ai-plugin --clients cursor,codex,kimi,claude,opencode,gemini --apply
+fighorse install ai-plugin --clients cursor,codex,kimi,claude,opencode,gemini,antigravity,copilot --apply
 ```
 
 The bundle is written to `~/.fighorse/ai-plugin/fighorse/` and contains
-`.cursor-plugin/plugin.json`, `.mcp.json`, `server.json`,
-`gemini-extension.json`, and shared workflow skills:
+`.cursor-plugin/plugin.json`, `.claude-plugin/plugin.json`,
+`.antigravity-plugin/plugin.json`, `.github/plugin/plugin.json`, `.mcp.json`,
+`server.json`, `gemini-extension.json`, and shared workflow skills:
 `fighorse`, `fighorse-design-to-code`, `fighorse-canvas-write`,
 `fighorse-resource-catalog`, `fighorse-code-connect`, and
 `fighorse-self-learning`. It is local-only, not Verified by Cursor, and does not

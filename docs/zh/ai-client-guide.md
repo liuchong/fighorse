@@ -72,12 +72,13 @@ Canonical 三目标是 `~/.agents/skills/fighorse/SKILL.md`（Cursor/Kimi/Codex�
 如果要本地或团队分发，优先生成 AI 插件资源包：
 
 ```bash
-fighorse install ai-plugin --clients cursor,codex,kimi,claude,opencode,gemini --apply
+fighorse install ai-plugin --clients cursor,codex,kimi,claude,opencode,gemini,antigravity,copilot --apply
 ```
 
 它会写入 `~/.fighorse/ai-plugin/fighorse/`，包含
-`.cursor-plugin/plugin.json`、`.mcp.json`、`server.json`、
-`gemini-extension.json` 和共享 workflow skills：`fighorse`、
+`.cursor-plugin/plugin.json`、`.claude-plugin/plugin.json`、
+`.antigravity-plugin/plugin.json`、`.github/plugin/plugin.json`、`.mcp.json`、
+`server.json`、`gemini-extension.json` 和共享 workflow skills：`fighorse`、
 `fighorse-design-to-code`、`fighorse-canvas-write`、
 `fighorse-resource-catalog`、`fighorse-code-connect`、
 `fighorse-self-learning`。把它视为本地-only 包，不声明 Verified by Cursor；

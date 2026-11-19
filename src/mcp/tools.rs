@@ -426,10 +426,11 @@ async fn handle_tool(name: &str, args: &Value) -> Value {
             };
             match code_connect_documents(args) {
                 Ok(docs) => handle(
-                    code_connect_api::preview_documents(
+                    code_connect_api::preview_documents_with_options(
                         &token,
                         &docs,
                         args.get("render_combinations").cloned(),
+                        arg_bool(args, "unique").unwrap_or(false),
                     )
                     .await,
                 ),
@@ -655,18 +656,12 @@ async fn handle_tool(name: &str, args: &Value) -> Value {
                         .collect()
                 })
                 .unwrap_or_default();
-            let body = teams_api::build_invite_body(
-                &emails,
-                arg_str(args, "role").unwrap_or("viewer"),
-            );
+            let body =
+                teams_api::build_invite_body(&emails, arg_str(args, "role").unwrap_or("viewer"));
             handle(
                 with_token(|t| async move {
-                    teams_api::post_team_invites(
-                        &t,
-                        arg_str(args, "team_id").unwrap_or(""),
-                        &body,
-                    )
-                    .await
+                    teams_api::post_team_invites(&t, arg_str(args, "team_id").unwrap_or(""), &body)
+                        .await
                 })
                 .await,
             )

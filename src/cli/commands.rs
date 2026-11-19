@@ -777,7 +777,9 @@ pub async fn cmd_asset_bundle(args: &[String]) -> Result<()> {
     let token = require_token();
     let flags = parse_flags(
         args,
-        &["--ids", "--format", "--scale", "--dir", "--prefix", "--output"],
+        &[
+            "--ids", "--format", "--scale", "--dir", "--prefix", "--output",
+        ],
     );
     let file_key = require_arg(&flags.rest, 0, "file-key").to_string();
     let ids = flags
@@ -923,7 +925,10 @@ pub async fn cmd_folder_create(args: &[String]) -> Result<()> {
         ));
     }
     let token = require_token();
-    let flags = parse_flags(args, &["--audience", "--sharing-audience-control", "--output"]);
+    let flags = parse_flags(
+        args,
+        &["--audience", "--sharing-audience-control", "--output"],
+    );
     let team_id = require_arg(&flags.rest, 0, "team-id").to_string();
     let name = require_arg(&flags.rest, 1, "folder-name").to_string();
     let audience = flags
@@ -1355,7 +1360,9 @@ pub async fn cmd_code_connect_preview(args: &[String]) -> Result<()> {
         &["--dir", "--config", "--file", "--documents", "--output"],
     );
     let docs = code_connect_docs_from_flags(&flags)?;
-    let data = code_connect_api::preview_documents(&token, &docs, None).await?;
+    let unique = flag_present(args, "--unique");
+    let data =
+        code_connect_api::preview_documents_with_options(&token, &docs, None, unique).await?;
     print_data(&data, flags.get("output"))
 }
 

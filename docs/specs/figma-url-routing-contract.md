@@ -8,16 +8,16 @@ does not infer team or project identifiers that are not present in the input.
 
 ## Stable Fields
 
-Existing fields remain stable: `valid`, `kind`, `file_key`, `node_id`,
-`raw_node_id`, `browser_root_id`, `team_id`, `project_id`, `embedded_url`, and
-`error`.
+Existing fields remain stable: `valid`, `kind`, `file_key`, `main_file_key`,
+`branch_key`, `node_id`, `raw_node_id`, `browser_root_id`, `team_id`,
+`folder_id`, `project_id`, `embedded_url`, and `error`.
 
 The parser also emits additive routing fields:
 
-- `url_role`: `browser_root`, `team_browser`, `project_browser`,
-  `design_target`, `file_key`, or `unknown`.
-- `catalog_eligible`: `true` only when `team_id` or `project_id` is available
-  and no design file key is present.
+- `url_role`: `browser_root`, `team_browser`, `folder_browser`,
+  `project_browser`, `design_target`, `file_key`, or `unknown`.
+- `catalog_eligible`: `true` only when `team_id`, `folder_id`, or `project_id`
+  is available and no design file key is present.
 - `design_target`: `true` only when a file key or raw file key can be used by
   design-context tools.
 - `next_action`: the safest next tool or user request.
@@ -32,12 +32,17 @@ The parser also emits additive routing fields:
   `error_code=browser_root_not_enumerable`.
 - `/files/.../team/<team-id>` is catalog context. It is not a design target, but
   it is eligible for `get_resource_catalog`.
-- `/project/<project-id>` and `/files/project/<project-id>` are catalog context
-  and route to `get_resource_catalog`.
-- `/design/<file-key>`, `/file/<file-key>`, `/proto/<file-key>`, and
-  `/board/<file-key>` route to `get_design_package`. If the URL has no
-  `node-id`, AI clients should ask the user to narrow to a frame, component, or
-  group before implementation.
+- `/folder/<folder-id>`, `/files/.../folder/<folder-id>`, `/project/<project-id>`,
+  and `/files/project/<project-id>` are catalog context and route to
+  `get_resource_catalog`.
+- `/design/<file-key>`, `/file/<file-key>`, `/proto/<file-key>`,
+  `/board/<file-key>`, `/slides/<file-key>`, `/deck/<file-key>`,
+  `/make/<file-key>`, `/site/<file-key>`, `/buzz/<file-key>`,
+  `/spec/<file-key>`, and `/figspec/<file-key>` route to `get_design_package`.
+  Branch URLs (`/<kind>/<main-key>/branch/<branch-key>/...`) set `file_key` to
+  `<branch-key>` while preserving `main_file_key` and `branch_key`. If the URL
+  has no `node-id`, AI clients should ask the user to narrow to a frame,
+  component, or group before implementation.
 - A raw non-URL string is treated as a file key and routes to
   `get_design_package`.
 

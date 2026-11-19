@@ -74,11 +74,13 @@ Canonical instruction targets are `~/.agents/skills/fighorse/SKILL.md` for Curso
 For local or team distribution, prefer the AI plugin bundle:
 
 ```bash
-fighorse install ai-plugin --clients cursor,codex,kimi,claude,opencode,gemini --apply
+fighorse install ai-plugin --clients cursor,codex,kimi,claude,opencode,gemini,antigravity,copilot --apply
 ```
 
 It writes `~/.fighorse/ai-plugin/fighorse/` with `.cursor-plugin/plugin.json`,
-`.mcp.json`, `server.json`, `gemini-extension.json`, and shared workflow
+`.claude-plugin/plugin.json`, `.antigravity-plugin/plugin.json`,
+`.github/plugin/plugin.json`, `.mcp.json`, `server.json`,
+`gemini-extension.json`, and shared workflow
 skills: `fighorse`, `fighorse-design-to-code`, `fighorse-canvas-write`,
 `fighorse-resource-catalog`, `fighorse-code-connect`, and
 `fighorse-self-learning`. Treat it as a local-only package, not Verified by

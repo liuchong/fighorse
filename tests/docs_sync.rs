@@ -149,6 +149,11 @@ fn ai_plugin_bundle_contract_is_synchronized_across_surfaces() {
             "{path} omits workflow skills"
         );
         assert!(
+            text.contains(".antigravity-plugin/plugin.json")
+                && text.contains(".github/plugin/plugin.json"),
+            "{path} omits Antigravity or GitHub Copilot plugin manifest"
+        );
+        assert!(
             text.contains("Verified by Cursor")
                 || text.contains("local-only")
                 || text.contains("本地-only"),
@@ -190,7 +195,7 @@ fn resource_catalog_contract_is_synchronized_across_user_and_ai_surfaces() {
     }
     for (path, text) in localized("design.md") {
         assert!(
-            text.contains("50"),
+            text.contains("59"),
             "{path} has not been calibrated to the current operation registry"
         );
     }

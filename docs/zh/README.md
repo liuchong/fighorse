@@ -34,9 +34,9 @@ fighorse resource catalog "https://www.figma.com/files/<root>/team/<team-id>"
 MCP 中对应 `get_resource_catalog`。先使用 `url parse` 或 MCP
 `parse_figma_url`：`catalog_eligible=true` 才进入资源目录，
 `browser_root_not_enumerable` 表示 `/files/<browser-root>` 无法通过公共
-REST API 反查团队。结果包含项目、文件、分支、团队设计库，并用
+REST API 反查团队。结果包含 v2 文件夹（含嵌套子文件夹）、文件、分支、团队设计库，并用
 `ready`、`partial`、`blocked` 明确表示完整、部分成功或受阻。
-项目枚举需要 `projects:read`，设计库需要 `team_library_content:read`，
+文件夹枚举需要 `folders:read`（或旧版 `projects:read`），设计库需要 `team_library_content:read`，
 可选的 `--probe-file-access` 深度 1 探测需要 `file_content:read`。
 
 ```bash
@@ -81,12 +81,13 @@ fighorse install client --client claude --apply
 如果要做本地或团队内 AI 客户端分发，可以生成 AI 插件资源包：
 
 ```bash
-fighorse install ai-plugin --clients cursor,codex,kimi,claude,opencode,gemini --apply
+fighorse install ai-plugin --clients cursor,codex,kimi,claude,opencode,gemini,antigravity,copilot --apply
 ```
 
 资源包写入 `~/.fighorse/ai-plugin/fighorse/`，包含
-`.cursor-plugin/plugin.json`、`.mcp.json`、`server.json`、
-`gemini-extension.json` 以及共享 workflow skills：`fighorse`、
+`.cursor-plugin/plugin.json`、`.claude-plugin/plugin.json`、
+`.antigravity-plugin/plugin.json`、`.github/plugin/plugin.json`、`.mcp.json`、
+`server.json`、`gemini-extension.json` 以及共享 workflow skills：`fighorse`、
 `fighorse-design-to-code`、`fighorse-canvas-write`、
 `fighorse-resource-catalog`、`fighorse-code-connect` 和
 `fighorse-self-learning`。它只用于本地分发，不声明 Verified by Cursor，也不会自己打开任何写权限。

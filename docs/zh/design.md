@@ -56,12 +56,13 @@ Figma REST API
 ## AI 插件资源包
 
 AI 插件资源包用于打包客户端侧指导，不改变运行时权限。
-`fighorse install ai-plugin --clients cursor,codex,kimi,claude,opencode,gemini --apply`
+`fighorse install ai-plugin --clients cursor,codex,kimi,claude,opencode,gemini,antigravity,copilot --apply`
 会从 `assets/ai-plugin/` 的共享模板生成
 `~/.fighorse/ai-plugin/fighorse/`。
 
 资源包包含薄客户端 manifest（`.cursor-plugin/plugin.json`、
-`.claude-plugin/plugin.json`、`gemini-extension.json`、`server.json`、
+`.claude-plugin/plugin.json`、`.antigravity-plugin/plugin.json`、
+`.github/plugin/plugin.json`、`gemini-extension.json`、`server.json`、
 `.mcp.json`）以及共享 workflow skills：`fighorse`、
 `fighorse-design-to-code`、`fighorse-canvas-write`、
 `fighorse-resource-catalog`、`fighorse-code-connect` 和
@@ -91,7 +92,7 @@ L2 和 L3 是主要差异化因素。fighorse 不仅仅是包装 REST 端点；�
 
 ## 完整 REST 覆盖
 
-fighorse 为公共 Figma REST 快照维护一个显式的 OpenAPI 操作注册表。注册表当前跟踪 50 个操作，并被以下使用：
+fighorse 为公共 Figma REST 快照（`0.47.0`）维护一个显式的 OpenAPI 操作注册表。注册表当前跟踪 59 个操作，并被以下使用：
 
 - `src/fighorse/api` 中的 API 包装器。
 - 通用 CLI 调度：`fighorse figma api <operationId> --params '{...}'`。

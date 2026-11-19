@@ -18,8 +18,21 @@ The initial contract covers:
   Code Connect service protocol.
 
 The implementation compatibility baseline is the official `figma/code-connect`
-repository at commit `6a6b50b1f71438768512e1b67475ba2bd555a018`, CLI version
-`1.5.1`, observed on 2026-08-03.
+repository at commit `d856baa9bf7907c430121139725a7a8181bac9a3`, CLI version
+`2.1.0`, observed on 2026-11-19.
+
+Key `v2.1.0` capabilities:
+
+- Sends `User-Agent: code-connect-cli/2.1.0 (@figma/code-connect)` to negotiate
+  structured server responses (`meta.failed_nodes[].errors` with
+  `CODE_CONNECT_PRO_LIBRARY_INACTIVE` / `CODE_CONNECT_PRO_FRAMEWORK_INACTIVE`,
+  and `meta.new_active_selections`).
+- Supports `SLOT` component property generation
+  (`figma.selectedInstance.getSlot(...)`), trailing `//` comments on
+  `import figma from 'figma'`, leading `/` in `include` globs, single-template
+  preview resolution against `.figma.batch.json`, `--unique` snippet
+  deduplication, and clear migration errors on legacy `figma.connect(...)`
+  parser files.
 
 ## Protocol Boundary
 

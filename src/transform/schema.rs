@@ -42,6 +42,7 @@ fn infer_property_type(prop: &Value) -> String {
         Some("BOOLEAN") => "boolean".to_string(),
         Some("TEXT") => "string".to_string(),
         Some("INSTANCE_SWAP") => "string".to_string(),
+        Some("SLOT") => "unknown".to_string(),
         Some("VARIANT") => match prop.get("variantOptions").and_then(|v| v.as_array()) {
             Some(options) if !options.is_empty() => options
                 .iter()
@@ -65,18 +66,32 @@ pub fn infer_component_schema(tree: &Value, component_id: &str) -> Option<Value>
     let name = node.get("name").and_then(|v| v.as_str());
     let interface = format!("{}Props", sanitize_name(name));
 
-    // componentProperties is an object; preserve insertion order.
-    let props: Vec<Value> = node
+    // Support both INSTANCE `componentProperties` and COMPONENT/COMPONENT_SET `componentPropertyDefinitions`.
+    let raw_props = node
         .get("componentProperties")
         .and_then(|v| v.as_object())
+        .or_else(|| {
+            node.get("componentPropertyDefinitions")
+                .and_then(|v| v.as_object())
+        });
+    let props: Vec<Value> = raw_props
         .map(|obj| {
             obj.iter()
                 .map(|(pname, prop)| {
-                    json!({
-                        "name": pname,
-                        "type": infer_property_type(prop),
-                        "default": prop.get("value").cloned().unwrap_or(Value::Null),
-                    })
+                    let mut entry = serde_json::Map::new();
+                    entry.insert("name".into(), Value::String(pname.clone()));
+                    entry.insert("type".into(), Value::String(infer_property_type(prop)));
+                    entry.insert(
+                        "default".into(),
+                        prop.get("value")
+                            .or_else(|| prop.get("defaultValue"))
+                            .cloned()
+                            .unwrap_or(Value::Null),
+                    );
+                    if let Some(slot_settings) = prop.get("slotSettings").filter(|v| !v.is_null()) {
+                        entry.insert("slotSettings".into(), slot_settings.clone());
+                    }
+                    Value::Object(entry)
                 })
                 .collect()
         })
@@ -146,5 +161,45 @@ mod tests {
         let ts = schema_to_typescript(&schema);
         assert!(ts.contains("export interface ButtonPrimaryProps"));
         assert!(ts.contains("\"Disabled\"?: boolean;"));
+    }
+
+    #[test]
+    fn infers_component_property_definitions_and_slot_props() {
+        let tree = json!({
+            "id": "0",
+            "name": "Page",
+            "type": "PAGE",
+            "children": [{
+                "id": "2:1",
+                "name": "Modal/Dialog",
+                "type": "COMPONENT_SET",
+                "componentPropertyDefinitions": {
+                    "BodySlot": {
+                        "type": "SLOT",
+                        "defaultValue": null,
+                        "slotSettings": {"preferredValues": ["3:1", "3:2"]}
+                    },
+                    "Open": {
+                        "type": "BOOLEAN",
+                        "defaultValue": true
+                    }
+                }
+            }]
+        });
+
+        let schema = infer_component_schema(&tree, "2:1").unwrap();
+        assert_eq!(schema["interface"], "ModalDialogProps");
+        let props = schema["props"].as_array().unwrap();
+        let slot_prop = props
+            .iter()
+            .find(|p| p["name"] == "BodySlot")
+            .expect("BodySlot prop");
+        assert_eq!(slot_prop["type"], "unknown");
+        assert_eq!(slot_prop["slotSettings"]["preferredValues"][0], "3:1");
+
+        let ts = schema_to_typescript(&schema);
+        assert!(ts.contains("export interface ModalDialogProps"));
+        assert!(ts.contains("\"BodySlot\"?: unknown;"));
+        assert!(ts.contains("\"Open\"?: boolean;"));
     }
 }

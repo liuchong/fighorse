@@ -999,10 +999,25 @@ fn base64_encode(bytes: &[u8]) -> String {
 }
 
 fn validate_operation_args(operation: &CanvasOperation) -> CanvasResult<()> {
-    if !operation.args.is_object() {
+    let Some(args) = operation.args.as_object() else {
         return Err(CanvasError::new(
             CanvasErrorCode::InvalidPlan,
             format!("Operation {} args must be an object.", operation.op),
+        ));
+    };
+    if matches!(
+        operation.op.as_str(),
+        "reset_slot" | "set_transform_3d" | "set_scene_3d"
+    ) && args
+        .get("node")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .is_none()
+    {
+        return Err(CanvasError::new(
+            CanvasErrorCode::InvalidPlan,
+            format!("Operation {} requires args.node.", operation.op),
         ));
     }
     Ok(())
@@ -1025,6 +1040,10 @@ pub fn operation_allowed(editor: EditorType, op: &str) -> bool {
                     | "create_component"
                     | "create_instance"
                     | "create_variant"
+                    | "create_slot"
+                    | "reset_slot"
+                    | "set_transform_3d"
+                    | "set_scene_3d"
                     | "create_variable_collection"
                     | "bind_variable"
                     | "set_style"

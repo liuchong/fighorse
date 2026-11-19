@@ -281,11 +281,7 @@ fn file_keys_from_segments(
             }
             if segments.get(idx + 2).map(String::as_str) == Some("branch") {
                 if let Some(branch) = segments.get(idx + 3).filter(|s| !s.is_empty()) {
-                    return Some((
-                        branch.clone(),
-                        Some(primary),
-                        Some(branch.clone()),
-                    ));
+                    return Some((branch.clone(), Some(primary), Some(branch.clone())));
                 }
             }
             return Some((primary, None, None));

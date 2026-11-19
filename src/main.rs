@@ -284,7 +284,7 @@ Self Discovery and AI Replication:
   code-connect generate <figma-url> --context P [--output P]  Generate a modern parserless Code Connect template
   code-connect parse [--dir D|--file P]         Parse local .figma.ts/.figma.js documents without executing them
   code-connect validate [--documents P|--dir D] Validate Code Connect documents against Figma nodes
-  code-connect preview [--documents P|--dir D]  Render snippets through Figma's observed preview protocol
+  code-connect preview [--documents P|--dir D|--file P] [--unique]  Render snippets through Figma's observed preview protocol
   code-connect publish [--documents P|--dir D] --dry-run|--yes [--force]  Publish mappings to Figma Dev Mode
   code-connect unpublish (--node URL --label L|--dir D) --dry-run|--yes  Remove Code Connect mappings
   visual audit <figma-url> [--screenshot P]    Produce AI-ready visual fidelity audit guidance

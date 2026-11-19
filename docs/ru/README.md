@@ -34,11 +34,11 @@ fighorse resource catalog "https://www.figma.com/files/<root>/team/<team-id>"
 В MCP ей соответствует `get_resource_catalog`. Сначала используйте `url parse`
 или MCP `parse_figma_url`: `catalog_eligible=true` ведёт в каталог, а
 `browser_root_not_enumerable` означает, что по `/files/<browser-root>`
-публичный REST API не может определить команду. Отчёт содержит проекты, файлы,
-ветки и библиотеки команды, а состояние задаётся как `ready`, `partial` или
-`blocked`. Для проектов нужен `projects:read`, для библиотек —
-`team_library_content:read`, для опциональной проверки
-`--probe-file-access` — `file_content:read`.
+публичный REST API не может определить команду. Отчёт содержит v2-папки (включая
+вложенные подпапки), файлы, ветки и библиотеки команды, а состояние задаётся
+как `ready`, `partial` или `blocked`. Для папок нужен `folders:read` (или
+устаревший `projects:read`), для библиотек — `team_library_content:read`, для
+опциональной проверки `--probe-file-access` — `file_content:read`.
 
 ```bash
 fighorse quickstart "https://www.figma.com/design/<fileKey>/<name>?node-id=<node-id>"
@@ -82,12 +82,13 @@ fighorse install client --client claude --apply
 Для локального или командного распространения AI-клиентов сгенерируйте AI plugin bundle:
 
 ```bash
-fighorse install ai-plugin --clients cursor,codex,kimi,claude,opencode,gemini --apply
+fighorse install ai-plugin --clients cursor,codex,kimi,claude,opencode,gemini,antigravity,copilot --apply
 ```
 
 Bundle записывается в `~/.fighorse/ai-plugin/fighorse/` и содержит
-`.cursor-plugin/plugin.json`, `.mcp.json`, `server.json`,
-`gemini-extension.json` и общие workflow skills: `fighorse`,
+`.cursor-plugin/plugin.json`, `.claude-plugin/plugin.json`,
+`.antigravity-plugin/plugin.json`, `.github/plugin/plugin.json`, `.mcp.json`,
+`server.json`, `gemini-extension.json` и общие workflow skills: `fighorse`,
 `fighorse-design-to-code`, `fighorse-canvas-write`,
 `fighorse-resource-catalog`, `fighorse-code-connect` и
 `fighorse-self-learning`. Это local-only пакет, он не заявляет Verified by

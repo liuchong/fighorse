@@ -215,11 +215,7 @@ pub mod folders {
     }
 
     /// POST /v1/teams/{team_id}/folders accepting a raw JSON body.
-    pub async fn post_team_folder_body(
-        token: &str,
-        team_id: &str,
-        body: &Value,
-    ) -> Result<Value> {
+    pub async fn post_team_folder_body(token: &str, team_id: &str, body: &Value) -> Result<Value> {
         let path = format!("/v1/teams/{}/folders", http::path_segment(team_id));
         http::post(&path, Some(token), &[], Some(body)).await
     }

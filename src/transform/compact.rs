@@ -34,8 +34,8 @@ fn node_type(node: &Value) -> &str {
 /// Self-score: how valuable is this node for AI consumption?
 fn node_info_score(node: &Value) -> i64 {
     let type_score = match node_type(node) {
-        "FRAME" | "COMPONENT" | "COMPONENT_SET" => 20,
-        "INSTANCE" => 15,
+        "FRAME" | "COMPONENT" | "COMPONENT_SET" | "SLIDE" => 20,
+        "INSTANCE" | "SLOT" | "SECTION" => 15,
         "TEXT" => 12,
         "RECTANGLE" | "ELLIPSE" | "STAR" | "LINE" | "REGULAR_POLYGON" => 5,
         "VECTOR" | "BOOLEAN_OPERATION" => 2,
@@ -122,6 +122,9 @@ fn clean_fills(fills: &Value) -> Option<Value> {
                     &["r", "g", "b", "a"],
                 );
                 base.insert("color".into(), Value::Object(color));
+                if let Some(sc) = fill.get("sourceColor").filter(|v| !v.is_null()) {
+                    base.insert("sourceColor".into(), sc.clone());
+                }
             }
             Some("GRADIENT_LINEAR")
             | Some("GRADIENT_RADIAL")
@@ -172,6 +175,9 @@ fn clean_strokes(strokes: &Value) -> Option<Value> {
                 &["r", "g", "b", "a"],
             );
             base.insert("color".into(), Value::Object(color));
+            if let Some(sc) = stroke.get("sourceColor").filter(|v| !v.is_null()) {
+                base.insert("sourceColor".into(), sc.clone());
+            }
         }
         out.push(Value::Object(base));
     }
@@ -183,13 +189,11 @@ fn clean_strokes(strokes: &Value) -> Option<Value> {
 }
 
 fn layout_extractor(node: &Value) -> Option<Map<String, Value>> {
-    if !matches!(node_type(node), "FRAME" | "COMPONENT" | "INSTANCE") {
-        return None;
-    }
     let layout = select_keys(
         node,
         &[
             "layoutMode",
+            "layoutWrap",
             "layoutAlign",
             "layoutGrow",
             "layoutPositioning",
@@ -198,11 +202,24 @@ fn layout_extractor(node: &Value) -> Option<Map<String, Value>> {
             "itemSpacing",
             "counterAxisSpacing",
             "counterAxisAlignItems",
+            "counterAxisAlignContent",
             "primaryAxisAlignItems",
             "paddingLeft",
             "paddingRight",
             "paddingTop",
             "paddingBottom",
+            "gridRowCount",
+            "gridColumnCount",
+            "gridRowGap",
+            "gridColumnGap",
+            "gridRowsSizing",
+            "gridColumnsSizing",
+            "gridRowAnchorIndex",
+            "gridColumnAnchorIndex",
+            "gridRowSpan",
+            "gridColumnSpan",
+            "gridChildHorizontalAlign",
+            "gridChildVerticalAlign",
         ],
     );
     if layout.is_empty() {
@@ -218,17 +235,23 @@ fn text_extractor(node: &Value) -> Option<Map<String, Value>> {
     if node_type(node) != "TEXT" {
         return None;
     }
-    let base = select_keys(node, &["characters"]);
-    if base.is_empty() {
+    let base = select_keys(node, &["characters", "textTruncation", "maxLines"]);
+    if !base.contains_key("characters") {
         return None;
     }
     let mut m = base;
-    let text_style = select_keys(
+    let mut text_style = select_keys(
         node.get("style").unwrap_or(&Value::Null),
         &[
             "fontFamily",
+            "fontStyle",
             "fontSize",
             "fontWeight",
+            "fontVariantPosition",
+            "textWrapStyle",
+            "textTruncation",
+            "maxLines",
+            "variationSettings",
             "textAlignHorizontal",
             "textAlignVertical",
             "letterSpacing",
@@ -236,6 +259,11 @@ fn text_extractor(node: &Value) -> Option<Map<String, Value>> {
             "lineHeightPercentFontSize",
         ],
     );
+    if !text_style.contains_key("variationSettings")
+        && let Some(vs) = node.get("variationSettings").filter(|v| !v.is_null())
+    {
+        text_style.insert("variationSettings".into(), vs.clone());
+    }
     m.insert("textStyle".into(), Value::Object(text_style));
     Some(m)
 }
@@ -255,7 +283,7 @@ fn visuals_extractor(node: &Value) -> Option<Map<String, Value>> {
             .map(|ef| {
                 Value::Object(select_keys(
                     ef,
-                    &["type", "color", "offset", "radius", "spread"],
+                    &["type", "color", "sourceColor", "offset", "radius", "spread"],
                 ))
             })
             .collect();
@@ -263,19 +291,20 @@ fn visuals_extractor(node: &Value) -> Option<Map<String, Value>> {
             visuals.insert("effects".into(), Value::Array(cleaned));
         }
     }
-    if let Some(op) = node.get("opacity") {
-        if !op.is_null() {
-            visuals.insert("opacity".into(), op.clone());
-        }
-    }
-    if let Some(cr) = node.get("cornerRadius") {
-        if !cr.is_null() {
-            visuals.insert("cornerRadius".into(), cr.clone());
-        }
-    }
-    if let Some(rc) = node.get("rectangleCornerRadii") {
-        if !rc.is_null() {
-            visuals.insert("rectangleCornerRadii".into(), rc.clone());
+    for key in [
+        "opacity",
+        "cornerRadius",
+        "rectangleCornerRadii",
+        "complexStrokeProperties",
+        "variableWidthPoints",
+        "transform3d",
+        "transformOrigin",
+        "scene3d",
+    ] {
+        if let Some(v) = node.get(key)
+            && !v.is_null()
+        {
+            visuals.insert(key.into(), v.clone());
         }
     }
     if visuals.is_empty() {
@@ -301,10 +330,15 @@ fn dimension_extractor(node: &Value) -> Option<Map<String, Value>> {
 }
 
 fn component_extractor(node: &Value) -> Option<Map<String, Value>> {
-    if node_type(node) != "INSTANCE" {
-        return None;
-    }
-    Some(select_keys(node, &["componentId", "componentProperties"]))
+    let out = match node_type(node) {
+        "INSTANCE" => select_keys(node, &["componentId", "componentProperties"]),
+        "COMPONENT" | "COMPONENT_SET" => {
+            select_keys(node, &["componentPropertyDefinitions", "slotSettings"])
+        }
+        "SLOT" => select_keys(node, &["slotSettings", "componentPropertyReferences"]),
+        _ => return None,
+    };
+    if out.is_empty() { None } else { Some(out) }
 }
 
 /// An extractor pulls a partial map out of a node during simplification.
@@ -685,6 +719,98 @@ mod tests {
         assert_ne!(
             result["children"][1].get("truncated"),
             Some(&Value::Bool(true))
+        );
+    }
+
+    #[test]
+    fn preserves_grid_wrap_typography_color_space_3d_and_slot_fidelity() {
+        let node = json!({
+            "id": "10:1",
+            "name": "GridCard",
+            "type": "COMPONENT",
+            "layoutMode": "GRID",
+            "layoutWrap": "WRAP",
+            "gridRowCount": 2,
+            "gridColumnCount": 3,
+            "gridRowGap": 12,
+            "gridColumnGap": 16,
+            "gridRowsSizing": ["1fr", "auto"],
+            "gridColumnsSizing": ["1fr", "1fr", "2fr"],
+            "fills": [{
+                "type": "SOLID",
+                "color": {"r": 0.2, "g": 0.5, "b": 0.9, "a": 1.0},
+                "sourceColor": {"colorSpace": "OKLCH", "color": {"l": 0.62, "c": 0.19, "h": 255.0}}
+            }],
+            "strokes": [{
+                "type": "SOLID",
+                "strokeWeight": 1.5,
+                "color": {"r": 0.1, "g": 0.1, "b": 0.1, "a": 1.0},
+                "sourceColor": {"colorSpace": "DISPLAY_P3", "color": {"r": 0.1, "g": 0.1, "b": 0.1}}
+            }],
+            "complexStrokeProperties": {"brush": "charcoal"},
+            "variableWidthPoints": [{"position": 0.5, "width": 3.0}],
+            "transform3d": {"rotateX": 15.0, "perspective": 800.0},
+            "transformOrigin": {"x": 0.5, "y": 0.5, "z": 0.0},
+            "scene3d": {"lighting": "studio"},
+            "componentPropertyDefinitions": {
+                "HeaderSlot": {"type": "SLOT", "slotSettings": {"preferredValues": ["10:99"]}}
+            },
+            "children": [
+                {
+                    "id": "10:2",
+                    "name": "Title",
+                    "type": "TEXT",
+                    "characters": "H2O",
+                    "gridRowAnchorIndex": 0,
+                    "gridColumnAnchorIndex": 0,
+                    "gridColumnSpan": 2,
+                    "textTruncation": "ENDING",
+                    "maxLines": 2,
+                    "variationSettings": {"wght": 650, "opsz": 24},
+                    "style": {
+                        "fontFamily": "Inter Variable",
+                        "fontSize": 20,
+                        "fontVariantPosition": "SUB",
+                        "textWrapStyle": "BALANCE"
+                    }
+                },
+                {
+                    "id": "10:3",
+                    "name": "HeaderSlot",
+                    "type": "SLOT",
+                    "slotSettings": {"preferredValues": ["10:99"]},
+                    "componentPropertyReferences": {"mainComponent": "HeaderSlot"}
+                }
+            ]
+        });
+
+        let simplified = simplify_tree(&node, Some(2));
+        assert_eq!(simplified["layout"]["layoutMode"], "GRID");
+        assert_eq!(simplified["layout"]["layoutWrap"], "WRAP");
+        assert_eq!(simplified["layout"]["gridColumnCount"], 3);
+        assert_eq!(simplified["fills"][0]["sourceColor"]["colorSpace"], "OKLCH");
+        assert_eq!(
+            simplified["strokes"][0]["sourceColor"]["colorSpace"],
+            "DISPLAY_P3"
+        );
+        assert_eq!(simplified["transform3d"]["rotateX"], 15.0);
+        assert_eq!(simplified["scene3d"]["lighting"], "studio");
+        assert!(simplified["componentPropertyDefinitions"]["HeaderSlot"].is_object());
+
+        let title = &simplified["children"][0];
+        assert_eq!(title["layout"]["gridColumnSpan"], 2);
+        assert_eq!(title["textTruncation"], "ENDING");
+        assert_eq!(title["maxLines"], 2);
+        assert_eq!(title["textStyle"]["fontVariantPosition"], "SUB");
+        assert_eq!(title["textStyle"]["textWrapStyle"], "BALANCE");
+        assert_eq!(title["textStyle"]["variationSettings"]["wght"], 650);
+
+        let slot = &simplified["children"][1];
+        assert_eq!(slot["type"], "SLOT");
+        assert_eq!(slot["slotSettings"]["preferredValues"][0], "10:99");
+        assert_eq!(
+            slot["componentPropertyReferences"]["mainComponent"],
+            "HeaderSlot"
         );
     }
 }

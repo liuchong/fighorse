@@ -1,7 +1,10 @@
 use fighorse::api::code_connect::{
-    preview_documents, publish_documents, unpublish_documents, validate_documents,
+    preview_documents, preview_documents_with_options, publish_documents, unpublish_documents,
+    validate_documents,
 };
-use fighorse::code_connect::model::{CodeConnectDocument, TemplateData};
+use fighorse::code_connect::model::{
+    CODE_CONNECT_USER_AGENT, COMPATIBILITY_CLI_VERSION, CodeConnectDocument, TemplateData,
+};
 use serde_json::json;
 use wiremock::matchers::{body_json, header, method, path, query_param};
 use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -25,7 +28,7 @@ fn doc(node_id: &str) -> CodeConnectDocument {
         links: None,
         source: Some("src/Button.tsx".into()),
         source_location: Some(json!({"line": -1})),
-        metadata: json!({"cliVersion": "1.5.1"}),
+        metadata: json!({"cliVersion": COMPATIBILITY_CLI_VERSION}),
         code_connect_file_path: None,
     }
 }
@@ -38,6 +41,7 @@ async fn validates_previews_publishes_and_unpublishes_observed_protocol() {
     Mock::given(method("GET"))
         .and(path("/v1/files/ABCDEF/nodes"))
         .and(header("X-Figma-Token", "token"))
+        .and(header("User-Agent", CODE_CONNECT_USER_AGENT))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({
             "nodes": {
                 "1:2": {
@@ -132,6 +136,71 @@ async fn validates_previews_publishes_and_unpublishes_observed_protocol() {
         .expect_err("missing meta is incompatible");
     let msg = err.to_string();
     assert!(msg.contains("protocol_incompatible"), "{msg}");
+
+    // v2.1.0 branch URL + preview --unique + structured Pro plan error diagnostics.
+    let v2_server = MockServer::start().await;
+    unsafe { std::env::set_var("FIGHORSE_API_BASE_URL", v2_server.uri()) };
+    let mut branch_doc = doc("1-2");
+    branch_doc.figma_node =
+        "https://www.figma.com/design/MainKey/branch/BranchKey/Test?node-id=1-2".into();
+
+    Mock::given(method("POST"))
+        .and(path("/v1/code_connect/preview_snippets"))
+        .and(query_param("file_key", "BranchKey"))
+        .and(header("User-Agent", CODE_CONNECT_USER_AGENT))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "meta": {
+                "results": [
+                    {"nodeId": "1:2", "label": "React", "language": "jsx", "snippet": "<Button />"},
+                    {"nodeId": "1:2", "label": "React", "language": "jsx", "snippet": "<Button />"},
+                    {"nodeId": "1:2", "label": "React", "language": "jsx", "snippet": "<Button disabled />"}
+                ]
+            }
+        })))
+        .mount(&v2_server)
+        .await;
+
+    let unique_preview = preview_documents_with_options("token", &[branch_doc.clone()], None, true)
+        .await
+        .expect("unique preview");
+    assert_eq!(
+        unique_preview["meta"]["results"].as_array().unwrap().len(),
+        2
+    );
+
+    Mock::given(method("POST"))
+        .and(path("/v1/code_connect"))
+        .and(header("User-Agent", CODE_CONNECT_USER_AGENT))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "meta": {
+                "success": false,
+                "published_count": 0,
+                "failed_count": 1,
+                "failed_nodes": [{
+                    "figmaNode": branch_doc.figma_node,
+                    "errors": [{"code": "CODE_CONNECT_PRO_FRAMEWORK_INACTIVE", "active_framework": "SwiftUI"}]
+                }],
+                "new_active_selections": [{"file_key": "BranchKey", "library_name": "UI", "framework": "React"}]
+            }
+        })))
+        .mount(&v2_server)
+        .await;
+
+    let pro_pub = publish_documents("token", &[branch_doc], false, None)
+        .await
+        .expect("structured pro response");
+    assert_eq!(
+        pro_pub["diagnostics"]["pro_plan_restrictions"][0]["code"],
+        "CODE_CONNECT_PRO_FRAMEWORK_INACTIVE"
+    );
+    assert_eq!(
+        pro_pub["diagnostics"]["pro_plan_restrictions"][0]["active_framework"],
+        "SwiftUI"
+    );
+    assert_eq!(
+        pro_pub["diagnostics"]["new_active_selections"][0]["framework"],
+        "React"
+    );
 
     unsafe { std::env::remove_var("FIGHORSE_API_BASE_URL") };
 }

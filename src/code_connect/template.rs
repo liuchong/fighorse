@@ -4,6 +4,7 @@ use crate::code_connect::model::{
 };
 use crate::error::{Error, Result};
 use serde_json::{Value, json};
+use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -84,16 +85,17 @@ fn strip_leading_metadata(content: &str, template_start_line: usize) -> String {
     lines[start..].join("\n")
 }
 
+/// Rewrite `import figma from 'figma'` (including optional `;` and trailing `//` comment)
+/// to `const figma = require('figma')`, matching `@figma/code-connect` v2.1.0.
 fn convert_figma_import(template: String) -> String {
+    let import_re = regex::Regex::new(
+        r#"^[ \t]*import[ \t]+figma[ \t]+from[ \t]+['"]figma['"][ \t]*;?[ \t]*(?://[^\r\n]*)?$"#,
+    )
+    .expect("valid figma import regex");
     template
         .lines()
         .map(|line| {
-            let trimmed = line.trim();
-            if trimmed == "import figma from 'figma'"
-                || trimmed == "import figma from 'figma';"
-                || trimmed == "import figma from \"figma\""
-                || trimmed == "import figma from \"figma\";"
-            {
+            if import_re.is_match(line) {
                 "const figma = require('figma')".to_string()
             } else {
                 line.to_string()
@@ -101,6 +103,20 @@ fn convert_figma_import(template: String) -> String {
         })
         .collect::<Vec<_>>()
         .join("\n")
+}
+
+fn is_legacy_parser_file(content: &str) -> bool {
+    content.contains("figma.connect(")
+        || content.contains("@figma/code-connect")
+        || content.contains("FigmaConnectMeta")
+}
+
+fn is_shared_template_filename(path: &Path) -> bool {
+    path.file_name()
+        .and_then(|v| v.to_str())
+        .is_some_and(|name| {
+            name.ends_with(".figma.template.ts") || name.ends_with(".figma.template.js")
+        })
 }
 
 fn parse_raw_file(
@@ -111,6 +127,12 @@ fn parse_raw_file(
     if !has_raw_directive(&content) {
         if content.contains("codeProperties") {
             return Ok(None);
+        }
+        if is_legacy_parser_file(&content) {
+            return Err(Error::Usage(format!(
+                "Legacy parser-based Code Connect file is not supported in Code Connect v2.x: {}. Migrate from `figma.connect(...)` / `@figma/code-connect` to a parserless template with a leading `// url=<figma-node-url>` directive and `export default {{ example: figma.code`...` }}`.",
+                path.display()
+            )));
         }
         return Err(Error::Usage(format!(
             "Missing required // url= metadata in {}",
@@ -169,7 +191,12 @@ fn as_entries(value: Value) -> Vec<Value> {
     }
 }
 
-fn parse_batch_file(path: &Path, project: &CodeConnectProject) -> Result<Vec<CodeConnectDocument>> {
+fn parse_batch_file_filtered(
+    path: &Path,
+    project: &CodeConnectProject,
+    only_template: Option<&Path>,
+    referenced_templates: &mut HashSet<PathBuf>,
+) -> Result<Vec<CodeConnectDocument>> {
     let raw = fs::read_to_string(path)?;
     let root: Value = serde_json::from_str(&raw)?;
     let mut docs = Vec::new();
@@ -183,6 +210,12 @@ fn parse_batch_file(path: &Path, project: &CodeConnectProject) -> Result<Vec<Cod
             .and_then(|v| v.as_array())
             .ok_or_else(|| Error::Usage(format!("Missing components in {}", path.display())))?;
         let template_path = resolve_under_root(&project.config.root, template_file)?;
+        referenced_templates.insert(template_path.clone());
+        if let Some(filter_target) = only_template
+            && template_path != filter_target
+        {
+            continue;
+        }
         let template_content = fs::read_to_string(&template_path)?;
         let (_, template_start_line) = extract_metadata(&template_content);
         let template = convert_figma_import(strip_leading_metadata(
@@ -247,17 +280,99 @@ fn resolve_under_root(root: &Path, rel: &str) -> Result<PathBuf> {
     Ok(canonical)
 }
 
+fn discover_batch_files(dir: &Path, out: &mut Vec<PathBuf>) -> Result<()> {
+    if !dir.exists() {
+        return Ok(());
+    }
+    for entry in fs::read_dir(dir)? {
+        let entry = entry?;
+        let path = entry.path();
+        let meta = fs::symlink_metadata(&path)?;
+        if meta.file_type().is_symlink() {
+            continue;
+        }
+        if meta.is_dir() {
+            if path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .is_some_and(|n| n == "node_modules" || n == ".git")
+            {
+                continue;
+            }
+            discover_batch_files(&path, out)?;
+        } else if meta.is_file()
+            && path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .is_some_and(|n| n.ends_with(".figma.batch.json"))
+        {
+            out.push(path);
+        }
+    }
+    Ok(())
+}
+
 pub fn parse_project(project: &CodeConnectProject) -> Result<Vec<CodeConnectDocument>> {
     let mut docs = Vec::new();
+    let mut referenced_templates = HashSet::new();
+
+    // First pass: parse all `.figma.batch.json` files and record referenced template files.
     for path in &project.files {
         if path
             .file_name()
             .and_then(|v| v.to_str())
-            .map(|name| name.ends_with(".figma.batch.json"))
-            .unwrap_or(false)
+            .is_some_and(|name| name.ends_with(".figma.batch.json"))
         {
-            docs.extend(parse_batch_file(path, project)?);
-        } else if let Some(doc) = parse_raw_file(path, project)? {
+            docs.extend(parse_batch_file_filtered(
+                path,
+                project,
+                None,
+                &mut referenced_templates,
+            )?);
+        }
+    }
+
+    // Second pass: parse standalone `.figma.{ts,js}` files; if a single `.figma.template.{ts,js}`
+    // without `// url=` was requested via `--file`, resolve its `.figma.batch.json` entries.
+    for path in &project.files {
+        if path
+            .file_name()
+            .and_then(|v| v.to_str())
+            .is_some_and(|name| name.ends_with(".figma.batch.json"))
+        {
+            continue;
+        }
+        let canonical = path.canonicalize().unwrap_or_else(|_| path.clone());
+        if referenced_templates.contains(&canonical) {
+            continue;
+        }
+        if is_shared_template_filename(path) {
+            let content = fs::read_to_string(path)?;
+            if !has_raw_directive(&content) {
+                if project.files.len() == 1 {
+                    let mut batch_files = Vec::new();
+                    discover_batch_files(&project.config.root, &mut batch_files)?;
+                    batch_files.sort();
+                    let mut matched = Vec::new();
+                    let mut dummy_refs = HashSet::new();
+                    for batch in batch_files {
+                        matched.extend(parse_batch_file_filtered(
+                            &batch,
+                            project,
+                            Some(&canonical),
+                            &mut dummy_refs,
+                        )?);
+                    }
+                    if !matched.is_empty() {
+                        docs.extend(matched);
+                        continue;
+                    }
+                } else {
+                    continue;
+                }
+            }
+        }
+        if let Some(doc) = parse_raw_file(path, project)? {
             docs.push(doc);
         }
     }

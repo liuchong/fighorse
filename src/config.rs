@@ -185,10 +185,7 @@ pub fn load_config() -> Config {
 pub fn resolve_auth_header_with_scheme(token: &str, scheme: &str) -> (&'static str, String) {
     let trimmed = token.trim();
     if trimmed.len() > 7 && trimmed[..7].eq_ignore_ascii_case("bearer ") {
-        return (
-            "Authorization",
-            format!("Bearer {}", trimmed[7..].trim()),
-        );
+        return ("Authorization", format!("Bearer {}", trimmed[7..].trim()));
     }
     match scheme.trim().to_ascii_lowercase().as_str() {
         "bearer" | "oauth" | "oauth2" => ("Authorization", format!("Bearer {trimmed}")),

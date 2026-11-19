@@ -73,12 +73,13 @@ Canonical-цели: `~/.agents/skills/fighorse/SKILL.md` для Cursor/Kimi/Code
 Для локального или командного распространения предпочитайте AI plugin bundle:
 
 ```bash
-fighorse install ai-plugin --clients cursor,codex,kimi,claude,opencode,gemini --apply
+fighorse install ai-plugin --clients cursor,codex,kimi,claude,opencode,gemini,antigravity,copilot --apply
 ```
 
 Он записывает `~/.fighorse/ai-plugin/fighorse/` с
-`.cursor-plugin/plugin.json`, `.mcp.json`, `server.json`,
-`gemini-extension.json` и общими workflow skills: `fighorse`,
+`.cursor-plugin/plugin.json`, `.claude-plugin/plugin.json`,
+`.antigravity-plugin/plugin.json`, `.github/plugin/plugin.json`, `.mcp.json`,
+`server.json`, `gemini-extension.json` и общими workflow skills: `fighorse`,
 `fighorse-design-to-code`, `fighorse-canvas-write`,
 `fighorse-resource-catalog`, `fighorse-code-connect` и
 `fighorse-self-learning`. Считайте его local-only пакетом, не Verified by

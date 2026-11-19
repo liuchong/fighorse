@@ -10,16 +10,23 @@ Reusable checks for Figma file-browser links:
 - `/files/.../team/<team-id>` provides a usable team ID. Enumerate accessible
   resources with readonly `get_resource_catalog`; the same product-layer
   aggregation is available as `fighorse resource catalog`.
-- `/project/<project-id>` and `/files/project/<project-id>` provide a usable
-  project ID and can be cataloged directly without first discovering a team.
-- Design/file/proto/board URLs and raw file keys are `design_target=true`,
-  `catalog_eligible=false`, and route through `next_action=get_design_package`.
-- The catalog defaults to projects, files, branches, and paginated team
-  components/component sets/styles. Optional depth-1 file probes are bounded
-  and return access state/page count rather than raw document trees.
-- Project enumeration requires the `projects:read` token scope and may require
-  Figma approval for Projects endpoints. HTTP 403 can also mean the token user
-  cannot access the team; a successful `GET me` only proves the token is valid.
+- `/folder/<folder-id>`, `/files/.../folder/<folder-id>`,
+  `/project/<project-id>`, and `/files/project/<project-id>` provide a usable
+  folder/project ID and can be cataloged directly (including nested v2
+  subfolders) without first discovering a team.
+- Design/file/proto/board/slides/make/site/buzz/spec/branch URLs and raw file
+  keys are `design_target=true`, `catalog_eligible=false`, and route through
+  `next_action=get_design_package` (branch URLs use `<branch-key>` as the
+  effective `file_key`).
+- The catalog defaults to v2 folders (mirrored to `projects`), files, branches,
+  and paginated team components/component sets/styles. Optional depth-1 file
+  probes are bounded and return access state/page count rather than raw document
+  trees.
+- Folder enumeration requires the `folders:read` (or legacy `projects:read`)
+  token scope; Plan Access Tokens and narrowly-scoped OAuth tokens that return
+  HTTP 403 on `GET /v1/me` still proceed when `folders:read` succeeds. HTTP 403
+  on `/v2/teams/{team_id}/folders` can also mean the token cannot access the
+  team.
 - Catalog status is `ready`, `partial`, or `blocked`. Preserve partial results
   and upstream `message`/`err`, but never copy arbitrary raw error bodies.
 - Browser links still do not identify a frame or node. For design

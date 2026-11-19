@@ -28,27 +28,30 @@ fn file_entry<'a>(files: &'a [Value], suffix: &str) -> &'a Value {
 
 #[test]
 fn ai_plugin_bundle_renders_shared_manifests_and_skills() {
-    let bundle =
-        install::ai_plugin_bundle(ENDPOINT, "cursor,codex,kimi,claude,opencode,gemini").unwrap();
+    let bundle = install::ai_plugin_bundle(
+        ENDPOINT,
+        "cursor,codex,kimi,claude,opencode,gemini,antigravity,copilot",
+    )
+    .unwrap();
     assert_eq!(bundle["publish_status"], "local_only");
     assert_eq!(bundle["mcp_endpoint"], ENDPOINT);
     assert_eq!(bundle["rmcp"]["decision"], "defer");
-    assert!(
-        bundle["clients"]
-            .as_array()
-            .unwrap()
-            .contains(&Value::String("opencode".into()))
-    );
-    assert!(
-        bundle["clients"]
-            .as_array()
-            .unwrap()
-            .contains(&Value::String("gemini".into()))
-    );
+    for expected_client in ["opencode", "gemini", "antigravity", "copilot"] {
+        assert!(
+            bundle["clients"]
+                .as_array()
+                .unwrap()
+                .contains(&Value::String(expected_client.into())),
+            "missing {expected_client}"
+        );
+    }
 
     let files = bundle["files"].as_array().unwrap();
     file_entry(files, ".cursor-plugin/plugin.json");
     file_entry(files, ".claude-plugin/plugin.json");
+    file_entry(files, ".antigravity-plugin/plugin.json");
+    file_entry(files, ".antigravity-plugin/mcp_config.json");
+    file_entry(files, ".github/plugin/plugin.json");
     file_entry(files, "gemini-extension.json");
     file_entry(files, "server.json");
     file_entry(files, ".mcp.json");
@@ -72,6 +75,14 @@ fn ai_plugin_bundle_renders_shared_manifests_and_skills() {
     assert_eq!(cursor["skills"], "./skills/");
     assert_eq!(cursor["mcpServers"], "./.mcp.json");
     assert_ne!(cursor["displayName"], "Figma");
+
+    let agy_mcp: Value = serde_json::from_str(
+        file_entry(files, ".antigravity-plugin/mcp_config.json")["content"]
+            .as_str()
+            .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(agy_mcp["mcpServers"]["fighorse"]["serverUrl"], ENDPOINT);
 
     let mcp: Value =
         serde_json::from_str(file_entry(files, ".mcp.json")["content"].as_str().unwrap()).unwrap();

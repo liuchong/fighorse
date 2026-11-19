@@ -29,6 +29,9 @@ pub const SUPPORTED_CLIENTS: &[&str] = &[
     "claude",
     "opencode",
     "gemini",
+    "antigravity",
+    "copilot",
+    "github-copilot",
     "openclaw",
     "hermes-agent",
     "generic",
@@ -109,6 +112,9 @@ fn normalize_client(client: &str) -> String {
     let c = client.to_lowercase();
     if c == "kimi-cli" {
         return "kimi".to_string();
+    }
+    if c == "github-copilot" {
+        return "copilot".to_string();
     }
     if SUPPORTED_CLIENTS.contains(&c.as_str()) {
         c
@@ -501,6 +507,39 @@ fn ai_plugin_files(endpoint: &str, clients: &[String]) -> Result<Vec<(PathBuf, S
         "description": "Local fighorse MCP server and workflow skills.",
         "mcpServers": {"fighorse": {"type": "http", "url": endpoint}}
     });
+    let antigravity_plugin = json!({
+        "name": "fighorse",
+        "displayName": "fighorse",
+        "version": env!("CARGO_PKG_VERSION"),
+        "description": "Local fighorse MCP server and workflow skills for Figma design context, native canvas writes, Code Connect, resource catalog, and self-learning.",
+        "author": {"name": "fighorse"},
+        "logo": "./fighorse.svg",
+        "homepage": env!("CARGO_PKG_HOMEPAGE"),
+        "repository": env!("CARGO_PKG_REPOSITORY"),
+        "keywords": ["figma", "mcp", "design", "code-connect", "canvas"],
+        "category": "Design",
+        "mcpServers": "./.antigravity-plugin/mcp_config.json",
+        "suggestedPrompts": [
+            "Inspect this Figma frame URL with fighorse and implement the UI",
+            "Enumerate folders and files from this Figma team URL using get_resource_catalog",
+            "Search the Figma design system for matching components and variables"
+        ]
+    });
+    let antigravity_mcp = json!({
+        "mcpServers": {
+            "fighorse": {
+                "serverUrl": endpoint
+            }
+        }
+    });
+    let github_copilot_plugin = json!({
+        "name": "fighorse",
+        "description": "Local fighorse MCP server and workflow skills for Figma design context, native canvas writes, Code Connect, resource catalog, and self-learning.",
+        "version": env!("CARGO_PKG_VERSION"),
+        "author": {"name": "fighorse"},
+        "homepage": env!("CARGO_PKG_HOMEPAGE"),
+        "keywords": ["figma", "mcp", "design", "code-connect", "canvas"]
+    });
     let mut files = vec![
         (
             PathBuf::from("README.md"),
@@ -513,6 +552,18 @@ fn ai_plugin_files(endpoint: &str, clients: &[String]) -> Result<Vec<(PathBuf, S
         (
             PathBuf::from(".claude-plugin/plugin.json"),
             serde_json::to_string_pretty(&claude_plugin)?,
+        ),
+        (
+            PathBuf::from(".antigravity-plugin/plugin.json"),
+            serde_json::to_string_pretty(&antigravity_plugin)?,
+        ),
+        (
+            PathBuf::from(".antigravity-plugin/mcp_config.json"),
+            serde_json::to_string_pretty(&antigravity_mcp)?,
+        ),
+        (
+            PathBuf::from(".github/plugin/plugin.json"),
+            serde_json::to_string_pretty(&github_copilot_plugin)?,
         ),
         (
             PathBuf::from("gemini-extension.json"),
@@ -544,7 +595,7 @@ fn ai_plugin_files(endpoint: &str, clients: &[String]) -> Result<Vec<(PathBuf, S
     let client_note = json!({
         "clients": clients,
         "automatic_apply": ["cursor", "codex", "kimi", "claude"],
-        "artifact_only": ["opencode", "gemini", "generic"],
+        "artifact_only": ["opencode", "gemini", "antigravity", "copilot", "generic"],
         "publish_status": "local_only"
     });
     files.push((
@@ -556,7 +607,10 @@ fn ai_plugin_files(endpoint: &str, clients: &[String]) -> Result<Vec<(PathBuf, S
 
 pub fn ai_plugin_bundle(endpoint: &str, clients: &str) -> Result<Value> {
     let clients = if clients.trim().is_empty() {
-        coerce_clients(None, Some("cursor,codex,kimi,claude,opencode,gemini"))
+        coerce_clients(
+            None,
+            Some("cursor,codex,kimi,claude,opencode,gemini,antigravity,copilot"),
+        )
     } else {
         coerce_clients(None, Some(clients))
     };
@@ -612,8 +666,9 @@ pub fn install_ai_plugin(opts: AiPluginInstallOpts<'_>) -> Result<Value> {
     let endpoint = opts.endpoint.unwrap_or("http://127.0.0.1:9449/mcp");
     let clients = coerce_clients(
         None,
-        opts.clients
-            .or(Some("cursor,codex,kimi,claude,opencode,gemini")),
+        opts.clients.or(Some(
+            "cursor,codex,kimi,claude,opencode,gemini,antigravity,copilot",
+        )),
     );
     let bundle = ai_plugin_bundle(endpoint, &clients.join(","))?;
     let home = fighorse_home(opts.home);
@@ -651,7 +706,7 @@ pub fn install_ai_plugin(opts: AiPluginInstallOpts<'_>) -> Result<Value> {
     };
     Ok(json!({
         "kind": "fighorse.install-ai-plugin.v1",
-        "command": "fighorse install ai-plugin --clients cursor,codex,kimi,claude,opencode,gemini --apply",
+        "command": "fighorse install ai-plugin --clients cursor,codex,kimi,claude,opencode,gemini,antigravity,copilot --apply",
         "apply": opts.apply,
         "dir": dir,
         "clients": clients,
@@ -660,7 +715,7 @@ pub fn install_ai_plugin(opts: AiPluginInstallOpts<'_>) -> Result<Value> {
         "applied": applied,
         "manual_actions": [
             "Cursor: import the generated local plugin package if automatic plugin directory installation is not available.",
-            "Gemini/opencode/generic MCP clients: use the generated mcp.json or server.json artifact when automatic install is not verified."
+            "Antigravity/Copilot/Gemini/opencode/generic MCP clients: use the generated .antigravity-plugin/plugin.json, .github/plugin/plugin.json, mcp.json, or server.json artifact when automatic install is not verified."
         ]
     }))
 }
@@ -3326,11 +3381,7 @@ mod tests {
         );
         assert_eq!(
             requested_binary_links(None, None, None),
-            requested_binary_links(
-                None,
-                None,
-                Some(&config::fighorse_home().to_string_lossy())
-            ),
+            requested_binary_links(None, None, Some(&config::fighorse_home().to_string_lossy())),
             "the default home must keep guessing PATH link dirs"
         );
     }

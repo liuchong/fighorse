@@ -8,6 +8,12 @@ canvas writes use the Figma Plugin API inside an open Figma file.
 
 - Supported editors: Figma Design (`figma`), FigJam (`figjam`), and Figma
   Slides (`slides`).
+- Design operations include frame/shape/text/component/variant/instance creation,
+  auto-layout (`layoutWrap` on vertical and horizontal containers,
+  `SPACE_EVENLY`/`SPACE_AROUND`, and CSS `GRID` mode), variable-font and
+  `textWrapStyle` text creation, authored `sourceColor` paints, component slots
+  (`create_slot`, `reset_slot`), and 3D transforms (`set_transform_3d`,
+  `set_scene_3d`).
 - Default mode: read-only. Write tools are hidden from MCP unless both
   `FIGHORSE_MCP_MODE=write` and `FIGHORSE_CANVAS_MODE=write` are set.
 - Script execution is an explicit escape hatch. `canvas_execute_script` is

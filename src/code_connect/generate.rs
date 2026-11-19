@@ -148,6 +148,9 @@ fn declaration(prop: &FigmaPropertyDefinition) -> Option<String> {
         "BOOLEAN" => Some(format!(
             "const {code_name} = figma.selectedInstance.getBoolean({figma_name})"
         )),
+        "SLOT" => Some(format!(
+            "const {code_name} = figma.selectedInstance.getSlot({figma_name})"
+        )),
         "VARIANT" if is_boolean_variant(&prop.variant_options) => Some(format!(
             "const {code_name} = figma.selectedInstance.getBoolean({figma_name})"
         )),

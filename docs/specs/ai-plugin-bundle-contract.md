@@ -9,8 +9,13 @@ clients without publishing to any marketplace.
 - The source templates live under `assets/ai-plugin/`; generated files live
   under `~/.fighorse/ai-plugin/fighorse/`.
 - Generate or install with
-  `fighorse install ai-plugin --clients cursor,codex,kimi,claude,opencode,gemini --apply`.
+  `fighorse install ai-plugin --clients cursor,codex,kimi,claude,opencode,gemini,antigravity,copilot --apply`.
 - The default MCP endpoint is `http://127.0.0.1:9449/mcp`.
+- Client manifests cover Cursor (`.cursor-plugin/plugin.json`), Claude
+  (`.claude-plugin/plugin.json`), Antigravity (`.antigravity-plugin/plugin.json`
+  and `.antigravity-plugin/mcp_config.json`), GitHub Copilot
+  (`.github/plugin/plugin.json`), Gemini (`gemini-extension.json`), and standard
+  MCP (`server.json` / `.mcp.json`).
 - The bundle is local-only. It must not claim Cursor verification or public
   marketplace availability.
 - Installed MCP clients must reuse the local HTTP service instead of spawning
